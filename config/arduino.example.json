@@ -1,0 +1,4 @@
+{
+  "cli": "/path/to/arduino-cli",
+  "data": "/path/to/Arduino15"
+}

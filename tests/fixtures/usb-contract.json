@@ -1,0 +1,28 @@
+{
+  "descriptor_sha256": "64344513c21172bbdc79b94fd80521c2917d0b9c88e49c5c2fd7846e4c391f76",
+  "maintenance_command": "BOOT-R2500!!",
+  "abi": 1,
+  "firmware_protocol_version": "R",
+  "partitions": {
+    "app0": [
+      65536,
+      3145728
+    ],
+    "app1": [
+      3211264,
+      3145728
+    ],
+    "nvs": [
+      36864,
+      20480
+    ],
+    "history": [
+      16580608,
+      131072
+    ],
+    "coredump": [
+      16711680,
+      65536
+    ]
+  }
+}

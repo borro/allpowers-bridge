@@ -1,0 +1,10 @@
+{
+  "version": 6,
+  "configurePresets": [{
+    "name": "dev", "displayName": "ALLPOWERS native core (Ninja)",
+    "generator": "Ninja", "binaryDir": "${sourceDir}/build/native/${hostSystemName}",
+    "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}
+  }],
+  "buildPresets": [{"name": "dev", "configurePreset": "dev"}],
+  "testPresets": [{"name": "dev", "configurePreset": "dev", "output": {"outputOnFailure": true}}]
+}

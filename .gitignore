@@ -1,0 +1,20 @@
+# Local tools, outputs and private configuration
+.venv/
+.local/
+.build/
+build/
+dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+CMakeUserPresets.json
+.DS_Store
+Thumbs.db
+*.bin
+*.elf
+*.map
+*.dll
+*.so
+*.pdb
+*.sqlite3*
+*.log

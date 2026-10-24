@@ -85,6 +85,9 @@ Bluetooth/service mode does not include a USB board overlay. The one-hour graph
 refreshes every second, with disk work on the history worker. Repeated reads do
 not duplicate records. The monitor and widget still use a direct connection in
 turn, so disconnect the monitor before connecting the widget to the same port.
+The widget uses logarithmic time over that hour to keep live-second changes
+visible on its compact plot, instead of compressing each second into 0.075 pixels.
+Its endpoint marker is shown only for a fresh sample no more than three seconds old.
 
 ## Tests
 

@@ -154,7 +154,7 @@ void WidgetCard::drawCard(QPainter &p) const {
     p.setPen(QPen(QColor(mask == 2 ? "#59d9aa" : "#6ab4ff"), 1.6));
     auto point = [&](const HistoryPoint &v) {
       double watts = mask == 2 ? v.data.input_w : v.data.output_w;
-      return QPointF(plot.left() + (v.wall - (now_ - 3600)) * plot.width() / 3600.,
+      return QPointF(plot.left() + logPosition(double(now_ - v.wall), 3600.) * plot.width(),
                      plot.bottom() - watts * plot.height() / maximum);
     };
     for (qsizetype i = 1; i < points_.size(); ++i) {
@@ -163,8 +163,20 @@ void WidgetCard::drawCard(QPainter &p) const {
           (b.data.known & mask) && joinPoints(a, b))
         p.drawLine(point(a), point(b));
     }
+    // Show the actual latest sample even when no preceding segment is available.
+    // An old archive endpoint must not look like a current live reading.
+    if (!points_.isEmpty()) {
+      const auto &last = points_.last();
+      const auto age = now_ - last.wall;
+      if (last.data.fresh && (last.data.known & mask) && age >= 0 && age <= 3) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(mask == 2 ? "#59d9aa" : "#6ab4ff"));
+        p.drawEllipse(point(last), 2.2, 2.2);
+        p.setBrush(Qt::NoBrush);
+      }
+    }
   }
-  text({14, 184, 180, 16}, QStringLiteral("−1 час"), 8, QColor("#8ea5c4"));
+  text({14, 184, 180, 16}, QStringLiteral("−1 час · лог. время"), 8, QColor("#8ea5c4"));
   text({240, 184, 50, 16}, QStringLiteral("сейчас"), 8, QColor("#8ea5c4"));
 }
 void WidgetCard::mousePressEvent(QMouseEvent *event) {

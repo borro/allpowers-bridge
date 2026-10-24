@@ -46,6 +46,8 @@ With the UPS service installed, the widget reads the service's Bluetooth data
 and never stops it on exit. The widget owns its USB port directly.
 On USB connection/reconnection it automatically reads the board archive and merges
 it with current samples into one line per metric, preserving genuine data gaps.
+Its logarithmic time axis gives recent seconds more space within the one-hour
+history; a marker identifies the latest fresh sample.
 Run `AllpowersWidget.exe --demo` to preview without hardware; demo uses temporary
 storage and does not change user settings or login startup.
 Diagnostics includes a live event log that follows new entries. Scrolling up

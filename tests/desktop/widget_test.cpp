@@ -92,7 +92,7 @@ public:
     emit received(value);
   }
 };
-static QByteArray widgetUsbStatus(const QString &board, int frames) {
+static QByteArray widgetUsbStatus(const QString &board, int frames, int output = 150) {
   const QList<QJsonObject> rows = {
       {{"adapter", "UPSDEV"},
        {"version", "R"},
@@ -100,7 +100,7 @@ static QByteArray widgetUsbStatus(const QString &board, int frames) {
        {"gatt_connected", true},
        {"soc", 50},
        {"charge_w", 0},
-       {"output_w", 150},
+       {"output_w", output},
        {"runtime_s", 1800},
        {"source", "battery"},
        {"source_raw", 65535},
@@ -127,6 +127,44 @@ static QByteArray widgetUsbStatus(const QString &board, int frames) {
 class WidgetTests : public QObject {
   Q_OBJECT
 private slots:
+  void recentGraphUpdatesRemainVisible() {
+    WidgetCard card(false);
+    const qint64 now = 100000;
+    HistoryPoints points;
+    for (int age : {3, 2, 1}) {
+      HistoryPoint point;
+      point.address = "synthetic";
+      point.session = "live";
+      point.wall = now - age;
+      point.tick = now - age;
+      point.data.fresh = 1;
+      point.data.known = 4;
+      point.data.output_w = age == 2 ? 100 : 60;
+      points.append(point);
+    }
+    auto blueAt = [&](const QImage &image, int age, int y) {
+      const int x = qRound(14 + logPosition(age, 3600.) * 272);
+      for (int dx = -2; dx <= 2; ++dx)
+        for (int dy = -2; dy <= 2; ++dy) {
+          const auto color = image.pixelColor(x + dx, y + dy);
+          if (color.blue() > 200 && color.green() > 110 && color.red() < 155)
+            return true;
+        }
+      return false;
+    };
+    card.setHistory(points, now);
+    const auto before = card.renderedImage();
+    QVERIFY(blueAt(before, 2, 127));
+    card.setHistory(points, now + 1);
+    const auto after = card.renderedImage();
+    QVERIFY(blueAt(after, 3, 127));
+    QVERIFY(!blueAt(after, 2, 127)); // A visible move each second, not 0.075 px.
+    QVERIFY(after.copy(14, 126, 272, 54) != before.copy(14, 126, 272, 54));
+    card.setHistory({points.last()}, now);
+    QVERIFY(blueAt(card.renderedImage(), 1, 127)); // Isolated 60 W point uses the 60 W scale.
+    card.setHistory({points.last()}, now + 4);
+    QVERIFY(!blueAt(card.renderedImage(), 5, 127)); // No fake live marker on stale history.
+  }
   void usbArchiveFillsWidgetGraph_data() {
     QTest::addColumn<QString>("board");
     QTest::newRow("waveshare") << QString("waveshare-147");
@@ -200,6 +238,19 @@ private slots:
     QVERIFY(points.size() >= 3);
     QVERIFY(joinPoints(points[points.size() - 2], points.last()));
     QVERIFY(!joinPoints(points.first(), points[1])); // The genuine older-boot gap remains.
+    // After importing history, live data must still reach both the graph model
+    // and rendered graph pixels, rather than merely updating the numeric label.
+    auto graphImage = widget.card()->renderedImage().copy(14, 126, 272, 54);
+    auto previousWall = widget.card()->historyPoints().last().wall;
+    for (int power : {300, 70}) {
+      io->feed(widgetUsbStatus(board, power, power));
+      QTRY_COMPARE(widget.card()->historyPoints().last().data.output_w, quint32(power));
+      QVERIFY(widget.card()->historyPoints().last().wall > previousWall);
+      const auto nextImage = widget.card()->renderedImage().copy(14, 126, 272, 54);
+      QVERIFY(nextImage != graphImage);
+      graphImage = nextImage;
+      previousWall = widget.card()->historyPoints().last().wall;
+    }
     // Reconnection re-reads history automatically and deduplicates retained records.
     io->writes.clear();
     usb->resume("R2500-000000000001", {}, 0);

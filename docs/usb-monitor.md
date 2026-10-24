@@ -43,8 +43,20 @@ profile, errors and archive progress. Optional Windows driver controls are in
 **Диагностика → ИБП Windows…**.
 
 The old flash record format does not contain a station identity. Its records are
-stored in a separate `usb_minutes` table keyed by board serial and displayed with
-**Архив USB-платы · станция не указана** on the History page. Import does not evict
+stored in a separate `usb_minutes` table keyed by board serial. On connection,
+the monitor automatically reads the archive and merges it into the main History
+chart (**История станции + USB**, the default). Saved archive points also appear
+before a new read finishes. Application history takes priority in overlapping
+minute buckets. The archive note and point tooltip identify board records whose
+station is unknown; they retain their board identity in storage and CSV export.
+There is one fused line per metric, not separate archive/live layers. A source
+or application-session boundary is connected only where consecutive fresh board
+records establish continuity. The verified current USB boot also allows the live
+tail to follow its latest minute sample (up to 90 seconds). No link is persisted
+as raw telemetry or accepted over IPC. Actual stale samples, marked gaps and boot
+boundaries without coverage still interrupt the line.
+**Только архив USB-платы** remains available for inspecting the archive alone.
+Switching boards clears the previous board's overlay. Import does not evict
 station history. CRC32 is checked, repeated imports deduplicate minute buckets,
 and at most 2880 archive points within 48 hours are retained separately from the
 existing 3600 live / 2880 station-minute points.

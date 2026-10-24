@@ -17,7 +17,7 @@ Pages: telemetry, interactive history, diagnostics. Ctrl+1/2/3 switches pages;
 select Bluetooth or USB at the top. USB uses the existing Waveshare/Pocket CDC
 protocol, retains HID UPS reporting and never acquires computer Bluetooth.
 Live readings share station charts/history. Old board records have no station
-identity and are imported into a separate bounded archive view/table; corrupt or
+identity and are stored separately while filling gaps in the main USB chart; corrupt or
 undated records are skipped. [USB mode](../../docs/usb-monitor.md).
 Driver management is in Diagnostics, not the main navigation.
 F5 scans. Device/profile controls explain why they are unavailable. Dropdowns

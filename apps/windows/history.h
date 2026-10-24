@@ -10,6 +10,8 @@ struct HistoryPoint {
   qint64 wall = 0, tick = 0;
   ap_snapshot data{};
   int stride = 1;
+  // Derived by USB fusion only; never persisted or accepted over IPC.
+  bool bridgeFromPrevious = false;
 };
 using HistoryPoints = QList<HistoryPoint>;
 Q_DECLARE_METATYPE(HistoryPoints)
@@ -17,6 +19,10 @@ bool joinPoints(const HistoryPoint &, const HistoryPoint &);
 int sourceChange(const HistoryPoint &, const HistoryPoint &);
 double logPosition(double age, double horizon);
 HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &service);
+// Fuse samples without changing their provenance. Archive continuity can prove
+// a connection across a change of acquisition clock/session.
+HistoryPoints mergeUsbHistory(const HistoryPoints &station, const HistoryPoints &board,
+                              const QString &currentBoardSession = {});
 bool exportHistoryCsv(const HistoryPoints &, const QString &path);
 
 class HistoryStore {

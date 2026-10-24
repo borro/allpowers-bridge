@@ -44,8 +44,9 @@ bool consume(QByteArray &buffer, QList<QJsonObject> &out) {
   X(model)                                                                                         \
   X(known)                                                                                         \
   X(main_seen)                                                                                     \
-  X(settings_seen) X(fresh) X(soc) X(input_w) X(output_w) X(runtime_s) X(source) X(source_raw)     \
-      X(ac_output) X(usb_output) X(dc_output) X(main_age_ms) X(settings_age_ms) X(valid_frames)    \
+  X(settings_seen)                                                                                 \
+  X(fresh) X(soc) X(input_w) X(output_w) X(runtime_s) X(source) X(source_raw) X(ac_output)         \
+      X(usb_output) X(dc_output) X(main_age_ms) X(settings_age_ms) X(valid_frames)                 \
           X(invalid_frames)
 QJsonObject snapshot(const ap_snapshot &s) {
   QJsonObject o;
@@ -88,6 +89,7 @@ bool point(const QJsonObject &o, HistoryPoint &p) {
   p.wall = o["wall"].toInteger();
   p.tick = o["tick"].toInteger();
   p.stride = o["stride"].toInt();
+  p.bridgeFromPrevious = false;
   return p.address.size() <= 64 && p.session.size() <= 64 && (p.stride == 1 || p.stride == 60);
 }
 } // namespace Ipc

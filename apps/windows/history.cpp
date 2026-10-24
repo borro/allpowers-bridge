@@ -15,6 +15,8 @@
 
 bool joinPoints(const HistoryPoint &a, const HistoryPoint &b) {
   auto dt = b.wall - a.wall;
+  if (b.bridgeFromPrevious)
+    return a.data.fresh && b.data.fresh && dt > 0;
   int limit = a.stride == 1 && b.stride == 1 ? 2 : 90;
   return a.data.fresh && b.data.fresh && a.address == b.address && a.session == b.session &&
          dt > 0 && dt <= limit && qAbs((b.tick - a.tick) - dt) <= 2;
@@ -42,6 +44,65 @@ HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &remo
   auto result = selected.values();
   std::sort(result.begin(), result.end(),
             [](const auto &a, const auto &b) { return a.wall < b.wall; });
+  return result;
+}
+
+HistoryPoints mergeUsbHistory(const HistoryPoints &station, const HistoryPoints &board,
+                              const QString &currentBoardSession) {
+  auto orderedBoard = board;
+  std::sort(orderedBoard.begin(), orderedBoard.end(),
+            [](const auto &a, const auto &b) { return a.wall < b.wall; });
+  for (auto &p : orderedBoard)
+    p.bridgeFromPrevious = false;
+  QSet<qint64> recordedMinutes;
+  for (const auto &p : station)
+    recordedMinutes.insert(p.wall / 60);
+  HistoryPoints result = station;
+  for (const auto &p : orderedBoard)
+    if (!recordedMinutes.contains(p.wall / 60))
+      result.append(p);
+  std::sort(result.begin(), result.end(),
+            [](const auto &a, const auto &b) { return a.wall < b.wall; });
+  for (auto &p : result)
+    p.bridgeFromPrevious = false;
+
+  // These ranges are supported by actual consecutive board records. They can
+  // bridge application restarts/clock changes without drawing a second trace.
+  struct Range {
+    qint64 from, to;
+  };
+  QList<Range> coverage;
+  const HistoryPoint *previous = nullptr;
+  for (const auto &p : orderedBoard) {
+    if (!p.data.fresh) {
+      previous = nullptr;
+      continue;
+    }
+    if (previous && joinPoints(*previous, p))
+      coverage.last().to = p.wall;
+    else
+      coverage.append({p.wall, p.wall});
+    previous = &p;
+  }
+  // The verified live USB connection extends the current boot's most recent
+  // minute sample. Never extend an earlier boot or a firmware-marked gap.
+  if (!coverage.isEmpty() && !orderedBoard.isEmpty() &&
+      orderedBoard.last().session == currentBoardSession && orderedBoard.last().data.fresh)
+    coverage.last().to += 90;
+  qsizetype range = 0;
+  for (qsizetype i = 1; i < result.size(); ++i) {
+    const auto &a = result[i - 1];
+    auto &b = result[i];
+    if (joinPoints(a, b) || !a.data.fresh || !b.data.fresh || b.wall <= a.wall)
+      continue;
+    if (a.address != b.address && !a.address.startsWith("usb-board:") &&
+        !b.address.startsWith("usb-board:"))
+      continue;
+    while (range < coverage.size() && coverage[range].to < a.wall)
+      ++range;
+    b.bridgeFromPrevious =
+        range < coverage.size() && coverage[range].from <= a.wall && coverage[range].to >= b.wall;
+  }
   return result;
 }
 

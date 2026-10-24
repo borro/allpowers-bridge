@@ -24,7 +24,7 @@ class MonitorWindow : public QMainWindow {
   QCheckBox *stationsOnly, *logScale;
   QPushButton *scanButton, *connectButton, *exportButton, *liveButton;
   QLabel *status, *soc, *input, *output, *source, *runtime, *freshness, *outputAC, *outputUSB,
-      *outputDC, *transportNote, *footer;
+      *outputDC, *transportNote, *footer, *usbHistoryNote;
   QStackedWidget *pages;
   QWidget *usbHistoryControls;
   QTableWidget *technical;
@@ -35,7 +35,7 @@ class MonitorWindow : public QMainWindow {
   QString dataPath;
   ap_snapshot last{};
   HistoryPoints points;
-  HistoryPoints localPoints, servicePoints;
+  HistoryPoints localPoints, servicePoints, usbPoints;
   QElapsedTimer uptime;
   bool historyBusy = false, offline = false;
   bool wasScanning = false;
@@ -51,6 +51,7 @@ class MonitorWindow : public QMainWindow {
   void saveSettings();
   void changeTransport();
   QString historyKey() const;
+  void refreshHistory();
   QWidget *overviewPage();
   QWidget *historyPage();
   QWidget *diagnosticPage();

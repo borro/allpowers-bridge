@@ -16,7 +16,8 @@ Alternatively select **USB · Waveshare / Pocket** to read the board's connectio
 The app remembers the transport, USB serial and Bluetooth station separately.
 USB disconnect closes only the PC port. Live readings share charts, local history
 and CSV; board diagnostics appear in the table. No flashing or extra driver is
-required. The old board archive has no station identity and is viewed separately.
+required. The board archive automatically fills gaps in the main USB history
+chart; its records remain labelled separately because they lack station identity.
 See [USB mode](docs/usb-monitor.md).
 
 ![Earlier Windows monitor UI with synthetic data](docs/images/windows-monitor.png)

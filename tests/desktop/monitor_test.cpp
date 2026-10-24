@@ -26,6 +26,7 @@
 #include <QTextBlock>
 #include <QUuid>
 #include <QWheelEvent>
+#include <algorithm>
 
 class FakeUsbChannel : public UsbChannel {
 public:
@@ -205,11 +206,125 @@ private slots:
     QVERIFY(!router->usb());
     window.close();
   }
-  void usbWindowRecordsLiveAndSeparatesArchive() {
+  void usbHistoryOverlayKeepsProvenanceAndPrefersStation() {
+    HistoryPoint live;
+    live.address = "02:00:00:00:00:03";
+    live.wall = 600;
+    live.tick = 10;
+    live.session = "desktop";
+    live.data.fresh = 1;
+    HistoryPoint archive = live;
+    archive.address = "usb-board:R2500-000000000001";
+    archive.session = "board";
+    archive.stride = 60;
+    archive.wall = 540;
+    archive.tick = 540;
+    auto overlap = archive;
+    overlap.wall = 620;
+    overlap.tick = 620;
+    auto result = mergeUsbHistory({live}, {overlap, archive});
+    QCOMPARE(result.size(), 2);
+    QCOMPARE(result.first().address, archive.address);
+    QCOMPARE(result.first().wall, 540);
+    QCOMPARE(result.last().address, live.address);
+    QVERIFY(joinPoints(result.first(), result.last()));
+    QCOMPARE(mergeUsbHistory({}, {archive}).size(), 1);
+    QCOMPARE(mergeUsbHistory({live}, {}).size(), 1);
+  }
+  void usbHistoryDrawsOneFusedLine() {
+    HistoryChart chart;
+    chart.resize(720, 360);
+    const qint64 now = 100000;
+    HistoryPoints board;
+    for (int age : {180, 120, 60}) {
+      HistoryPoint p;
+      p.address = "usb-board:R2500-000000000001";
+      p.session = "usb-7";
+      p.wall = now - age;
+      p.tick = 1000 - age;
+      p.stride = 60;
+      p.data.fresh = 1;
+      p.data.known = 5;
+      p.data.soc = 40;
+      p.data.output_w = 100;
+      board.append(p);
+    }
+    HistoryPoint live = board[1];
+    live.address = "02:00:00:00:00:03";
+    live.session = "desktop";
+    live.stride = 1;
+    live.data.soc = 70;
+    live.data.output_w = 200;
+    const auto shown = mergeUsbHistory({live}, board);
+    QCOMPARE(shown.size(), 3);
+    auto coloredAt = [&](const QImage &image, int age, double fraction, bool white = false) {
+      const int x = qRound(54 + (chart.width() - 116) * (1. - age / 240.));
+      const int y = qRound(chart.height() - 48 - (chart.height() - 78) * fraction);
+      for (int dx = -2; dx <= 2; ++dx)
+        for (int dy = -2; dy <= 2; ++dy) {
+          const auto color = image.pixelColor(x + dx, y + dy);
+          if (white ? color.red() > 200 && color.green() > 200 && color.blue() > 200
+                    : color.green() > 170 && color.red() < 140 && color.blue() < 210)
+            return true;
+        }
+      return false;
+    };
+    chart.setHorizon(240);
+    chart.setPoints(shown, now);
+    QImage image(chart.size(), QImage::Format_ARGB32_Premultiplied);
+    chart.render(&image);
+    QVERIFY(joinPoints(shown[0], shown[1]));
+    QVERIFY(joinPoints(shown[1], shown[2]));
+    QVERIFY(coloredAt(image, 150, .55));
+    QVERIFY(coloredAt(image, 90, .55));
+    QVERIFY(coloredAt(image, 150, .75, true)); // A single power segment to the live sample.
+    QVERIFY(!coloredAt(image, 150, .5, true)); // No second 100 W archive line underneath.
+    // A real missing/stale board sample must still leave a visible gap.
+    board[1].data.fresh = 0;
+    chart.setPoints(mergeUsbHistory({live}, board), now);
+    chart.render(&image);
+    QVERIFY(!coloredAt(image, 150, .55));
+    QVERIFY(!coloredAt(image, 90, .55));
+    // A boot boundary must not be connected either.
+    board[1].data.fresh = 1;
+    board[1].session = "usb-8";
+    chart.setPoints(mergeUsbHistory({live}, board), now);
+    chart.render(&image);
+    QVERIFY(!coloredAt(image, 150, .55));
+    QVERIFY(!coloredAt(image, 90, .55));
+    // The live tail can connect only to the verified current board boot.
+    live.wall = board.last().wall + 65;
+    auto tail = mergeUsbHistory({live}, {board.last()});
+    QVERIFY(!joinPoints(tail[0], tail[1]));
+    tail = mergeUsbHistory({live}, {board.last()}, "usb-7");
+    QVERIFY(joinPoints(tail[0], tail[1]));
+    HistoryPoint decoded = tail[1];
+    QVERIFY(Ipc::point(Ipc::point(decoded), decoded));
+    QVERIFY(!decoded.bridgeFromPrevious);
+    tail = mergeUsbHistory({live}, {board.last()}, "usb-9");
+    QVERIFY(!joinPoints(tail[0], tail[1]));
+  }
+  void usbWindowRecordsLiveAndMergesArchive() {
     QTemporaryDir dir;
     qputenv("ALLPOWERS_DATA_DIR", dir.path().toUtf8());
     const auto restore =
         qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    // The retained board archive must appear immediately, before another dump.
+    const auto now = QDateTime::currentSecsSinceEpoch();
+    HistoryPoint old;
+    old.address = "usb-board:R2500-000000000001";
+    old.session = "old-board-session";
+    old.wall = now - 300;
+    old.tick = 10;
+    old.stride = 60;
+    old.data.fresh = 1;
+    old.data.known = 7;
+    old.data.soc = 60;
+    old.data.output_w = 120;
+    {
+      HistoryStore store(dir.filePath("history.sqlite3"));
+      QVERIFY(store.importPoints({old}, now));
+    }
     auto *io = new FakeUsbChannel;
     auto *usb = new UsbTransport(nullptr, false, io, fakeUsbPorts);
     MonitorWindow window(false, nullptr, usb);
@@ -227,12 +342,41 @@ private slots:
     window.findChild<QButtonGroup *>()->button(1)->click();
     auto *scope = window.findChild<QComboBox *>("historySource");
     QVERIFY(scope->isVisible());
-    usb->requestHistory();
-    io->feed("{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
-             "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
-             "\"crc\":3397945926}\n{\"history_dump_done\":true}\n");
+    QCOMPARE(scope->currentIndex(), 0);
+    auto hasOldArchive = [&] {
+      const auto &shown = window.historyChart()->points();
+      return std::any_of(shown.cbegin(), shown.cend(), [&](const auto &p) {
+        return p.address == old.address && p.wall == old.wall;
+      });
+    };
+    QTRY_VERIFY(hasOldArchive());
+    QTRY_VERIFY(window.historyChart()->points().size() >= 2);
+    QTRY_VERIFY(io->writes.contains("HISTORY-READ 1 1\n")); // Automatic archive read.
+    const QByteArray dump =
+        "{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
+        "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+        "\"crc\":3397945926}\n{\"history_dump_done\":true}\n";
+    io->feed(dump);
+    QTRY_COMPARE(window.diagnostics()["history"].toObject()["usb_minutes"].toInt(), 2);
+    QVERIFY(hasOldArchive());
+    QVERIFY(window.findChild<QLabel *>("usbHistoryNote")->text().contains("2"));
     scope->setCurrentIndex(1);
-    QTRY_COMPARE(window.diagnostics()["history"].toObject()["usb_minutes"].toInt(), 1);
+    QTRY_COMPARE(window.historyChart()->points().size(), 2);
+    scope->setCurrentIndex(0);
+    QTRY_VERIFY(hasOldArchive());
+    QVERIFY(std::any_of(window.historyChart()->points().cbegin(),
+                        window.historyChart()->points().cend(),
+                        [](const auto &p) { return !p.address.startsWith("usb-board:"); }));
+    usb->requestHistory();
+    io->feed(dump);
+    QTRY_COMPARE(window.diagnostics()["history"].toObject()["usb_minutes"].toInt(), 2);
+    const auto csvPath = dir.filePath("combined.csv");
+    QVERIFY(exportHistoryCsv(window.historyChart()->points(), csvPath));
+    QFile csv(csvPath);
+    QVERIFY(csv.open(QIODevice::ReadOnly));
+    const auto exported = csv.readAll();
+    QVERIFY(exported.contains("usb-board:R2500-000000000001"));
+    QVERIFY(exported.contains("02:00:00:00:00:03"));
     QTRY_VERIFY(window.findChild<QPushButton *>("usbHistoryRead")->isVisible());
     if (!shots.isEmpty()) {
       window.grab().save(QDir(shots).filePath("usb-history.png"));
@@ -243,6 +387,8 @@ private slots:
       QTest::qWait(30);
       window.grab().save(QDir(shots).filePath("usb-diagnostics.png"));
     }
+    usb->resume("R2500-000000000002", {}, 0);
+    QTRY_VERIFY(!hasOldArchive()); // Switching boards must remove the prior overlay.
     window.close();
     QVERIFY(!usb->active());
     QVERIFY(!io->writes.contains("SELECT"));

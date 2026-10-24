@@ -112,10 +112,10 @@ void HistoryChart::renderBase(QPainter &painter) {
   painter.save();
   painter.setClipRect(r.adjusted(-1, -1, 1, 1));
   for (int i = 1; i < points_.size(); ++i) {
-    auto p = points_[i];
+    auto p = points_.at(i);
     if (p.wall < end_ - span_ || p.wall > end_)
       continue;
-    int change = sourceChange(points_[i - 1], p);
+    int change = sourceChange(points_.at(i - 1), p);
     if (change) {
       painter.setPen(QPen(change == 1 ? QColor("#ff6f7c") : QColor("#54e0aa"), 1, Qt::DashLine));
       painter.drawLine(QPointF(xAt(p.wall), r.top()), QPointF(xAt(p.wall), r.bottom()));
@@ -246,7 +246,10 @@ void HistoryChart::paintEvent(QPaintEvent *) {
                    : it->data.source == 1 ? "Аккумулятор"
                                           : "Источник неизвестен",
                    it->data.fresh ? "Актуальные данные" : "Разрыв данных");
-      QRectF box(r.left() + 12, r.top() + 12, qMin(420., r.width() - 24), 70);
+      const bool archive = it->address.startsWith("usb-board:");
+      if (archive)
+        text += "\nАрхив USB-платы · станция не указана";
+      QRectF box(r.left() + 12, r.top() + 12, qMin(420., r.width() - 24), archive ? 90 : 70);
       painter.fillRect(box, QColor("#23344c"));
       painter.setPen(QColor("#eff5ff"));
       painter.drawText(box.adjusted(10, 6, -10, -6), text);

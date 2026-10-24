@@ -35,6 +35,9 @@ protected:
 public:
   explicit HistoryChart(QWidget *parent = nullptr);
   void setPoints(const HistoryPoints &, qint64 now);
+  const HistoryPoints &points() const {
+    return points_;
+  }
   double renderMs() const {
     return lastRenderMs_;
   }

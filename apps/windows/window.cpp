@@ -274,12 +274,10 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       const auto id = ble->endpoint();
       if (id != usbEndpoint) {
         usbEndpoint = id;
-        if (historySource->currentIndex() == 1) {
-          localPoints.clear();
-          points.clear();
-          chart->setPoints({}, QDateTime::currentSecsSinceEpoch());
-          emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
-        }
+        usbPoints.clear();
+        refreshHistory();
+        if (!id.isEmpty())
+          emit historyLoad("usb-board:" + id, QDateTime::currentSecsSinceEpoch());
       }
       const auto board = info["usb_board"].toString();
       if (!id.isEmpty() && !board.isEmpty()) {
@@ -297,7 +295,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       localPoints.clear();
       points.clear();
       historyBusy = false;
-      emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
+      refreshHistory();
+      emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
     }
     if (ble->remote() && !ble->address().isEmpty()) {
       const auto info = ble->diagnostics();
@@ -360,21 +359,22 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(history, &HistoryWorker::loaded, this,
           [this](QString address, HistoryPoints values, QJsonObject stats) {
             historyBusy = false;
-            if (address != historyKey())
+            const bool boardArchive = ble->usb() && !ble->endpoint().isEmpty() &&
+                                      address == "usb-board:" + ble->endpoint();
+            if (!boardArchive && address != selectedAddress)
               return;
             historyStats = stats;
             if (offline)
               return;
-            localPoints = values;
-            points = ble->remote() ? mergeHistory(localPoints, servicePoints) : values;
-            chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
-            exportButton->setEnabled(!points.isEmpty());
+            if (boardArchive)
+              usbPoints = values;
+            else
+              localPoints = values;
+            refreshHistory();
           });
   connect(ble, &TelemetryTransport::historyReady, this, [this](HistoryPoints values) {
     servicePoints = values;
-    points = mergeHistory(localPoints, servicePoints);
-    chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
-    exportButton->setEnabled(!points.isEmpty());
+    refreshHistory();
   });
   connect(ble, &TelemetryTransport::logReceived, this,
           [this](QString message) { appendLog(message); });
@@ -428,6 +428,21 @@ QString MonitorWindow::historyKey() const {
   return ble->usb() && historySource->currentIndex() == 1 ? "usb-board:" + ble->endpoint()
                                                           : selectedAddress;
 }
+void MonitorWindow::refreshHistory() {
+  points = ble->remote() ? mergeHistory(localPoints, servicePoints) : localPoints;
+  if (ble->usb()) {
+    const auto boot = ble->diagnostics()["history_session"].toInteger();
+    points = historySource->currentIndex() == 1
+                 ? usbPoints
+                 : mergeUsbHistory(points, usbPoints,
+                                   ble->connected() ? QString("usb-%1").arg(boot) : QString{});
+  }
+  chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
+  exportButton->setEnabled(!points.isEmpty());
+  usbHistoryNote->setVisible(ble->usb());
+  usbHistoryNote->setText(
+      QString("Архив USB: %1 точек · станция в архиве не указана").arg(usbPoints.size()));
+}
 void MonitorWindow::changeTransport() {
   auto *router = qobject_cast<TransportRouter *>(ble);
   if (!router)
@@ -438,6 +453,8 @@ void MonitorWindow::changeTransport() {
   lastPacket.clear();
   localPoints.clear();
   servicePoints.clear();
+  usbPoints.clear();
+  usbEndpoint.clear();
   points.clear();
   lastSample = -1;
   historyBusy = false;
@@ -559,19 +576,22 @@ QWidget *MonitorWindow::historyPage() {
   usbTools->setContentsMargins(0, 0, 0, 0);
   historySource = new Select;
   historySource->setObjectName("historySource");
-  historySource->addItems({"История станции", "Архив USB-платы · станция не указана"});
+  historySource->addItems({"История станции + USB", "Только архив USB-платы"});
   usbTools->addWidget(historySource, 1);
   auto *readBoard = new QPushButton("Считать с платы");
   readBoard->setObjectName("usbHistoryRead");
   usbTools->addWidget(readBoard);
   layout->addWidget(usbHistoryControls);
   usbHistoryControls->hide();
-  historySource->setToolTip("Старый формат архива платы не хранит имя станции. Он показывается "
-                            "отдельно от истории станции.");
+  historySource->setToolTip("Архив платы автоматически дополняет основной график. При пересечении "
+                            "приоритет у записей приложения. Адрес станции в архиве не хранится.");
+  usbHistoryNote = text("", 12, "#819cc1");
+  usbHistoryNote->setObjectName("usbHistoryNote");
+  usbHistoryNote->setWordWrap(true);
+  usbHistoryNote->hide();
+  layout->addWidget(usbHistoryNote);
   connect(historySource, &QComboBox::currentIndexChanged, this, [this] {
-    localPoints.clear();
-    points.clear();
-    chart->setPoints({}, QDateTime::currentSecsSinceEpoch());
+    refreshHistory();
     emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
   });
   connect(readBoard, &QPushButton::clicked, this, [this] { ble->requestHistory(); });
@@ -612,10 +632,7 @@ QWidget *MonitorWindow::historyPage() {
     auto path = QFileDialog::getSaveFileName(
         this, "Экспорт истории", QDir::homePath() + "/allpowers-history.csv", "CSV (*.csv)");
     if (!path.isEmpty()) {
-      if (ble->remote())
-        emit historyExportPoints(points, path);
-      else
-        emit historyExport(historyKey(), QDateTime::currentSecsSinceEpoch(), path);
+      emit historyExportPoints(points, path);
     }
   });
   return page;
@@ -900,6 +917,8 @@ QJsonObject MonitorWindow::diagnostics() const {
   info["last_packet"] = lastPacket;
   info["chart_render_ms"] = chart->renderMs();
   info["chart_vertices"] = chart->vertices();
+  info["chart_points"] = points.size();
+  info["usb_archive_points"] = usbPoints.size();
   info["history_worker_busy"] = historyBusy;
   info["uptime_seconds"] = uptime.elapsed() / 1000.;
   return info;

@@ -7,11 +7,17 @@ native Windows monitor. [Русская версия](README.ru.md).
 | --- | --- | --- |
 | Waveshare ESP32-S3-LCD-1.47 | BLE Central → USB Device | HID UPS, display, history, diagnostics, RGB |
 | Pocket-Dongle-S3 0.96 N16R8 | BLE Central → USB Device | HID UPS, compact display, history, diagnostics |
-| Windows Monitor | Computer Bluetooth / Qt WinRT | Telemetry, graphs, diagnostics; optional experimental Windows UPS integration |
+| Windows Monitor | Computer Bluetooth / Qt WinRT or USB CDC board | Telemetry, graphs, diagnostics; optional experimental Windows UPS integration |
 
 The core recognizes 17 model names and three protocol families. USB UPS reporting
 is implemented for R2500 V2; other profiles expose only their known fields.
 Some stations accept one BLE client: disconnect a board before connecting the PC.
+Alternatively select **USB · Waveshare / Pocket** to read the board's connection.
+The app remembers the transport, USB serial and Bluetooth station separately.
+USB disconnect closes only the PC port. Live readings share charts, local history
+and CSV; board diagnostics appear in the table. No flashing or extra driver is
+required. The old board archive has no station identity and is viewed separately.
+See [USB mode](docs/usb-monitor.md).
 
 ![Windows monitor with synthetic data](docs/images/windows-monitor.png)
 
@@ -25,6 +31,7 @@ pauses following; “К новым записям” resumes it. The view retain
 the disk log rotates independently.
 Current diagnostic state is a grouped parameter/value table; full JSON can still
 be copied for troubleshooting.
+Experimental driver management is inside Diagnostics → **ИБП Windows…**.
 On normal startup, the monitor automatically searches for and connects to the
 last saved station, using its Bluetooth address and saved protocol profile.
 If it is unavailable, discovery is retried; Disconnect cancels waiting/retries.

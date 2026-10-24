@@ -35,6 +35,7 @@ public:
   QString error() const;
   void newSession();
   bool record(const QString &, const ap_snapshot &, qint64 wall, qint64 tick);
+  bool importPoints(const HistoryPoints &, qint64 now);
   HistoryPoints points(const QString &, qint64 now) const;
   QJsonObject stats() const;
   bool exportCsv(const QString &, qint64, const QString &) const;
@@ -50,6 +51,7 @@ public:
   ~HistoryWorker() override;
 public slots:
   void exportPoints(HistoryPoints points, QString path);
+  void importPoints(HistoryPoints points, qint64 now);
   void open(const QString &path);
   void newSession();
   void sample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick);

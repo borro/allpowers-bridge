@@ -2,6 +2,8 @@
 #include "ipc.h"
 #include "service_client.h"
 #include "service_host.h"
+#include "transport_router.h"
+#include "usb_transport.h"
 #include "window.h"
 #include <QAbstractItemView>
 #include <QApplication>
@@ -24,6 +26,60 @@
 #include <QTextBlock>
 #include <QUuid>
 #include <QWheelEvent>
+
+class FakeUsbChannel : public UsbChannel {
+public:
+  QByteArray writes;
+  QString openedPort;
+  int closes = 0;
+  void open(const QString &port) override {
+    openedPort = port;
+    emit opened();
+  }
+  void close() override {
+    closes++;
+  }
+  void write(const QByteArray &data) override {
+    writes += data;
+  }
+  void feed(const QByteArray &data) {
+    emit received(data);
+  }
+};
+static QList<UsbPort> fakeUsbPorts() {
+  return {{"R2500-000000000001", "COM987", "Synthetic Waveshare USB"}};
+}
+static QByteArray usbCycle(const QString &board = "waveshare-147", int frames = 10) {
+  const QList<QJsonObject> rows = {
+      {{"adapter", "UPSDEV"},
+       {"version", "R"},
+       {"fresh", true},
+       {"gatt_connected", true},
+       {"soc", 50},
+       {"charge_w", 0},
+       {"output_w", 150},
+       {"runtime_s", 1800},
+       {"source", "battery"},
+       {"source_raw", 65535},
+       {"ac_output", true},
+       {"usb_output", false},
+       {"dc_output", false},
+       {"valid_frames", frames},
+       {"invalid_frames", 0}},
+      {{"station_name", "AP R2500 V2.0"}, {"station_address", "02:00:00:00:00:03"}},
+      {{"telemetry_known", 895}, {"protocol", 3}, {"ups_source_known", true}},
+      {{"graph_live_latest_s", 120}},
+      {{"history_ready", true},
+       {"history_records", 1},
+       {"history_latest", 1},
+       {"history_session", 7},
+       {"history_clock", false}},
+      {{"board", board}}};
+  QByteArray data;
+  for (const auto &o : rows)
+    data += QJsonDocument(o).toJson(QJsonDocument::Compact) + '\n';
+  return data;
+}
 
 class MonitorTests : public QObject {
   Q_OBJECT
@@ -50,6 +106,203 @@ private slots:
     session.reset(3);
     QVERIFY(!session.receive(token, QByteArray::fromHex("a565b1000108010264000000e696006f"), 300));
     QVERIFY(!session.snapshot(301).main_seen);
+  }
+  void usbTelemetryArchiveAndStaleData() {
+    qint64 now = 0;
+    auto *io = new FakeUsbChannel;
+    UsbTransport usb(nullptr, false, io, fakeUsbPorts, [&] { return now; });
+    QSignalSpy data(&usb, &TelemetryTransport::snapshot),
+        archive(&usb, &TelemetryTransport::historyImported);
+    usb.resume("R2500-000000000001", {}, 0);
+    QCOMPARE(io->openedPort, QString("COM987"));
+    auto cycle = usbCycle();
+    for (char c : cycle)
+      io->feed(QByteArray(1, c)); // Arbitrary USB packet fragmentation.
+    QVERIFY(usb.connected());
+    QCOMPARE(usb.address(), QString("02:00:00:00:00:03"));
+    auto snapshot = qvariant_cast<ap_snapshot>(data.last()[0]);
+    QCOMPARE(snapshot.soc, 50u);
+    QCOMPARE(snapshot.output_w, 150u);
+    QCOMPARE(snapshot.source, 1u);
+    QVERIFY(snapshot.fresh);
+    QVERIFY(snapshot.ac_output);
+    usb.requestHistory();
+    QVERIFY(io->writes.contains("HISTORY-READ 1 1\n"));
+    io->feed("{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
+             "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+             "\"crc\":3397945926}\n");
+    io->feed("{\"history_record\":true,\"sequence\":1,\"session\":8,\"uptime_s\":100,\"epoch\":0,"
+             "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+             "\"crc\":3055024743}\n");
+    io->feed("{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
+             "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+             "\"crc\":0}\n{\"history_dump_done\":true}\n");
+    QCOMPARE(archive.size(), 1);
+    auto points = qvariant_cast<HistoryPoints>(archive.first()[0]);
+    QCOMPARE(points.size(), 1);
+    QCOMPARE(points.first().address, QString("usb-board:R2500-000000000001"));
+    QVERIFY(qAbs(points.first().wall - (QDateTime::currentSecsSinceEpoch() - 20)) <= 1);
+    QCOMPARE(usb.diagnostics()["usb_history_undated"].toInt(), 1);
+    QCOMPARE(usb.diagnostics()["usb_history_bad"].toInt(), 1);
+    QTemporaryDir dir;
+    HistoryStore store(dir.filePath("history.sqlite3"));
+    QVERIFY(store.importPoints(points, QDateTime::currentSecsSinceEpoch()));
+    QVERIFY(store.importPoints(points, QDateTime::currentSecsSinceEpoch()));
+    QCOMPARE(store.stats()["usb_minutes"].toInt(), 1);
+    auto shifted = points;
+    shifted.first().wall -= 60;
+    QVERIFY(store.importPoints(shifted, QDateTime::currentSecsSinceEpoch()));
+    QCOMPARE(store.stats()["usb_minutes"].toInt(), 1);
+    QCOMPARE(store.stats()["minutes"].toInt(), 0);
+    QCOMPARE(store.points(usb.address(), QDateTime::currentSecsSinceEpoch()).size(), 0);
+    for (now = 1000; now <= 16000; now += 1000)
+      io->feed(cycle);
+    snapshot = qvariant_cast<ap_snapshot>(data.last()[0]);
+    QVERIFY(!snapshot.fresh);
+    io->feed(usbCycle("pocket-096", 11));
+    snapshot = qvariant_cast<ap_snapshot>(data.last()[0]);
+    QVERIFY(snapshot.fresh);
+    QCOMPARE(usb.diagnostics()["usb_board"].toString(), QString("pocket-096"));
+    io->feed("broken json\n" + QByteArray(10000, 'x') + '\n');
+    QVERIFY(usb.diagnostics()["usb_bad_lines"].toInt() >= 2);
+    io->feed("{\"diagnostic\":true,\"rows\":[{\"label\":\"HEAP\",\"value\":\"123456\"}]}\n");
+    QCOMPARE(usb.diagnostics()["usb_diagnostics"].toObject()["HEAP"].toString(), QString("123456"));
+    now += 7000;
+    QTRY_VERIFY(!usb.connected());
+    usb.stop();
+    QVERIFY(!usb.active());
+    QVERIFY(!io->writes.contains("BOOT"));
+    QVERIFY(!io->writes.contains("TIME "));
+    QVERIFY(!io->writes.contains("SELECT"));
+    QVERIFY(!io->writes.contains("RETRY"));
+  }
+  void transportSelectionAndDriverPlacement() {
+    QTemporaryDir dir;
+    qputenv("ALLPOWERS_DATA_DIR", dir.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto factory = [](const QString &mode, QObject *parent) -> TelemetryTransport * {
+      if (mode == "usb")
+        return new UsbTransport(parent, true);
+      return new BleTransport(parent, true, false);
+    };
+    auto *router = new TransportRouter(nullptr, true, false, "bluetooth", factory);
+    MonitorWindow window(true, nullptr, router);
+    window.show();
+    auto *mode = window.findChild<QComboBox *>("transportMode");
+    QVERIFY(mode->isEnabled());
+    mode->setCurrentIndex(1);
+    QVERIFY(router->usb());
+    QVERIFY(!window.findChild<QComboBox *>("profile")->isVisible());
+    QVERIFY(window.findChild<QComboBox *>("historySource")->isVisible() ==
+            (window.findChild<QStackedWidget *>()->currentIndex() == 1));
+    auto *driver = window.findChild<QPushButton *>("integrationManagement");
+    QVERIFY(driver);
+    QVERIFY(!driver->isVisible());
+    window.findChild<QButtonGroup *>()->button(2)->click();
+    QVERIFY(driver->isVisible());
+    mode->setCurrentIndex(0);
+    QVERIFY(!router->usb());
+    window.close();
+  }
+  void usbWindowRecordsLiveAndSeparatesArchive() {
+    QTemporaryDir dir;
+    qputenv("ALLPOWERS_DATA_DIR", dir.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto *io = new FakeUsbChannel;
+    auto *usb = new UsbTransport(nullptr, false, io, fakeUsbPorts);
+    MonitorWindow window(false, nullptr, usb);
+    window.show();
+    usb->resume("R2500-000000000001", {}, 0);
+    io->feed(usbCycle());
+    QTRY_COMPARE(window.findChild<QLabel *>("chargeValue")->text(), QString("50%"));
+    const auto shots = qEnvironmentVariable("ALLPOWERS_TEST_SHOTS");
+    if (!shots.isEmpty()) {
+      QDir().mkpath(shots);
+      QTest::qWait(30);
+      window.grab().save(QDir(shots).filePath("usb-overview.png"));
+    }
+    QTRY_VERIFY(window.diagnostics()["history"].toObject()["live"].toInt() > 0);
+    window.findChild<QButtonGroup *>()->button(1)->click();
+    auto *scope = window.findChild<QComboBox *>("historySource");
+    QVERIFY(scope->isVisible());
+    usb->requestHistory();
+    io->feed("{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
+             "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+             "\"crc\":3397945926}\n{\"history_dump_done\":true}\n");
+    scope->setCurrentIndex(1);
+    QTRY_COMPARE(window.diagnostics()["history"].toObject()["usb_minutes"].toInt(), 1);
+    QTRY_VERIFY(window.findChild<QPushButton *>("usbHistoryRead")->isVisible());
+    if (!shots.isEmpty()) {
+      window.grab().save(QDir(shots).filePath("usb-history.png"));
+      window.findChild<QButtonGroup *>()->button(2)->click();
+      io->feed("{\"diagnostic\":true,\"rows\":[{\"label\":\"HEAP\",\"value\":\"123456\"},{"
+               "\"label\":\"USB\",\"value\":\"HOST\"}]}\n");
+      window.findChild<QTabWidget *>("diagnosticTabs")->setCurrentIndex(1);
+      QTest::qWait(30);
+      window.grab().save(QDir(shots).filePath("usb-diagnostics.png"));
+    }
+    window.close();
+    QVERIFY(!usb->active());
+    QVERIFY(!io->writes.contains("SELECT"));
+    QVERIFY(!io->writes.contains("BOOT"));
+  }
+  void savedUsbResumesWithoutComputerBluetooth() {
+    QTemporaryDir dir;
+    qputenv("ALLPOWERS_DATA_DIR", dir.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    QFile settings(dir.filePath("settings.json"));
+    QVERIFY(settings.open(QIODevice::WriteOnly));
+    settings.write("{\"transport\":\"usb\",\"usb_serial\":\"R2500-000000000001\",\"address\":\"02:"
+                   "00:00:00:00:02\"}");
+    settings.close();
+    int bluetoothCreates = 0;
+    FakeUsbChannel *io = nullptr;
+    auto factory = [&](const QString &mode, QObject *parent) -> TelemetryTransport * {
+      if (mode == "usb") {
+        io = new FakeUsbChannel;
+        return new UsbTransport(parent, false, io, fakeUsbPorts);
+      }
+      bluetoothCreates++;
+      return new BleTransport(parent, true, false);
+    };
+    auto *router = new TransportRouter(nullptr, false, false, "usb", factory);
+    MonitorWindow window(false, nullptr, router);
+    window.show();
+    QTRY_VERIFY(io && !io->openedPort.isEmpty());
+    QCOMPARE(bluetoothCreates, 0);
+    QVERIFY(router->usb());
+    io->feed(usbCycle("pocket-096"));
+    QTRY_COMPARE(window.diagnostics()["address"].toString(), QString("02:00:00:00:00:03"));
+    window.close();
+  }
+  void switchingServiceViewerToUsbDoesNotStopSystemConnection() {
+    QTemporaryDir ui, service;
+    qputenv("ALLPOWERS_DATA_DIR", ui.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    const auto pipe = "AllpowersTest-" + QUuid::createUuid().toString(QUuid::Id128);
+    ServiceHost host({service.path(), pipe, true, false});
+    QVERIFY(host.start());
+    auto factory = [&](const QString &mode, QObject *parent) -> TelemetryTransport * {
+      if (mode == "usb")
+        return new UsbTransport(parent, true);
+      return new ServiceTransport(parent, pipe, false);
+    };
+    auto *router = new TransportRouter(nullptr, false, true, "bluetooth", factory);
+    MonitorWindow window(false, nullptr, router);
+    window.show();
+    QTRY_VERIFY(router->available());
+    router->resume("02:00:00:00:00:03", "Synthetic station", 3);
+    QTRY_VERIFY(router->active());
+    window.findChild<QComboBox *>("transportMode")->setCurrentIndex(1);
+    QVERIFY(router->usb());
+    QTest::qWait(30);
+    QVERIFY(host.diagnostics()["diagnostics"].toObject()["active"].toBool());
+    window.close();
+    QVERIFY(host.diagnostics()["diagnostics"].toObject()["active"].toBool());
   }
   void ipcRejectsInvalidAndSplitFrames() {
     auto bytes = Ipc::frame({{"v", 1}, {"op", "state"}});

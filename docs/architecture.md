@@ -4,6 +4,7 @@
 ALLPOWERS BLE GATT
     ├── ESP32 BLE transport ── portable C++ core ── USB HID UPS + display/history
     └── Qt Bluetooth/WinRT ─── same C++ core ────── native Qt desktop/history
+USB board CDC ── native serial worker ── TelemetryTransport ── same desktop/history
 ```
 
 All product code and ABI tests are C++17. CMake/Ninja, CTest and CPack own the
@@ -33,6 +34,13 @@ IPC and never acquire a second BLE connection. The kernel independently expires
 updates at 15 seconds, without inventing critical/discharging data on loss.
 This path remains experimental pending native VM and service BLE tests. See
 [Windows UPS](windows-ups.md) for implementation, permissions and test boundaries.
+
+TelemetryTransport abstracts BLE, service IPC and USB. USB I/O uses a separate
+worker with bounded reads and connection generations. Discovery checks the USB
+identity, then validates UPSDEV and the board profile. It never sends boot, reset,
+time or station-selection commands. The archive's `usb_minutes` table is separate
+from MAC-keyed station history and its retention limits. Undated records from
+previous boots do not receive invented timestamps. [USB details](usb-monitor.md).
 
 Qt widgets and BLE callbacks use the GUI event loop. SQLite, CSV export and
 rotating logs live in a dedicated worker thread; at most one telemetry-history

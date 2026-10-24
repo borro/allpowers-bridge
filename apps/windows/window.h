@@ -16,21 +16,22 @@
 QString monitorDataDirectory();
 class MonitorWindow : public QMainWindow {
   Q_OBJECT
-  BleTransport *ble;
+  TelemetryTransport *ble;
   QThread historyThread;
   HistoryWorker *history;
   HistoryChart *chart;
-  QComboBox *devices, *profile, *horizon;
+  QComboBox *devices, *profile, *horizon, *transportMode, *historySource;
   QCheckBox *stationsOnly, *logScale;
   QPushButton *scanButton, *connectButton, *exportButton, *liveButton;
   QLabel *status, *soc, *input, *output, *source, *runtime, *freshness, *outputAC, *outputUSB,
-      *outputDC;
+      *outputDC, *transportNote, *footer;
   QStackedWidget *pages;
+  QWidget *usbHistoryControls;
   QTableWidget *technical;
   LiveLog *eventLog;
   QJsonObject settings, historyStats;
   QMap<QString, QJsonObject> discovered;
-  QString selectedAddress, lastPacket, historyError;
+  QString selectedAddress, lastPacket, historyError, usbEndpoint;
   QString dataPath;
   ap_snapshot last{};
   HistoryPoints points;
@@ -48,6 +49,8 @@ class MonitorWindow : public QMainWindow {
   void appendLog(const QString &message);
   void showIntegration();
   void saveSettings();
+  void changeTransport();
+  QString historyKey() const;
   QWidget *overviewPage();
   QWidget *historyPage();
   QWidget *diagnosticPage();
@@ -58,7 +61,7 @@ protected:
 public:
   // An injected transport becomes a child of the window (used by offline tests).
   explicit MonitorWindow(bool offline = false, QWidget *parent = nullptr,
-                         BleTransport *transport = nullptr);
+                         TelemetryTransport *transport = nullptr);
   ~MonitorWindow() override;
   void loadDemo();
   HistoryChart *historyChart() const {
@@ -72,6 +75,7 @@ signals:
   void historyLoad(QString address, qint64 now);
   void historyExport(QString address, qint64 now, QString path);
   void historyExportPoints(HistoryPoints points, QString path);
+  void historyImport(HistoryPoints points, qint64 now);
   void historyLog(QString message);
   void settingsSave(QString path, QJsonObject settings);
 };

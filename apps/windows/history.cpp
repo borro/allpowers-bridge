@@ -59,7 +59,7 @@ HistoryStore::HistoryStore(const QString &path, int live, int minutes)
   q.exec("PRAGMA synchronous=NORMAL");
   q.exec("PRAGMA wal_autocheckpoint=64");
   q.exec("PRAGMA journal_size_limit=1048576");
-  for (const QString &table : {QString("live"), QString("minutes")}) {
+  for (const QString &table : {QString("live"), QString("minutes"), QString("usb_minutes")}) {
     QString key = table == "live" ? "wall" : "bucket";
     if (!q.exec("CREATE TABLE IF NOT EXISTS " + table +
                 " (address TEXT NOT NULL,wall INTEGER NOT NULL,tick INTEGER NOT NULL,session TEXT "
@@ -72,6 +72,11 @@ HistoryStore::HistoryStore(const QString &path, int live, int minutes)
       return;
     }
     q.exec("CREATE INDEX IF NOT EXISTS " + table + "_wall ON " + table + "(wall)");
+  }
+  if (!q.exec("CREATE UNIQUE INDEX IF NOT EXISTS usb_minutes_record ON "
+              "usb_minutes(address,session,tick)")) {
+    db.close();
+    return;
   }
   newSession();
 }
@@ -120,10 +125,57 @@ bool HistoryStore::record(const QString &address, const ap_snapshot &s, qint64 w
     lastKey = key;
   return ok;
 }
+bool HistoryStore::importPoints(const HistoryPoints &points, qint64 now) {
+  if (!valid() || points.size() > 2880 || !db.transaction())
+    return false;
+  bool ok = true;
+  for (const auto &p : points) {
+    if (!p.address.startsWith("usb-board:") || p.stride != 60 || p.wall < now - 172800 ||
+        p.wall > now + 2 || p.data.soc > 100) {
+      ok = false;
+      break;
+    }
+    const auto &s = p.data;
+    QSqlQuery q(db);
+    q.prepare("INSERT OR IGNORE INTO usb_minutes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    for (const auto &v :
+         QVariantList{p.address, p.wall, p.tick, p.session, int(s.fresh), int(s.known), int(s.soc),
+                      int(s.input_w), int(s.output_w), int(s.source), int(s.ac_output),
+                      int(s.usb_output), int(s.dc_output), 60, p.wall / 60})
+      q.addBindValue(v);
+    if (!q.exec()) {
+      ok = false;
+      break;
+    }
+  }
+  QSqlQuery prune(db);
+  prune.prepare("DELETE FROM usb_minutes WHERE wall < ?");
+  prune.addBindValue(now - 172800);
+  ok = prune.exec() && ok;
+  prune.prepare(
+      "DELETE FROM usb_minutes WHERE rowid IN (SELECT rowid FROM usb_minutes ORDER BY wall DESC "
+      "LIMIT -1 OFFSET ?)");
+  prune.addBindValue(minuteLimit);
+  ok = prune.exec() && ok;
+  if (ok && db.commit())
+    return true;
+  db.rollback();
+  return false;
+}
+void HistoryWorker::importPoints(HistoryPoints points, qint64 now) {
+  if (!store || !store->importPoints(points, now)) {
+    emit problem("Не удалось сохранить архив USB-платы");
+    return;
+  }
+  if (!points.isEmpty())
+    load(points.first().address, now);
+}
 HistoryPoints HistoryStore::points(const QString &address, qint64 now) const {
   HistoryPoints output;
   QSet<qint64> buckets;
-  for (const QString &table : {QString("live"), QString("minutes")}) {
+  const QStringList tables = address.startsWith("usb-board:") ? QStringList{"usb_minutes"}
+                                                              : QStringList{"live", "minutes"};
+  for (const QString &table : tables) {
     QSqlQuery q(db);
     q.prepare("SELECT * FROM " + table + " WHERE address=? AND wall BETWEEN ? AND ? ORDER BY wall");
     q.addBindValue(address);
@@ -132,7 +184,7 @@ HistoryPoints HistoryStore::points(const QString &address, qint64 now) const {
     q.exec();
     while (q.next()) {
       auto bucket = q.value(14).toLongLong();
-      if (table == "minutes" && buckets.contains(bucket))
+      if (table != "live" && buckets.contains(bucket))
         continue;
       if (table == "live")
         buckets.insert(bucket);
@@ -160,7 +212,7 @@ HistoryPoints HistoryStore::points(const QString &address, qint64 now) const {
 }
 QJsonObject HistoryStore::stats() const {
   QJsonObject result;
-  for (const QString &t : {QString("live"), QString("minutes")}) {
+  for (const QString &t : {QString("live"), QString("minutes"), QString("usb_minutes")}) {
     QSqlQuery q(db);
     q.exec("SELECT COUNT(*) FROM " + t);
     q.next();

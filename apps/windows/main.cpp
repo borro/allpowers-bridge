@@ -2,6 +2,7 @@
 #include "integration.h"
 #include "notices.h"
 #include "service_host.h"
+#include "usb_transport.h"
 #include "window.h"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -54,9 +55,65 @@ int main(int argc, char **argv) {
        {"verify-station", "Verify saved station telemetry, then disconnect", "seconds"},
        {"test-seconds", "Close automatically", "seconds"},
        {"scan-seconds", "Scan BLE without making a connection", "seconds"},
+       {"scan-usb", "List supported USB boards without opening ports"},
+       {"verify-usb", "Read telemetry from an explicitly selected USB board", "seconds"},
+       {"usb-device", "Exact USB serial for the manual USB verification", "serial"},
+       {"usb-board", "Expected board profile for manual verification", "board"},
        {"battery-probe", "Read native battery IOCTLs/power events without BLE or mutations",
         "seconds"}});
   parser.process(app);
+  if (parser.isSet("scan-usb")) {
+    if (!parser.isSet("report"))
+      return 2;
+    QJsonArray rows;
+    for (const auto &p : allpowersUsbPorts())
+      rows.append(
+          QJsonObject{{"serial", p.serial}, {"port", p.port}, {"description", p.description}});
+    QFile out(parser.value("report"));
+    if (!out.open(QIODevice::WriteOnly))
+      return 3;
+    out.write(QJsonDocument(QJsonObject{{"boards", rows}, {"bluetooth_used", false}}).toJson());
+    return 0;
+  }
+  if (parser.isSet("verify-usb")) {
+    const int seconds = parser.value("verify-usb").toInt();
+    const auto serial = parser.value("usb-device"), board = parser.value("usb-board");
+    if (seconds < 5 || seconds > 120 || serial.isEmpty() || !parser.isSet("report") ||
+        (board != "waveshare-147" && board != "pocket-096"))
+      return 2;
+    UsbTransport usb(&app);
+    ap_snapshot last{};
+    int samples = 0;
+    HistoryPoints archive;
+    QObject::connect(&usb, &TelemetryTransport::snapshot, &app, [&](ap_snapshot s) {
+      last = s;
+      if (s.fresh)
+        samples++;
+    });
+    QObject::connect(&usb, &TelemetryTransport::historyImported, &app,
+                     [&](HistoryPoints p) { archive = p; });
+    usb.resume(serial, {}, 0);
+    QTimer::singleShot(seconds * 1000, &app, [&] {
+      auto report = usb.diagnostics();
+      const bool ok = usb.connected() && last.fresh && samples >= 2 && report["usb_board"] == board;
+      report["status"] = ok ? "PASS" : "FAIL";
+      report["soc"] = int(last.soc);
+      report["input_w"] = int(last.input_w);
+      report["output_w"] = int(last.output_w);
+      report["source"] = int(last.source);
+      report["fresh"] = bool(last.fresh);
+      report["samples"] = samples;
+      report["archive_points"] = archive.size();
+      report["bluetooth_used"] = false;
+      usb.stop();
+      report["port_closed_after_test"] = !usb.active();
+      QFile file(parser.value("report"));
+      const auto bytes = QJsonDocument(report).toJson();
+      const bool saved = file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+      app.exit(ok && saved ? 0 : 5);
+    });
+    return app.exec();
+  }
   if (parser.isSet("battery-probe"))
     return runBatteryProbe(parser.value("report"), parser.value("battery-probe").toInt());
   if (parser.isSet("export-licenses"))

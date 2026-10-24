@@ -31,6 +31,21 @@ rebuild/test the portable core without .git or Python, checking its saved versio
 | Static Qt UI/history/graph tests, isolated EXE, CPack/source-kit rebuild | Passed |
 | New CMake Linux firmware orchestration | Not completed: SDK index HEAD request to espressif.github.io timed out |
 
+## USB monitor — 2026-10-24
+
+USB tests cover both profiles with fake channels/sanitized records: fragmentation,
+malformed/oversize lines, known-field/source mapping, stale counters, CRC rejection,
+unknown dates, archive deduplication and separate station/archive retention.
+UI tests cover live recording, archive selection, USB/Bluetooth choice and driver
+management being located only in Diagnostics.
+
+A manual USB-only test on the registered Waveshare read fresh telemetry for 25s:
+100%, 0 W charging input, 138 W output and mains. It imported 19 archive points;
+214 undated records from previous boots were skipped. USB/CRC error counts were
+zero, the board retained BLE and the COM port closed afterwards. Computer Bluetooth
+was not used; no firmware, clock or selection command was sent. Pocket was not
+connected: its hardware path remains unverified beyond protocol tests.
+
 ## Experimental Windows UPS work — offline boundary
 
 The new UPS mapper and the exact kernel state validator/cache are tested on

@@ -2,7 +2,7 @@
 #include <QBluetoothUuid>
 
 BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots)
-    : QObject(parent), offline_(offline) {
+    : TelemetryTransport(parent), offline_(offline) {
   elapsed.start();
   lastValid.start();
   if (!offline) {

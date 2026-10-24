@@ -47,7 +47,4 @@ public:
   void start(const QString &, int) override;
   void resume(const QString &, const QString &, int) override;
   void stop() override;
-signals:
-  void historyReady(HistoryPoints points);
-  void logReceived(QString message);
 };

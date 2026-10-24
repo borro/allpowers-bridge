@@ -1,5 +1,5 @@
 #pragma once
-#include "session.h"
+#include "transport.h"
 #include <QBluetoothDeviceDiscoveryAgent>
 #include <QElapsedTimer>
 #include <QJsonObject>
@@ -9,7 +9,7 @@
 #include <QPointer>
 #include <QTimer>
 
-class BleTransport : public QObject {
+class BleTransport : public TelemetryTransport {
   Q_OBJECT
   QBluetoothDeviceDiscoveryAgent *scanner = nullptr;
   QPointer<QLowEnergyController> controller;
@@ -62,10 +62,4 @@ public slots:
   virtual void start(const QString &address, int model);
   virtual void resume(const QString &address, const QString &name, int model);
   virtual void stop();
-signals:
-  void found(QString address, QString name, int rssi, int model);
-  void stateChanged();
-  void snapshot(ap_snapshot data);
-  void packet(QString hex, bool valid);
-  void newSession();
 };

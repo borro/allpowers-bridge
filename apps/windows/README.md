@@ -14,6 +14,12 @@ Native driver behavior and real service BLE have not yet been validated. See
 [Windows UPS status and lab procedure](../../docs/windows-ups.md).
 
 Pages: telemetry, interactive history, diagnostics. Ctrl+1/2/3 switches pages;
+select Bluetooth or USB at the top. USB uses the existing Waveshare/Pocket CDC
+protocol, retains HID UPS reporting and never acquires computer Bluetooth.
+Live readings share station charts/history. Old board records have no station
+identity and are imported into a separate bounded archive view/table; corrupt or
+undated records are skipped. [USB mode](../../docs/usb-monitor.md).
+Driver management is in Diagnostics, not the main navigation.
 F5 scans. Device/profile controls explain why they are unavailable. Dropdowns
 work with mouse, arrows, Enter and Escape. Disconnect remains available while scanning.
 
@@ -26,6 +32,7 @@ session changes and clock discontinuities break the lines. CSV export is availab
 Settings, history.sqlite3 and rotating monitor.log files live in
 %LOCALAPPDATA%/AllpowersMonitor. The old monitor's JSON and SQLite schema remain
 compatible. History keeps at most 3600 live + 2880 minute points across stations
+and a separate 2880-point USB archive
 within 48 hours. All disk/history/export work runs separately from the GUI.
 
 --demo shows synthetic data using a temporary directory; it never connects BLE.

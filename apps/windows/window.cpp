@@ -3,6 +3,7 @@
 #include "integration.h"
 #include "notices.h"
 #include "service_client.h"
+#include "transport_router.h"
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
@@ -79,7 +80,7 @@ QString monitorDataDirectory() {
     base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
   return QDir(base).filePath("AllpowersMonitor");
 }
-MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *transport)
+MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport *transport)
     : QMainWindow(parent), offline(testMode) {
   qRegisterMetaType<ap_snapshot>();
   qRegisterMetaType<HistoryPoints>();
@@ -90,6 +91,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   if (file.open(QIODevice::ReadOnly))
     settings = QJsonDocument::fromJson(file.readAll()).object();
   selectedAddress = settings["address"].toString();
+  if (settings["transport"] == "usb")
+    selectedAddress.clear();
   setWindowTitle("ALLPOWERS Monitor");
   resize(1120, 820);
   setMinimumSize(930, 710);
@@ -132,7 +135,16 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   heading->addStretch();
   heading->addWidget(text(QString("MONITOR  ·  %1").arg(APP_VERSION), 12, "#7d9cc8"));
   layout->addLayout(heading);
-  layout->addWidget(text("Телеметрия через Bluetooth компьютера", 13, "#8ca6cb"));
+  auto *sourceRow = new QHBoxLayout;
+  transportMode = new Select;
+  transportMode->setObjectName("transportMode");
+  transportMode->addItem("Bluetooth компьютера", "bluetooth");
+  transportMode->addItem("USB · Waveshare / Pocket", "usb");
+  transportMode->setCurrentIndex(settings["transport"] == "usb" ? 1 : 0);
+  sourceRow->addWidget(transportMode);
+  transportNote = text("Выберите источник телеметрии", 13, "#8ca6cb");
+  sourceRow->addWidget(transportNote, 1);
+  layout->addLayout(sourceRow);
   auto *connection = new QHBoxLayout;
   devices = new Select;
   devices->setObjectName("devices");
@@ -179,9 +191,6 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
     ++pageIndex;
   }
   navigation->addStretch();
-  auto *integration = new QPushButton("ИБП Windows");
-  connect(integration, &QPushButton::clicked, this, &MonitorWindow::showIntegration);
-  navigation->addWidget(integration);
   auto *about = new QPushButton("О программе");
   connect(about, &QPushButton::clicked, this, [this] { showNotices(this); });
   navigation->addWidget(about);
@@ -190,16 +199,18 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   pages->addWidget(historyPage());
   pages->addWidget(diagnosticPage());
   layout->addWidget(pages, 1);
-  auto *footer =
-      text("Только просмотр  ·  Прямое BLE  ·  История сохраняется на компьютере", 12, "#7d96b9");
+  footer = text("Только просмотр · История сохраняется на компьютере", 12, "#7d96b9");
   layout->addWidget(footer);
   ble = transport ? transport
-        : !offline && integrationInstalled()
-            ? static_cast<BleTransport *>(new ServiceTransport(this))
-            : new BleTransport(this, offline);
+                  : new TransportRouter(this, offline, integrationInstalled(),
+                                        transportMode->currentData().toString());
   ble->setParent(this);
+  transportMode->setEnabled(bool(qobject_cast<TransportRouter *>(ble)));
+  if (ble->usb())
+    transportMode->setCurrentIndex(1);
   if (ble->remote())
     footer->setText("Только просмотр  ·  Служба Windows  ·  Общая история компьютера");
+  connect(transportMode, &QComboBox::currentIndexChanged, this, &MonitorWindow::changeTransport);
   connect(group, &QButtonGroup::idClicked, this, [this, group](int id) {
     pages->setCurrentIndex(id);
     group->button(id)->setChecked(true);
@@ -213,7 +224,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   int savedPage =
       QStringList{"Показания", "История", "Диагностика"}.indexOf(settings["page"].toString());
   group->button(qMax(0, savedPage))->click();
-  connect(scanButton, &QPushButton::clicked, ble, &BleTransport::scan);
+  connect(scanButton, &QPushButton::clicked, ble, &TelemetryTransport::scan);
   connect(new QShortcut(QKeySequence("F5"), this), &QShortcut::activated, scanButton,
           &QPushButton::click);
   auto *fullScreen = new QShortcut(QKeySequence(Qt::Key_F11), this);
@@ -233,8 +244,9 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   connect(devices, &QComboBox::currentIndexChanged, this, [this] {
     updateControls();
     if (!ble->active()) {
-      selectedAddress = devices->currentData().toString();
-      emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
+      if (!ble->usb())
+        selectedAddress = devices->currentData().toString();
+      emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
     }
   });
   connect(connectButton, &QPushButton::clicked, this, [this] {
@@ -245,14 +257,48 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
     auto address = devices->currentData().toString();
     if (address.isEmpty())
       return;
-    selectedAddress = address;
-    settings["address"] = address;
-    settings["name"] = discovered[address]["name"];
-    settings["profile"] = profile->currentIndex();
+    if (ble->usb())
+      settings["usb_serial"] = address;
+    else {
+      selectedAddress = address;
+      settings["address"] = address;
+      settings["name"] = discovered[address]["name"];
+      settings["profile"] = profile->currentIndex();
+    }
     saveSettings();
     ble->resume(address, discovered[address]["name"].toString(), profile->currentIndex());
   });
-  connect(ble, &BleTransport::stateChanged, this, [this] {
+  connect(ble, &TelemetryTransport::stateChanged, this, [this] {
+    if (ble->usb()) {
+      const auto info = ble->diagnostics();
+      const auto id = ble->endpoint();
+      if (id != usbEndpoint) {
+        usbEndpoint = id;
+        if (historySource->currentIndex() == 1) {
+          localPoints.clear();
+          points.clear();
+          chart->setPoints({}, QDateTime::currentSecsSinceEpoch());
+          emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
+        }
+      }
+      const auto board = info["usb_board"].toString();
+      if (!id.isEmpty() && !board.isEmpty()) {
+        const auto label = QString("%1 · %2 · %3")
+                               .arg(board == "waveshare-147" ? "Waveshare 1.47″" : "Pocket 0.96″",
+                                    info["usb_port"].toString(), info["name"].toString());
+        if (discovered[id]["name"] != label) {
+          discovered[id]["name"] = label;
+          rebuildDevices();
+        }
+      }
+    }
+    if (ble->usb() && !ble->address().isEmpty() && selectedAddress != ble->address()) {
+      selectedAddress = ble->address();
+      localPoints.clear();
+      points.clear();
+      historyBusy = false;
+      emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
+    }
     if (ble->remote() && !ble->address().isEmpty()) {
       const auto info = ble->diagnostics();
       if (selectedAddress != ble->address()) {
@@ -285,16 +331,16 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
     appendLog(ble->phase() +
               (info["error"].toString().isEmpty() ? QString() : " · " + info["error"].toString()));
   });
-  connect(ble, &BleTransport::found, this,
+  connect(ble, &TelemetryTransport::found, this,
           [this](QString address, QString name, int rssi, int model) {
             discovered[address] = {{"name", name}, {"rssi", rssi}, {"model", model}};
             rebuildDevices();
           });
-  connect(ble, &BleTransport::packet, this, [this](QString hex, bool valid) {
+  connect(ble, &TelemetryTransport::packet, this, [this](QString hex, bool valid) {
     lastPacket = (valid ? "RX " : "INVALID ") + hex;
     appendLog(lastPacket);
   });
-  connect(ble, &BleTransport::snapshot, this, [this](ap_snapshot s) {
+  connect(ble, &TelemetryTransport::snapshot, this, [this](ap_snapshot s) {
     if (!offline)
       updateSnapshot(s);
   });
@@ -307,14 +353,15 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   connect(this, &MonitorWindow::historyLoad, history, &HistoryWorker::load);
   connect(this, &MonitorWindow::historyExport, history, &HistoryWorker::exportFile);
   connect(this, &MonitorWindow::historyExportPoints, history, &HistoryWorker::exportPoints);
+  connect(this, &MonitorWindow::historyImport, history, &HistoryWorker::importPoints);
   connect(this, &MonitorWindow::historyLog, history, &HistoryWorker::log);
   connect(this, &MonitorWindow::settingsSave, history, &HistoryWorker::saveSettings);
-  connect(ble, &BleTransport::newSession, this, &MonitorWindow::historySession);
+  connect(ble, &TelemetryTransport::newSession, this, &MonitorWindow::historySession);
   connect(history, &HistoryWorker::loaded, this,
           [this](QString address, HistoryPoints values, QJsonObject stats) {
-            if (address != selectedAddress)
-              return;
             historyBusy = false;
+            if (address != historyKey())
+              return;
             historyStats = stats;
             if (offline)
               return;
@@ -323,16 +370,17 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
             chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
             exportButton->setEnabled(!points.isEmpty());
           });
-  if (auto *remote = qobject_cast<ServiceTransport *>(ble)) {
-    connect(remote, &ServiceTransport::historyReady, this, [this](HistoryPoints values) {
-      servicePoints = values;
-      points = mergeHistory(localPoints, servicePoints);
-      chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
-      exportButton->setEnabled(!points.isEmpty());
-    });
-    connect(remote, &ServiceTransport::logReceived, this,
-            [this](QString message) { appendLog(message); });
-  }
+  connect(ble, &TelemetryTransport::historyReady, this, [this](HistoryPoints values) {
+    servicePoints = values;
+    points = mergeHistory(localPoints, servicePoints);
+    chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
+    exportButton->setEnabled(!points.isEmpty());
+  });
+  connect(ble, &TelemetryTransport::logReceived, this,
+          [this](QString message) { appendLog(message); });
+  connect(ble, &TelemetryTransport::historyImported, this, [this](HistoryPoints values) {
+    emit historyImport(values, QDateTime::currentSecsSinceEpoch());
+  });
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
     historyBusy = false;
     historyError = message;
@@ -361,6 +409,63 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
       if (!offline && !ble->remote() && isVisible() && !ble->active())
         ble->resume(address, name, model);
     });
+  }
+  if (ble->usb()) {
+    const auto id = settings["usb_serial"].toString();
+    if (!id.isEmpty())
+      discovered[id] = {{"name", QString("Сохранённая USB-плата · %1").arg(id)}};
+    rebuildDevices();
+    QTimer::singleShot(0, this, [this, id] {
+      if (!offline) {
+        ble->scan();
+        if (!id.isEmpty())
+          ble->resume(id, {}, 0);
+      }
+    });
+  }
+}
+QString MonitorWindow::historyKey() const {
+  return ble->usb() && historySource->currentIndex() == 1 ? "usb-board:" + ble->endpoint()
+                                                          : selectedAddress;
+}
+void MonitorWindow::changeTransport() {
+  auto *router = qobject_cast<TransportRouter *>(ble);
+  if (!router)
+    return;
+  const auto mode = transportMode->currentData().toString();
+  discovered.clear();
+  selectedAddress.clear();
+  lastPacket.clear();
+  localPoints.clear();
+  servicePoints.clear();
+  points.clear();
+  lastSample = -1;
+  historyBusy = false;
+  historySource->setCurrentIndex(0);
+  settings["transport"] = mode;
+  router->setMode(mode);
+  if (!router->usb())
+    selectedAddress = settings["address"].toString();
+  chart->setPoints({}, QDateTime::currentSecsSinceEpoch());
+  ap_snapshot empty{};
+  empty.abi_version = 1;
+  updateSnapshot(empty);
+  emit historySession();
+  emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
+  const auto endpoint = router->usb() ? settings["usb_serial"].toString() : selectedAddress;
+  const auto name = router->usb() ? QString("Сохранённая USB-плата · %1").arg(endpoint)
+                                  : settings["name"].toString();
+  if (!endpoint.isEmpty())
+    discovered[endpoint] = {{"name", name},
+                            {"model", int(ap_model_hint(name.toUtf8().constData()))}};
+  rebuildDevices();
+  saveSettings();
+  updateControls();
+  if (!offline) {
+    if (router->usb())
+      router->scan();
+    if (!endpoint.isEmpty() && !router->remote())
+      router->resume(endpoint, name, profile->currentIndex());
   }
 }
 MonitorWindow::~MonitorWindow() {
@@ -449,6 +554,27 @@ QWidget *MonitorWindow::historyPage() {
   exportButton->setToolTip("Для экспорта нужна история выбранной станции");
   toolbar->addWidget(exportButton);
   layout->addLayout(toolbar);
+  usbHistoryControls = new QWidget;
+  auto *usbTools = new QHBoxLayout(usbHistoryControls);
+  usbTools->setContentsMargins(0, 0, 0, 0);
+  historySource = new Select;
+  historySource->setObjectName("historySource");
+  historySource->addItems({"История станции", "Архив USB-платы · станция не указана"});
+  usbTools->addWidget(historySource, 1);
+  auto *readBoard = new QPushButton("Считать с платы");
+  readBoard->setObjectName("usbHistoryRead");
+  usbTools->addWidget(readBoard);
+  layout->addWidget(usbHistoryControls);
+  usbHistoryControls->hide();
+  historySource->setToolTip("Старый формат архива платы не хранит имя станции. Он показывается "
+                            "отдельно от истории станции.");
+  connect(historySource, &QComboBox::currentIndexChanged, this, [this] {
+    localPoints.clear();
+    points.clear();
+    chart->setPoints({}, QDateTime::currentSecsSinceEpoch());
+    emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
+  });
+  connect(readBoard, &QPushButton::clicked, this, [this] { ble->requestHistory(); });
   auto *legend = new QHBoxLayout;
   int series = 0;
   for (const QString &name : {QString("Заряд, %"), QString("Вход, Вт"), QString("Выход, Вт")}) {
@@ -489,7 +615,7 @@ QWidget *MonitorWindow::historyPage() {
       if (ble->remote())
         emit historyExportPoints(points, path);
       else
-        emit historyExport(selectedAddress, QDateTime::currentSecsSinceEpoch(), path);
+        emit historyExport(historyKey(), QDateTime::currentSecsSinceEpoch(), path);
     }
   });
   return page;
@@ -501,6 +627,11 @@ QWidget *MonitorWindow::diagnosticPage() {
   auto *row = new QHBoxLayout;
   row->addWidget(text("Диагностика", 16, "#d6e5f8", true));
   row->addStretch();
+  auto *integration = new QPushButton("ИБП Windows…");
+  integration->setObjectName("integrationManagement");
+  integration->setToolTip("Экспериментальная интеграция со службой и драйвером Windows");
+  connect(integration, &QPushButton::clicked, this, &MonitorWindow::showIntegration);
+  row->addWidget(integration);
   auto *follow = new QPushButton("К новым записям ↓");
   follow->setObjectName("logFollow");
   row->addWidget(follow);
@@ -529,51 +660,63 @@ QWidget *MonitorWindow::diagnosticPage() {
   technical->setWordWrap(true);
   connect(technical->horizontalHeader(), &QHeaderView::sectionResized, technical,
           &QTableWidget::resizeRowsToContents);
-  const QPair<QString, QString> fields[] = {{"", "Соединение"},
-                                            {"phase", "Состояние"},
-                                            {"name", "Название станции"},
-                                            {"address", "Адрес Bluetooth"},
-                                            {"active", "Соединение запрошено"},
-                                            {"connected", "Телеметрия подключена"},
-                                            {"scanning", "Поиск устройств"},
-                                            {"error", "Ошибка соединения"},
-                                            {"connections", "Успешных подключений"},
-                                            {"drops", "Обрывов соединения"},
-                                            {"polls", "Запросов отправлено"},
-                                            {"packets", "Пакетов получено"},
-                                            {"mtu", "Размер BLE MTU"},
-                                            {"transport", "Транспорт"},
-                                            {"service", "UUID сервиса"},
-                                            {"notify", "UUID уведомлений"},
-                                            {"write", "UUID записи"},
-                                            {"service", "Служба Windows"},
-                                            {"ups_present", "Системный ИБП доступен"},
-                                            {"ups_reason", "Причина недоступности ИБП"},
-                                            {"driver_error", "Ошибка драйвера"},
-                                            {"", "Телеметрия"},
-                                            {"fresh", "Данные актуальны"},
-                                            {"model", "Профиль протокола"},
-                                            {"valid_frames", "Корректных кадров"},
-                                            {"invalid_frames", "Ошибочных кадров"},
-                                            {"main_age_ms", "Возраст показаний"},
-                                            {"settings_age_ms", "Возраст настроек"},
-                                            {"source_raw", "Код источника питания"},
-                                            {"known", "Маска известных полей"},
-                                            {"last_packet", "Последний пакет"},
-                                            {"", "История и график"},
-                                            {"history.live", "Точек посекундной истории"},
-                                            {"history.minutes", "Минутных точек"},
-                                            {"history_worker_busy", "Сохранение истории"},
-                                            {"history_error", "Ошибка истории"},
-                                            {"history_path", "Файл истории"},
-                                            {"chart_render_ms", "Время отрисовки графика"},
-                                            {"chart_vertices", "Вершин на графике"},
-                                            {"", "Приложение"},
-                                            {"application", "Версия"},
-                                            {"uptime_seconds", "Время работы"},
-                                            {"qt", "Qt"},
-                                            {"language", "Язык ядра"},
-                                            {"core_abi", "Версия ABI ядра"}};
+  const QPair<QString, QString> fields[] = {
+      {"", "Соединение"},
+      {"phase", "Состояние"},
+      {"name", "Название станции"},
+      {"address", "Адрес Bluetooth"},
+      {"active", "Соединение запрошено"},
+      {"connected", "Телеметрия подключена"},
+      {"scanning", "Поиск устройств"},
+      {"error", "Ошибка соединения"},
+      {"connections", "Успешных подключений"},
+      {"drops", "Обрывов соединения"},
+      {"polls", "Запросов отправлено"},
+      {"packets", "Пакетов получено"},
+      {"mtu", "Размер BLE MTU"},
+      {"transport", "Транспорт"},
+      {"service", "UUID сервиса"},
+      {"notify", "UUID уведомлений"},
+      {"write", "UUID записи"},
+      {"service", "Служба Windows"},
+      {"ups_present", "Системный ИБП доступен"},
+      {"ups_reason", "Причина недоступности ИБП"},
+      {"driver_error", "Ошибка драйвера"},
+      {"", "USB-плата"},
+      {"usb_port", "USB-порт"},
+      {"usb_serial", "Серийный номер платы"},
+      {"usb_board", "Модель платы"},
+      {"usb_verified", "Прошивка подтверждена"},
+      {"usb_bad_lines", "Некорректных строк USB"},
+      {"usb_history_busy", "Архив загружается"},
+      {"usb_history_imported", "Точек архива принято"},
+      {"usb_history_undated", "Пропущено без достоверной даты"},
+      {"usb_history_bad", "Повреждённых записей архива"},
+      {"usb_history_error", "Ошибка чтения архива"},
+      {"", "Телеметрия"},
+      {"fresh", "Данные актуальны"},
+      {"model", "Профиль протокола"},
+      {"valid_frames", "Корректных кадров"},
+      {"invalid_frames", "Ошибочных кадров"},
+      {"main_age_ms", "Возраст показаний"},
+      {"settings_age_ms", "Возраст настроек"},
+      {"source_raw", "Код источника питания"},
+      {"known", "Маска известных полей"},
+      {"last_packet", "Последний пакет"},
+      {"", "История и график"},
+      {"history.live", "Точек посекундной истории"},
+      {"history.minutes", "Минутных точек"},
+      {"history_worker_busy", "Сохранение истории"},
+      {"history_error", "Ошибка истории"},
+      {"history_path", "Файл истории"},
+      {"chart_render_ms", "Время отрисовки графика"},
+      {"chart_vertices", "Вершин на графике"},
+      {"", "Приложение"},
+      {"application", "Версия"},
+      {"uptime_seconds", "Время работы"},
+      {"qt", "Qt"},
+      {"language", "Язык ядра"},
+      {"core_abi", "Версия ABI ядра"}};
   for (const auto &field : fields) {
     const int row = technical->rowCount();
     technical->insertRow(row);
@@ -610,6 +753,7 @@ QWidget *MonitorWindow::diagnosticPage() {
     follow->setVisible(index == 0);
     hint->setVisible(index == 0);
     copy->setText(index == 0 ? "Скопировать" : "Скопировать JSON");
+    copy->setMinimumWidth(index == 0 ? 135 : 190);
     refreshDiagnostics();
   });
   connect(copy, &QPushButton::clicked, this, [this, tabs] {
@@ -640,11 +784,14 @@ void MonitorWindow::rebuildDevices() {
   });
   for (const auto &address : addresses) {
     auto d = discovered[address];
-    if (stationsOnly->isChecked() && !d["model"].toInt() && address != selectedAddress)
+    if (!ble->usb() && stationsOnly->isChecked() && !d["model"].toInt() &&
+        address != selectedAddress)
       continue;
     const QString signal =
         d.contains("rssi") ? QString("%1 dBm").arg(d["rssi"].toInt()) : "сохранённая станция";
-    devices->addItem(QString("%1  ·  %2  ·  %3").arg(d["name"].toString(), address, signal),
+    devices->addItem(ble->usb()
+                         ? d["name"].toString()
+                         : QString("%1  ·  %2  ·  %3").arg(d["name"].toString(), address, signal),
                      address);
   }
   int selected = devices->findData(previous);
@@ -652,19 +799,32 @@ void MonitorWindow::rebuildDevices() {
   updateControls();
 }
 void MonitorWindow::updateControls() {
+  const bool usb = ble->usb();
+  profile->setVisible(!usb);
+  stationsOnly->setVisible(!usb);
+  usbHistoryControls->setVisible(usb);
+  transportNote->setText(usb ? "Плата получает BLE · компьютер читает USB"
+                         : ble->remote() ? "Bluetooth обслуживает служба Windows"
+                                         : "Телеметрия через Bluetooth компьютера");
+  footer->setText(usb ? "Только чтение USB · BLE-соединением управляет плата"
+                  : ble->remote() ? "Только просмотр · Служба Windows · Общая история"
+                                  : "Только просмотр · Bluetooth компьютера · Локальная история");
+  devices->setPlaceholderText(usb ? "Найдите и выберите USB-плату" : "Найдите и выберите станцию");
   bool active = ble->active(), scanning = ble->scanning();
   scanButton->setEnabled(!active && !scanning && !offline && ble->available());
   scanButton->setToolTip(!ble->available() ? "Запустите службу через «ИБП Windows»"
                          : active ? "Для нового поиска сначала отключитесь от станции"
-                                  : "Найти доступные станции Bluetooth");
-  scanButton->setText(scanning ? "Поиск…" : "Найти станции");
+                         : usb ? "Найти подключённые Waveshare и Pocket"
+                               : "Найти доступные станции Bluetooth");
+  scanButton->setText(scanning ? "Поиск…" : usb ? "Найти платы" : "Найти станции");
   bool canConnect =
       ble->available() && (active || (!scanning && devices->currentIndex() >= 0 && !offline));
   connectButton->setEnabled(canConnect);
   connectButton->setText(active ? "Отключить" : "Подключить");
   connectButton->setToolTip(!ble->available() ? "Запустите службу через «ИБП Windows»"
                             : offline ? "Демонстрация: Bluetooth не используется"
-                            : active ? "Завершить соединение со станцией"
+                            : active ? usb ? "Закрыть USB-порт; плата продолжит работать"
+                                           : "Завершить соединение со станцией"
                             : scanning ? "Дождитесь завершения поиска"
                             : devices->count() == 0 ? "Сначала найдите и выберите станцию"
                                                     : "Подключиться к выбранной станции");
@@ -746,14 +906,37 @@ QJsonObject MonitorWindow::diagnostics() const {
 }
 void MonitorWindow::refreshDiagnostics() {
   const auto info = diagnostics();
+  const auto usbDetails = info["usb_diagnostics"].toObject();
+  for (auto it = usbDetails.begin(); it != usbDetails.end(); ++it) {
+    const QString key = "usb_detail:" + it.key();
+    bool found = false;
+    for (int i = 0; i < technical->rowCount(); ++i) {
+      auto *v = technical->item(i, 1);
+      if (v && v->data(Qt::UserRole) == key) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      int row = technical->rowCount();
+      technical->insertRow(row);
+      technical->setItem(row, 0, new QTableWidgetItem("Плата · " + it.key()));
+      auto *v = new QTableWidgetItem;
+      v->setData(Qt::UserRole, key);
+      technical->setItem(row, 1, v);
+    }
+  }
   for (int row = 0; row < technical->rowCount(); ++row) {
     auto *item = technical->item(row, 1);
     if (!item)
       continue;
     const auto key = item->data(Qt::UserRole).toString();
     QJsonValue value(info);
-    for (const auto &part : key.split('.'))
-      value = value.toObject().value(part);
+    if (key.startsWith("usb_detail:"))
+      value = usbDetails[key.mid(11)];
+    else
+      for (const auto &part : key.split('.'))
+        value = value.toObject().value(part);
     QString display = "—";
     if (value.isBool())
       display = value.toBool() ? "Да" : "Нет";
@@ -810,9 +993,11 @@ void MonitorWindow::showIntegration() {
   dialog->setStyleSheet("QDialog{background:#0e1727;color:#ecf3ff;}QLabel{color:#bdcce2;font-"
                         "family:'Segoe UI';font-size:14px;}");
   auto *layout = new QVBoxLayout(dialog);
-  auto *description =
-      new QLabel("Необязательная интеграция: служба получает BLE-данные, а драйвер передаёт их "
-                 "системе питания Windows. Без неё монитор работает самостоятельно.");
+  auto *description = new QLabel(
+      ble->usb() ? "USB-плата уже может представляться Windows как ИБП. Для чтения её показаний в "
+                   "мониторе дополнительный драйвер не нужен."
+                 : "Необязательная интеграция: служба получает BLE-данные, а драйвер передаёт их "
+                   "системе питания Windows. Без неё монитор работает самостоятельно.");
   description->setWordWrap(true);
   layout->addWidget(description);
   const auto info = integrationStatus();

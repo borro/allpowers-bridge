@@ -897,7 +897,7 @@ void MonitorWindow::updateSnapshot(ap_snapshot s) {
 QJsonObject MonitorWindow::diagnostics() const {
   auto info = ble->diagnostics();
   info["application"] = APP_VERSION;
-  info["language"] = "C++17";
+  info["language"] = "C++23";
   info["qt"] = qVersion();
   info["core_abi"] = int(ap_abi_version());
   info["valid_frames"] = int(last.valid_frames);

@@ -1,6 +1,8 @@
 #include "window.h"
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QButtonGroup>
+#include <QClipboard>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -253,6 +255,52 @@ private slots:
     follow->click();
     QVERIFY(log->following());
     QVERIFY(!follow->isEnabled());
+  }
+  void diagnosticTableUpdatesInPlace() {
+    MonitorWindow window(true);
+    window.show();
+    window.findChild<QButtonGroup *>()->button(2)->click();
+    window.findChild<QTabWidget *>("diagnosticTabs")->setCurrentIndex(1);
+    auto *table = window.findChild<QTableWidget *>("diagnosticState");
+    QVERIFY(table);
+    QCOMPARE(table->columnCount(), 2);
+    QCOMPARE(table->horizontalHeaderItem(0)->text(), QString("Параметр"));
+    QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
+    auto cell = [table](const QString &key) -> QTableWidgetItem * {
+      for (int row = 0; row < table->rowCount(); ++row) {
+        auto *item = table->item(row, 1);
+        if (item && item->data(Qt::UserRole).toString() == key)
+          return item;
+      }
+      return nullptr;
+    };
+    auto *fresh = cell("fresh");
+    QVERIFY(fresh && cell("main_age_ms") && cell("source_raw"));
+    QCOMPARE(fresh->text(), QString("Нет"));
+    QCOMPARE(cell("main_age_ms")->text(), QString("—"));
+    QCOMPARE(cell("source_raw")->text(), QString("—"));
+    table->selectRow(fresh->row());
+    table->verticalScrollBar()->setValue(10);
+    const auto scroll = table->verticalScrollBar()->value();
+    const auto selected = table->selectedItems().first();
+    window.loadDemo();
+    QCOMPARE(cell("fresh"), fresh);
+    QCOMPARE(fresh->text(), QString("Да"));
+    QCOMPARE(cell("main_age_ms")->text(), QString("0.1 с"));
+    QCOMPARE(cell("source_raw")->text(), QString("0x0"));
+    QCOMPARE(table->selectedItems().first(), selected);
+    QCOMPARE(table->verticalScrollBar()->value(), scroll);
+    auto *copy = window.findChild<QPushButton *>("diagnosticCopy");
+    QCOMPARE(copy->text(), QString("Скопировать JSON"));
+    copy->click();
+    const auto copied =
+        QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object();
+    QVERIFY(copied["fresh"].toBool());
+    QCOMPARE(copied["main_age_ms"].toInt(), 100);
+    window.findChild<QButtonGroup *>()->button(2)->click();
+    table->verticalScrollBar()->setValue(0);
+    QTest::qWait(20);
+    window.grab().save("diagnostic-table.png");
   }
   void nativeControlsAndChart() {
     MonitorWindow window(true);

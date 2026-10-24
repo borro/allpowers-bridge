@@ -12,6 +12,7 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QPainter>
@@ -105,6 +106,9 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
     QCheckBox{color:#bdcce2;spacing:8px;}QCheckBox::indicator{width:17px;height:17px;border:1px solid #627a9d;border-radius:4px;background:#17263d;}
     QCheckBox::indicator:checked{background:#54a0ff;border-color:#89beff;}
     QPlainTextEdit{background:#172235;color:#b9cee9;border:1px solid #2b405c;border-radius:10px;padding:12px;font-family:Consolas;font-size:13px;}
+    QTableWidget{background:#172235;alternate-background-color:#1b293e;color:#eaf2ff;border:1px solid #2b405c;font-family:'Segoe UI';font-size:14px;selection-background-color:#345987;selection-color:#fff;gridline-color:#24344c;}
+    QTableWidget::item{padding:7px 12px;border:0;}
+    QHeaderView::section{background:#20324c;color:#bdd0ea;border:0;border-bottom:1px solid #354b6c;padding:10px 12px;font-family:'Segoe UI';font-size:13px;font-weight:600;}
     QScrollBar:vertical{background:#172235;width:10px;margin:2px;}
     QScrollBar::handle:vertical{background:#526d91;min-height:24px;border-radius:4px;}
     QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
@@ -430,6 +434,7 @@ QWidget *MonitorWindow::diagnosticPage() {
   follow->setObjectName("logFollow");
   row->addWidget(follow);
   auto *copy = new QPushButton("Скопировать");
+  copy->setObjectName("diagnosticCopy");
   row->addWidget(copy);
   l->addLayout(row);
   auto *tabs = new QTabWidget;
@@ -437,9 +442,83 @@ QWidget *MonitorWindow::diagnosticPage() {
   eventLog = new LiveLog;
   eventLog->setObjectName("eventLog");
   tabs->addTab(eventLog, "Журнал событий");
-  technical = new QPlainTextEdit;
+  technical = new QTableWidget(0, 2);
   technical->setObjectName("diagnosticState");
-  technical->setReadOnly(true);
+  technical->setHorizontalHeaderLabels({"Параметр", "Значение"});
+  technical->verticalHeader()->hide();
+  technical->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+  technical->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
+  technical->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+  technical->setColumnWidth(0, 290);
+  technical->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  technical->setSelectionBehavior(QAbstractItemView::SelectRows);
+  technical->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+  technical->setAlternatingRowColors(true);
+  technical->setShowGrid(false);
+  technical->setWordWrap(true);
+  connect(technical->horizontalHeader(), &QHeaderView::sectionResized, technical,
+          &QTableWidget::resizeRowsToContents);
+  const QPair<QString, QString> fields[] = {{"", "Соединение"},
+                                            {"phase", "Состояние"},
+                                            {"name", "Название станции"},
+                                            {"address", "Адрес Bluetooth"},
+                                            {"active", "Соединение запрошено"},
+                                            {"connected", "Телеметрия подключена"},
+                                            {"scanning", "Поиск устройств"},
+                                            {"error", "Ошибка соединения"},
+                                            {"connections", "Успешных подключений"},
+                                            {"drops", "Обрывов соединения"},
+                                            {"polls", "Запросов отправлено"},
+                                            {"packets", "Пакетов получено"},
+                                            {"mtu", "Размер BLE MTU"},
+                                            {"transport", "Транспорт"},
+                                            {"service", "UUID сервиса"},
+                                            {"notify", "UUID уведомлений"},
+                                            {"write", "UUID записи"},
+                                            {"", "Телеметрия"},
+                                            {"fresh", "Данные актуальны"},
+                                            {"model", "Профиль протокола"},
+                                            {"valid_frames", "Корректных кадров"},
+                                            {"invalid_frames", "Ошибочных кадров"},
+                                            {"main_age_ms", "Возраст показаний"},
+                                            {"settings_age_ms", "Возраст настроек"},
+                                            {"source_raw", "Код источника питания"},
+                                            {"known", "Маска известных полей"},
+                                            {"last_packet", "Последний пакет"},
+                                            {"", "История и график"},
+                                            {"history.live", "Точек посекундной истории"},
+                                            {"history.minutes", "Минутных точек"},
+                                            {"history_worker_busy", "Сохранение истории"},
+                                            {"history_error", "Ошибка истории"},
+                                            {"history_path", "Файл истории"},
+                                            {"chart_render_ms", "Время отрисовки графика"},
+                                            {"chart_vertices", "Вершин на графике"},
+                                            {"", "Приложение"},
+                                            {"application", "Версия"},
+                                            {"uptime_seconds", "Время работы"},
+                                            {"qt", "Qt"},
+                                            {"language", "Язык ядра"},
+                                            {"core_abi", "Версия ABI ядра"}};
+  for (const auto &field : fields) {
+    const int row = technical->rowCount();
+    technical->insertRow(row);
+    auto *label = new QTableWidgetItem(field.second);
+    technical->setItem(row, 0, label);
+    if (field.first.isEmpty()) {
+      technical->setSpan(row, 0, 1, 2);
+      label->setFlags(Qt::ItemIsEnabled);
+      label->setBackground(QColor("#20324c"));
+      label->setForeground(QColor("#8fc1ff"));
+      auto font = label->font();
+      font.setBold(true);
+      label->setFont(font);
+    } else {
+      auto *value = new QTableWidgetItem("—");
+      value->setData(Qt::UserRole, field.first);
+      technical->setItem(row, 1, value);
+    }
+    technical->setRowHeight(row, 36);
+  }
   tabs->addTab(technical, "Текущее состояние");
   l->addWidget(tabs, 1);
   auto *hint =
@@ -452,9 +531,10 @@ QWidget *MonitorWindow::diagnosticPage() {
     hint->setText(following ? "Новые записи внизу · прокрутите вверх, чтобы приостановить слежение"
                             : "Просмотр старых записей · новые продолжают поступать");
   });
-  connect(tabs, &QTabWidget::currentChanged, this, [this, follow, hint](int index) {
+  connect(tabs, &QTabWidget::currentChanged, this, [this, follow, hint, copy](int index) {
     follow->setVisible(index == 0);
     hint->setVisible(index == 0);
+    copy->setText(index == 0 ? "Скопировать" : "Скопировать JSON");
     refreshDiagnostics();
   });
   connect(copy, &QPushButton::clicked, this, [this, tabs] {
@@ -580,11 +660,47 @@ QJsonObject MonitorWindow::diagnostics() const {
   return info;
 }
 void MonitorWindow::refreshDiagnostics() {
-  if (technical && !technical->textCursor().hasSelection()) {
-    const int position = technical->verticalScrollBar()->value();
-    technical->setPlainText(
-        QString::fromUtf8(QJsonDocument(diagnostics()).toJson(QJsonDocument::Indented)));
-    technical->verticalScrollBar()->setValue(position);
+  const auto info = diagnostics();
+  for (int row = 0; row < technical->rowCount(); ++row) {
+    auto *item = technical->item(row, 1);
+    if (!item)
+      continue;
+    const auto key = item->data(Qt::UserRole).toString();
+    QJsonValue value(info);
+    for (const auto &part : key.split('.'))
+      value = value.toObject().value(part);
+    QString display = "—";
+    if (value.isBool())
+      display = value.toBool() ? "Да" : "Нет";
+    else if (value.isString() && !value.toString().isEmpty())
+      display = value.toString();
+    else if (value.isDouble())
+      display = QString::number(value.toDouble(), 'f', 0);
+    if (key == "main_age_ms" || key == "settings_age_ms") {
+      const bool seen = key == "main_age_ms" ? last.main_seen : last.settings_seen;
+      display = seen ? QString::number(value.toDouble() / 1000., 'f', 1) + " с" : "—";
+    } else if (key == "chart_render_ms")
+      display = QString::number(value.toDouble(), 'f', 2) + " мс";
+    else if (key == "uptime_seconds") {
+      const auto seconds = qint64(value.toDouble());
+      display = QString("%1:%2:%3")
+                    .arg(seconds / 3600, 2, 10, QChar('0'))
+                    .arg(seconds / 60 % 60, 2, 10, QChar('0'))
+                    .arg(seconds % 60, 2, 10, QChar('0'));
+    } else if (key == "mtu" && value.toInt() == 0)
+      display = "—";
+    else if (key == "model")
+      display = QStringList{"Автоматический", "Old10", "Legacy16", "R2500 V2"}.value(
+          value.toInt(), QString::number(value.toInt()));
+    else if (key == "known" || key == "source_raw")
+      display = "0x" + QString::number(value.toInteger(), 16).toUpper();
+    if (key == "source_raw" && !(last.known & AllpowersModels::SourceRaw))
+      display = "—";
+    if (item->text() != display) {
+      item->setText(display);
+      item->setToolTip(display);
+      technical->resizeRowToContents(row);
+    }
   }
 }
 void MonitorWindow::appendLog(const QString &message) {

@@ -11,6 +11,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QTableWidget>
 
 QString monitorDataDirectory();
 class MonitorWindow : public QMainWindow {
@@ -25,7 +26,7 @@ class MonitorWindow : public QMainWindow {
   QLabel *status, *soc, *input, *output, *source, *runtime, *freshness, *outputAC, *outputUSB,
       *outputDC;
   QStackedWidget *pages;
-  QPlainTextEdit *technical;
+  QTableWidget *technical;
   LiveLog *eventLog;
   QJsonObject settings, historyStats;
   QMap<QString, QJsonObject> discovered;

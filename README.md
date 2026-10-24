@@ -23,6 +23,8 @@ outside the UI thread. History/settings stay in `%LOCALAPPDATA%/AllpowersMonitor
 Diagnostics includes a live event log that follows new entries. Scrolling up
 pauses following; “К новым записям” resumes it. The view retains 2000 lines;
 the disk log rotates independently.
+Current diagnostic state is a grouped parameter/value table; full JSON can still
+be copied for troubleshooting.
 
 ## Build
 

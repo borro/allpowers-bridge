@@ -1,5 +1,6 @@
 #include "window.h"
 #include "AllpowersModels.h"
+#include "notices.h"
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
@@ -174,6 +175,9 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
     ++pageIndex;
   }
   navigation->addStretch();
+  auto *about = new QPushButton("О программе");
+  connect(about, &QPushButton::clicked, this, [this] { showNotices(this); });
+  navigation->addWidget(about);
   layout->addLayout(navigation);
   pages->addWidget(overviewPage());
   pages->addWidget(historyPage());

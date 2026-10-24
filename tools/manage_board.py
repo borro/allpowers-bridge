@@ -8,7 +8,7 @@ SEGMENTS=[('0','R2500Adapter.ino.bootloader.bin'),('0x8000','R2500Adapter.ino.pa
           ('0xe000','boot_app0.bin'),('0x10000','R2500Adapter.ino.bin')]
 
 def validate_image(folder,board):
-    from build import partition_check, sha
+    from image_contract import partition_check, sha
     manifest=json.loads((folder/'manifest.json').read_text())
     contract=json.loads((ROOT/'tests/fixtures/usb-contract.json').read_text())
     if manifest['board']!=board or manifest['descriptor_sha256']!=contract['descriptor_sha256']:

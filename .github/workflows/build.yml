@@ -7,26 +7,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-24.04]
+        include:
+          - os: windows-latest
+            preset: windows
+            products: all-windows
+          - os: ubuntu-24.04
+            preset: native
+            products: all-linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@v6
+          fetch-depth: 0
+      - uses: jwlawson/actions-setup-cmake@v2
         with:
-          version: '0.9.5'
-      - run: uv sync --locked
-      - run: uv run --locked python tools/build.py test
-      - run: uv run --locked python tools/build.py setup
-      - run: uv run --locked python tools/build.py all
+          cmake-version: '3.31.6'
       - if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $process = Start-Process -FilePath dist/windows/AllpowersMonitor/AllpowersMonitor.exe -ArgumentList '--self-test --report build/self-test.json -platform offscreen' -WindowStyle Hidden -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw 'Native application self-test failed' }
-      - run: uv run --locked python tools/audit.py
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/cache@v4
+        with:
+          path: build/deps
+          key: ${{ runner.os }}-static-deps-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/QtStatic.cmake') }}
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build build/${{ matrix.preset }} --target arduino-setup
+      - run: cmake --build --preset ${{ matrix.products }} --parallel 2
+      - run: ctest --preset ${{ matrix.preset }}
+      - if: runner.os == 'Windows'
+        run: cmake --build --preset release
+      - run: cmake --build build/${{ matrix.preset }} --target audit
       - run: git diff --exit-code
       - uses: actions/upload-artifact@v4
         with:

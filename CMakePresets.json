@@ -1,10 +1,24 @@
 {
   "version": 6,
-  "configurePresets": [{
-    "name": "dev", "displayName": "ALLPOWERS native core (Ninja)",
-    "generator": "Ninja", "binaryDir": "${sourceDir}/build/native/${hostSystemName}",
-    "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}
-  }],
-  "buildPresets": [{"name": "dev", "configurePreset": "dev"}],
-  "testPresets": [{"name": "dev", "configurePreset": "dev", "output": {"outputOnFailure": true}}]
+  "cmakeMinimumRequired": {"major": 3, "minor": 25, "patch": 0},
+  "configurePresets": [
+    {"name": "base", "hidden": true, "generator": "Ninja",
+     "binaryDir": "${sourceDir}/build/${presetName}",
+     "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON"}},
+    {"name": "native", "inherits": "base", "displayName": "Portable core and firmware targets"},
+    {"name": "windows", "inherits": "base", "displayName": "Static Windows monitor + portable targets",
+     "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows"},
+     "cacheVariables": {"ALLPOWERS_BUILD_WINDOWS": "ON"}}
+  ],
+  "buildPresets": [
+    {"name": "native", "configurePreset": "native", "targets": ["core", "native-tests"]},
+    {"name": "windows", "configurePreset": "windows", "targets": ["core", "native-tests", "windows"]},
+    {"name": "all-windows", "configurePreset": "windows", "targets": ["products"]},
+    {"name": "all-linux", "configurePreset": "native", "targets": ["products"]},
+    {"name": "release", "configurePreset": "windows", "targets": ["release"]}
+  ],
+  "testPresets": [
+    {"name": "native", "configurePreset": "native", "output": {"outputOnFailure": true}},
+    {"name": "windows", "configurePreset": "windows", "output": {"outputOnFailure": true}}
+  ]
 }

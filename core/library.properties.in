@@ -1,5 +1,5 @@
 name=AllpowersCore
-version=0.1.0
+version=@LIBRARY_VERSION@
 author=Borro
 maintainer=Borro <borro@aggardo.ru>
 sentence=Portable Allpowers BLE protocol and telemetry core.

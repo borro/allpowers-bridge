@@ -1,44 +1,48 @@
 # Validation
 
-Run `uv run --locked python tools/build.py test`: C++ decoder tests plus Python
-tests of C ABI, recorded packet fixtures, board identity and recovery contracts.
-QtTest additionally checks session generations, native controls,
-bounded compatible history, graph interactions, source transitions and rendering.
-Tests use recorded packets and an offline UI; they never connect a real station.
+Configure/build with CMake Presets and run ctest --preset windows or native.
+C++ tests exercise the actual shared C ABI, model decoding, recorded packets,
+freshness, malformed data, timer wrap and bounds. QtTest covers session generations,
+controls, bounded compatible history, immediate-close settings persistence,
+source transitions, graph interactions and rendering.
 
-`all` builds both firmware variants and, on Windows, the desktop package. Build
-manifests contain source hashes; builds check that product sources are unchanged.
-Partition offsets, descriptor hash and maintenance command are build gates.
+Firmware targets check USB descriptors, partition offsets, ABI/updater/startup
+contracts and source/artifact hashes. The Git-index audit checks private identities,
+absolute user paths, generated outputs and staged contents. CI builds Windows and
+Ubuntu, fetches tags and packages Windows. CI never opens USB or BLE connections.
 
-`uv run --locked python tools/audit.py` checks the Git index for outputs/private
-directories, machine-specific paths and locally registered device identities.
-It does not replace review of newly introduced data before publication.
+The Windows external project runs CTest before installation. Single-EXE tests
+inspect PE imports, reject Qt/shared CRT DLLs and run only the EXE in an isolated
+folder with a system-only PATH. Embedded LGPL notices and SQLite/UI startup are
+also checked. CPack release builds additionally extract their source archive and
+rebuild/test the portable core without .git or Python, checking its saved version.
 
-GitHub Actions defines Windows and Ubuntu native/firmware jobs plus Windows
-packaging. A workflow file is not evidence of successful Linux execution. The
-local restructuring report records which jobs actually ran. No flash or BLE
-test is included in CI. Linux desktop, macOS and OS UPS drivers are out of scope.
+## Local checks — 2026-10-24
 
-## Local release checks — 2026-10-24
+| Check | Result |
+| --- | --- |
+| New CMake native core / C ABI / fixtures on Windows 11, MSVC 19.44 | Passed |
+| New CMake native core / C ABI / fixtures on Ubuntu WSL, GCC 13.3 | Passed |
+| Waveshare/Pocket firmware compilation and USB/partition checks through CMake on Windows | Passed |
+| Static Qt UI/history/graph tests, isolated EXE, CPack/source-kit rebuild | Passed |
+| New CMake Linux firmware orchestration | Not completed: SDK index HEAD request to espressif.github.io timed out |
 
-| Check | Windows 11 x64 | Ubuntu x64 (WSL) |
-| --- | --- | --- |
-| Native core and C ABI / recorded-packet tests | Passed | Passed |
-| Waveshare 1.47 firmware compilation and USB/partition gates | Passed | Passed |
-| Pocket 0.96 firmware compilation and USB/partition gates | Passed | Passed |
-| Native Qt controls, history, settings, graph tests and packaging | Passed | Not applicable |
+Both firmwares were previously compiled successfully on Linux before the CMake
+orchestration replacement. That earlier result is not proof of the new Linux
+setup/build path; its CI run is still required. Windows and Ubuntu CI jobs are
+configured, but have not run remotely because the repository has not been pushed.
 
-The Qt WinRT backend also discovered nearby BLE advertisements without connecting.
-A real station GATT session in the rewritten Qt application remains untested;
-the existing station connection was left running. Neither board was flashed.
-Compilation does not replace a hardware test of the newly built firmware.
+A manual test, explicitly authorized after Waveshare was unplugged, connected the
+static WinRT app to the real R2500 V2: one connection, 12 valid packets, zero invalid
+packets/drops, fresh telemetry and a confirmed subscription. It reported 100%,
+0 W input, 208 W output and mains power. The test then disconnected automatically.
+No board was flashed and no station control/settings commands were sent.
 
 An offscreen software-rendering benchmark used 6,480 history samples in a
-1,120 × 820 window: a complete plot redraw took about 22 ms, while a cached
-redraw took about 0.03 ms on the development machine. These are local measurements,
-not a frame-rate guarantee. SQLite, CSV export, logs and settings writes run
-outside the UI thread. Closing the window waits for queued settings writes.
+1,120 × 820 window: full plot redraws were about 20–30 ms; cached redraws about
+0.03–0.1 ms on the development machine. These are local measurements, not an FPS
+guarantee. SQLite, CSV, logs and settings writes run outside the UI thread.
 
-Original research and Git history, factory material and verified application
-rollback images were preserved privately before cleanup. Existing desktop history
-and settings were migrated to the user-data directory and checked for integrity.
+Original research/Git history, factory material and verified application rollback
+images remain privately preserved. Existing user history/settings were retained.
+The Pocket has no complete factory backup; partial reads are not called backups.

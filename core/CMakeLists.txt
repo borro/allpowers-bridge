@@ -1,0 +1,17 @@
+add_library(allpowers_core SHARED native/api.cpp)
+add_library(Allpowers::Core ALIAS allpowers_core)
+target_include_directories(allpowers_core PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/native>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>")
+target_compile_definitions(allpowers_core PUBLIC AP_CORE_SHARED PRIVATE AP_BUILD_CORE)
+target_compile_features(allpowers_core PUBLIC cxx_std_17)
+set_target_properties(allpowers_core PROPERTIES CXX_VISIBILITY_PRESET hidden)
+if(WIN32)
+  set_target_properties(allpowers_core PROPERTIES PREFIX "")
+endif()
+if(MSVC)
+  target_compile_options(allpowers_core PRIVATE /utf-8 /W4)
+else()
+  target_compile_options(allpowers_core PRIVATE -fno-exceptions -fno-rtti -Wall -Wextra)
+endif()
+add_custom_target(core DEPENDS allpowers_core)

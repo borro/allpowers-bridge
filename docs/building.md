@@ -1,57 +1,80 @@
-# Build prerequisites
+# Building
 
-## Common
+## Tools and presets
 
-Git, uv 0.9.5 (the CI version), Python 3.11. Run `uv sync --locked` from the root.
-The lock fixes CMake 3.31.6, Ninja 1.11.1.4, Zig 0.13.0 and aqtinstall 3.3.0.
-`uv run --locked python tools/build.py setup` installs a checksum-verified
-Arduino CLI 1.5.1 and Espressif ESP32 Core 3.3.11. On Windows it also installs
-the official Qt 6.8.3 MSVC desktop SDK inside `build/qt/`.
+CMake 3.25+, Ninja and a C++17 compiler are required; CMake 3.31.6 and Ninja
+1.11.1 were tested locally. No Python or uv wrapper drives the build, tests or
+packaging. The optional USB maintenance tools are separate; upstream Arduino
+SDK tools may internally use their own Python.
 
-Commands: `test`, `core`, `waveshare-147`, `pocket-096`, `windows`, `all`, `doctor`,
-`setup`, `clean`. Native C ABI outputs are isolated in `build/native/Windows`
-and `build/native/Linux`. Firmware sketch staging is independent per board.
-Intermediate output is ignored; no source/version header is rewritten by a build.
+On Windows install MSVC 2022 x64 C++ Build Tools with Windows 11 SDK and open
+an x64 Developer PowerShell. Local verification used MSVC 19.44 / SDK 10.0.26100.
+On Linux use the system C++17 compiler. Do not cross-build the Windows desktop.
 
-Existing Arduino installations: copy `config/arduino.example.json` to
-`.local/arduino.json`. Set the paths; optionally set `platform` to `win32` or
-`linux` if sharing a checkout. `ARDUINO_CLI` / `ARDUINO_DATA_DIR` override these.
-Host-specific `.local/arduino.win32.json` / `.local/arduino.linux.json` take precedence.
+```sh
+cmake --preset windows
+cmake --build --preset windows
+ctest --preset windows
+cmake --build --preset release
+```
 
-## Windows desktop
+`native` configures core/tests plus available firmware targets without a desktop.
+`windows` also configures the static Qt superbuild. `all-windows` / `all-linux`
+build all products supported by that host. `native-tests` builds the C++ tests;
+`core` builds the actual shared C ABI library. There is no Linux desktop yet.
 
-Install Microsoft's signed [Visual Studio Build Tools 2022](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
-with MSVC x64/x86 C++ tools and Windows 11 SDK. The local verification used
-MSVC 19.44 and SDK 10.0.26100. The builder discovers the installation with
-vswhere and imports vcvars64; no Developer Command Prompt or IDE is required.
+Use CMakeUserPresets.json or cache arguments for local paths. Arduino can also
+read the ignored .local/arduino.<platform>.json / .local/arduino.json settings.
+Nothing identifying a device belongs in a public preset.
 
-Qt MSVC is required: Qt's MinGW package has a dummy Bluetooth backend. The
-builder rejects a missing WinRT feature before compiling. Set `QT_ROOT` to reuse
-an existing official 6.8.3 MSVC SDK. The executable is native C++17, links Qt
-dynamically, and contains the same protocol source as the portable core.
+## Static Qt dependency
 
-`windows` configures CMake/Ninja, builds the application and QtTest checks,
-deploys the needed DLLs/plugins with windeployqt and creates a ZIP + SHA256.
-The optional offscreen platform is deployed so `--self-test -platform offscreen`
-can verify the packaged UI/database without opening Bluetooth.
+The windows target uses ExternalProject for Qt Base and Qt Connectivity 6.8.3,
+verified with SHA256 from cmake/Dependencies.cmake. It builds Release static
+libraries, bundled third-party libraries and the /MT C++ runtime. WinRT BLE is
+required; the MinGW Bluetooth dummy backend is rejected. No QML or web runtime
+is used. The first build takes longer; subsequent builds reuse the static SDK.
 
-`--demo` uses synthetic history and temporary user data. `--scan-seconds 5
---report build/scan.json` scans without connecting to peripherals. Reports and
-screenshots may contain identifying information outside demo mode: keep them local.
+ALLPOWERS_QT_ROOT selects a compatible existing static MSVC Qt installation.
+ALLPOWERS_QT_SOURCE_CACHE stores verified upstream archives and extracted notices.
+Generated resources and all staging remain in build/. The installed runtime is
+only dist/windows/AllpowersMonitor/AllpowersMonitor.exe. Windows system DLLs
+remain OS dependencies. No bundled DLLs are unpacked at startup.
 
-## Linux
+CTest runs native UI/history/graph tests and checks the EXE's PE imports. It then
+copies only the EXE to an isolated directory, clears Qt search paths, uses a
+system-only PATH and runs the offline UI/SQLite test. BLE hardware tests are
+explicit manual commands, never CTest steps.
 
-Only the portable core/tests and both ESP32 firmware targets are supported.
-Run the same sync/test/setup/all commands in Linux. The core produces an SO;
-firmware uses Linux-hosted Espressif tools. Windows EXEs are not cross-built.
-The new desktop transport/UI is structured for later portability, but Linux and
-macOS desktop support are not part of this release.
-When sharing a Windows checkout with WSL, use a Linux uv binary and set
-`UV_PROJECT_ENVIRONMENT=build/venv-linux` to keep the Windows `.venv` intact.
-SDK/configuration directories are separated by host OS.
-For firmware builds in WSL, keep the checkout/SDK on the Linux filesystem;
-repeated header access through `/mnt/c` can be substantially slower.
+## Firmware
 
-`clean` removes `build/` and `dist/`, including downloaded project-local SDKs.
-It never removes `.local/`, private rollback storage or application history.
-Run setup again after cleaning SDKs.
+```sh
+cmake --build build/windows --target arduino-setup
+cmake --build build/windows --target waveshare-147 pocket-096
+```
+
+Use build/native on Linux. Setup downloads a checksum-verified Arduino CLI 1.5.1
+and installs ESP32 Core 3.3.11. ARDUINO_CLI and ARDUINO_DATA_DIR are cache paths;
+ALLPOWERS_ARDUINO_JOBS controls compiler jobs per board (default 4). Each board
+owns its sketch copy and compiler directory. Build outputs include a manifest of
+source/artifact hashes. USB descriptors, partitions and updater are build gates.
+No setup/build/test target opens a USB device or connects BLE.
+
+Keep WSL checkouts and SDKs on the Linux filesystem for faster repeated header
+reads; Windows and Linux build/SDK directories are separate.
+
+## Packaging and versions
+
+The release target builds Windows, runs its tests, installs the EXE and invokes
+CPack. It creates a runtime ZIP and complete application/Qt source ZIP with SHA256
+files. See relinking.md for library replacement/rebuild instructions. CPack never
+includes user settings/history or local device configuration.
+
+Version comes from git describe --tags --match v[0-9]* --dirty. Fetch tags in CI.
+A clean tagged build displays that tag's numeric version; intermediate builds
+carry commit/dirty metadata. The source ZIP receives a generated VERSION fallback,
+so it rebuilds without .git. No product version is duplicated in tracked files.
+
+Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
+contains user history or private recovery storage. Do not delete .local/ or the
+external preservation folders when cleaning build output.

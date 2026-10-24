@@ -1,4 +1,4 @@
-# ALLPOWERS Monitor 0.3 — native C++ / Qt
+# ALLPOWERS Monitor — native C++ / Qt
 
 Run AllpowersMonitor.exe on Windows 10/11 x64. It uses the computer's Bluetooth;
 no Waveshare/Pocket, Python runtime or UPS driver is required. Connection is
@@ -24,8 +24,12 @@ within 48 hours. All disk/history/export work runs separately from the GUI.
 The diagnostics page includes source RAW, freshness, packet counters, GATT UUIDs,
 MTU, last packet/error, history state and chart rendering time.
 
-Qt is linked dynamically under its open-source terms. The licenses/Qt folder
-contains license texts. Unmodified Qt 6.8.3 sources are available at
-https://download.qt.io/archive/qt/6.8/6.8.3/single/qt-everywhere-src-6.8.3.tar.xz
-Users can replace/relink the Qt libraries; this application does not restrict that.
-See THIRD_PARTY_NOTICES.md for dependency notices.
+The runtime is one EXE. Qt, SQLite, plugins and the C++ runtime are statically
+linked. About displays embedded notices; --export-licenses extracts them.
+The separate sources ZIP contains corresponding application/Qt source and
+docs/relinking.md. Users can replace/relink Qt; the application does not restrict
+that. Product version comes from Git tags; --version prints the embedded version.
+
+--verify-station 50 --report <path> explicitly tests the saved station for several
+seconds of fresh telemetry, then disconnects. This is a manual hardware test;
+normal CTest/build/package targets never invoke it or switch BLE connections.

@@ -21,14 +21,15 @@ Historical bundles and original Git history are private because they embed image
 ## Explicit commands
 
 ```sh
-uv sync --locked --group maintenance
-uv run --locked --group maintenance python tools/manage_board.py status --board waveshare-147
-uv run --locked --group maintenance python tools/manage_board.py boot --board waveshare-147
-uv run --locked --group maintenance python tools/manage_board.py identity --board waveshare-147
-uv run --locked --group maintenance python tools/manage_board.py flash --board waveshare-147 --confirm-write
+python -m pip install -r tools/requirements-maintenance.txt
+python tools/manage_board.py status --board waveshare-147
+python tools/manage_board.py boot --board waveshare-147
+python tools/manage_board.py identity --board waveshare-147
+python tools/manage_board.py flash --board waveshare-147 --confirm-write
 ```
 
-Replace the board name for Pocket. `boot` sends the existing HID feature command
+Python is optional and used only by these explicit USB tools. CMake/CTest/CPack
+do not invoke them. Replace the board name for Pocket. `boot` sends the existing HID feature command
 `BOOT-R2500!!`; it does not erase flash. Physical ROM entry is independent of the
 application. `identity`, `verify` and `reset` require the registered device in ROM.
 Writing validates the matching build manifest, hashes, partitions and hardware,

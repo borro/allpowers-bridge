@@ -2,8 +2,10 @@
 
 - Product code is C++17: portable `core/`, common dual-board `firmware/`, native
   Qt Windows monitor. Python is build/test/maintenance tooling only.
-- Use the locked uv environment and `tools/build.py`. Native builds use CMake
-  presets/Ninja; Windows Qt requires the MSVC WinRT backend, not MinGW.
+- Build with CMake Presets/Ninja, CTest and CPack. No Python build wrapper.
+  Windows Qt requires static MSVC libraries, /MT and the WinRT backend, not MinGW.
+  Dependency versions/checksums live in cmake/Dependencies.cmake; product
+  versions come only from Git tags (or generated VERSION in a source archive).
 - Keep device addresses, serials, reports and recovery images out of Git. Real
   identities are in ignored local configuration; recovery storage is external.
 - Build/test/cleanup must never flash a board or switch station connections.

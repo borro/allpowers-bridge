@@ -1,0 +1,4 @@
+# Optional USB maintenance only. Never needed by CMake, CTest or the application.
+hidapi==0.15.0
+pyserial==3.5
+esptool==5.1.0

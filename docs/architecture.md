@@ -6,13 +6,15 @@ ALLPOWERS BLE GATT
     └── Qt Bluetooth/WinRT ─── same C++ core ────── native Qt desktop/history
 ```
 
-All product code is C++17. Python is limited to build, maintenance and C ABI
-tests; it is not embedded or shipped with the desktop application.
+All product code and ABI tests are C++17. CMake/Ninja, CTest and CPack own the
+build graph, tests and packaging. Python remains only in optional explicit board
+maintenance tools; it is not part of the build or Windows application.
 
 The portable core owns model hints, packet validation, units, known-field masks,
 freshness, read-only polls and reconnect timing. It has no Arduino, OS, USB or
 display dependency. C ABI v1 remains stable for embedding/testing; native tests
-load a Windows DLL or Linux SO. The Qt app links the identical implementation.
+link the real Windows DLL or Linux SO. The Qt app statically links the identical
+implementation, Qt plugins and MSVC runtime into one EXE.
 
 Firmware shares BLE/UPS/history/UI code. BoardProfile owns wiring, geometry,
 byte order, optional RGB/backlight and page counts. DisplayPanel adapts controller

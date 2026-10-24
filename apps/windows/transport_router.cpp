@@ -3,8 +3,8 @@
 #include "service_client.h"
 #include "usb_transport.h"
 TransportRouter::TransportRouter(QObject *parent, bool offline, bool service, QString mode,
-                                 Factory make)
-    : TelemetryTransport(parent), factory(std::move(make)) {
+                                 Factory make, QString leaseKey)
+    : TelemetryTransport(parent), lease(std::move(leaseKey)), factory(std::move(make)) {
   if (!factory)
     factory = [offline, service](const QString &kind, QObject *owner) -> TelemetryTransport * {
       if (kind == "usb")
@@ -29,7 +29,9 @@ void TransportRouter::setMode(const QString &mode) {
     if (!current->remote())
       current->stop();
     delete current;
+    lease.release();
   }
+  blocked_ = false;
   mode_ = next;
   current = factory(next, this);
   current->setParent(this);

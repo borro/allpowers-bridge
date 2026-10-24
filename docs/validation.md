@@ -37,7 +37,7 @@ rebuild/test the portable core without .git or Python, checking its saved versio
 | New CMake native core / C ABI / fixtures on Ubuntu WSL, GCC 13.3 | Passed |
 | Waveshare/Pocket firmware compilation and USB/partition checks through CMake on Windows | Passed |
 | Static Qt UI/history/graph tests, isolated EXE, CPack/source-kit rebuild | Passed |
-| Clean Qt 6.8.3 static MSVC/WinRT bootstrap, then monitor tests | Passed |
+| Clean Qt 6.8.3 static MSVC/WinRT bootstrap, then monitor/widget tests | Passed |
 | Header-only incremental rebuild and unchanged no-op build, MSVC/Ninja and GCC/Ninja | Passed |
 | Separate source/binary directories, Windows `BUILD_TESTING=OFF`, source-kit packaging outside the checkout | Passed |
 | Deleted firmware byproduct restored by the next Linux build | Passed |

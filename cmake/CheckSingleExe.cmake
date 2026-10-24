@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 get_filename_component(WORK "${WORK}" ABSOLUTE)
 file(MAKE_DIRECTORY "${WORK}")
-file(COPY_FILE "${EXE}" "${WORK}/AllpowersMonitor.exe" ONLY_IF_DIFFERENT)
+get_filename_component(exe_name "${EXE}" NAME)
+file(COPY_FILE "${EXE}" "${WORK}/${exe_name}" ONLY_IF_DIFFERENT)
 find_program(DUMPBIN dumpbin REQUIRED)
 execute_process(COMMAND "${DUMPBIN}" /nologo /dependents "${EXE}"
   OUTPUT_VARIABLE imports COMMAND_ERROR_IS_FATAL ANY)
@@ -22,7 +23,7 @@ endforeach()
 file(WRITE "${WORK}/imports.txt" "${imports}")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env
   --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
-  "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/AllpowersMonitor.exe"
+  "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"
   --self-test --report "${WORK}/report.json" -platform offscreen
   WORKING_DIRECTORY "${WORK}" TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${WORK}/report.json" report)
@@ -32,7 +33,8 @@ string(JSON lgpl GET "${report}" lgpl_notice)
 if(NOT status STREQUAL "PASS" OR notices LESS 1 OR NOT lgpl)
   message(FATAL_ERROR "Standalone EXE smoke test failed")
 endif()
-execute_process(COMMAND "${WORK}/AllpowersMonitor.exe" --service
+if(NOT WIDGET)
+execute_process(COMMAND "${WORK}/${exe_name}" --service
   RESULT_VARIABLE service_result TIMEOUT 10)
 if(NOT service_result EQUAL 1063)
   message(FATAL_ERROR "Service mode must refuse a console launch (1063): ${service_result}")
@@ -47,5 +49,6 @@ if(DRIVER_PACKAGE)
       message(FATAL_ERROR "Embedded driver differs from the built package: ${name}")
     endif()
   endforeach()
+endif()
 endif()
 message(STATUS "Single EXE: system-only imports, offline UI/SQLite/notices, SCM guard and driver payload passed")

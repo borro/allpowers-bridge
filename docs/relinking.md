@@ -5,7 +5,7 @@ Gui, Widgets, Bluetooth, Network and Sql 6.8.3 are
 statically linked under LGPLv3. About displays embedded Qt/component notices;
 AllpowersMonitor.exe --export-licenses <directory> extracts them.
 
-Only the EXE and Windows system components are needed at runtime. History and
+Each application (monitor or widget) needs only its EXE and Windows system components at runtime. History and
 settings live in the user-data directory; no private DLLs are extracted at startup.
 No restriction prevents reverse engineering, changing/relinking Qt, rebuilding or
 running a modified executable.

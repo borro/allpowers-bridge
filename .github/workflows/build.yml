@@ -87,5 +87,6 @@ jobs:
           path: |
             build/**/Testing/Temporary/LastTest.log
             build/**/desktop-tests.txt
+            build/**/widget-tests.txt
             build/**/*-err.log
             build/**/*-out.log

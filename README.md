@@ -8,6 +8,7 @@ native Windows monitor. [Русская версия](README.ru.md).
 | Waveshare ESP32-S3-LCD-1.47 | BLE Central → USB Device | HID UPS, display, history, diagnostics, RGB |
 | Pocket-Dongle-S3 0.96 N16R8 | BLE Central → USB Device | HID UPS, compact display, history, diagnostics |
 | Windows Monitor | Computer Bluetooth / Qt WinRT or USB CDC board | Telemetry, graphs, diagnostics; optional experimental Windows UPS integration |
+| Windows Widget | Computer Bluetooth or USB CDC board | Standalone desktop card with telemetry and an hourly power graph |
 
 The core recognizes 17 model names and three protocol families. USB UPS reporting
 is implemented for R2500 V2; other profiles expose only their known fields.
@@ -22,11 +23,29 @@ See [USB mode](docs/usb-monitor.md).
 
 ![Earlier Windows monitor UI with synthetic data](docs/images/windows-monitor.png)
 
-The Windows runtime is **one EXE**: Qt, SQLite, platform plugins, the protocol core
+The Windows package includes **AllpowersMonitor.exe** and **AllpowersWidget.exe**.
+Each application runs from its own EXE: Qt, SQLite, platform plugins, the protocol core
 and the C++ runtime are statically linked. No Qt/Python installation is needed.
 Graphs support wheel zoom, panning, crosshair values, series visibility,
 linear/logarithmic time, source-change markers and CSV export. Disk work runs
 outside the UI thread. History/settings stay in `%LOCALAPPDATA%/AllpowersMonitor`.
+The widget runs without the monitor and keeps separate settings/history in
+`%LOCALAPPDATA%/AllpowersWidget`. On first launch, select Bluetooth or USB,
+discover a device and save. The rectangular 300 × 210 card uses the device name
+as its heading and displays charge, input/output, remaining time in
+days/hours/minutes and two power traces for the last hour, with gaps for missing
+data. Drag anywhere on the card except its menu button to move it; right-click or use the tray icon for settings,
+connect/disconnect, position locking and exit. Optional login startup is off by default.
+Normal windows cover the card; Win+D leaves it on the desktop. If Explorer
+attachment is unavailable, no floating window appears: the tray reports the
+reason and attachment is retried automatically.
+The monitor and widget take turns owning a direct connection: disconnect in one
+before connecting in the other. Ownership protection requires the new versions
+of both applications; disconnect an already running older monitor manually.
+With the UPS service installed, the widget reads the service's Bluetooth data
+and never stops it on exit. The widget owns its USB port directly.
+Run `AllpowersWidget.exe --demo` to preview without hardware; demo uses temporary
+storage and does not change user settings or login startup.
 Diagnostics includes a live event log that follows new entries. Scrolling up
 pauses following; “К новым записям” resumes it. The view retains 2000 lines;
 the disk log rotates independently.
@@ -56,7 +75,7 @@ needs MSVC 2022 C++ Build Tools and Windows 11 SDK 10.0.26100.0. Run Windows com
 used by the project build, tests or packaging.
 
 ```sh
-# Windows: core, native tests and the single-EXE monitor
+# Windows: core, native tests, monitor and widget
 cmake --preset windows
 cmake --build --preset windows
 ctest --preset windows
@@ -88,7 +107,7 @@ Each board has independent sketch/build staging; no source is modified. Build,
 CTest and packaging never flash devices or connect a station.
 
 Outputs: `build/` for intermediate files, `dist/firmware/<board>/` for images,
-`dist/windows/AllpowersMonitor/AllpowersMonitor.exe` for the Windows runtime.
+`dist/windows/AllpowersMonitor/` for `AllpowersMonitor.exe` and `AllpowersWidget.exe`.
 The `release` target uses CPack to create runtime and corresponding-source ZIPs
 with SHA256 files. The source ZIP includes complete Qt archives and relinking
 instructions; keep it with binary distributions.
@@ -97,7 +116,7 @@ instructions; keep it with binary distributions.
 
 GitHub Actions runs on pushes, pull requests and manual requests. A publication
 gate checks the index, working tree and reachable history, including a pinned
-Gitleaks secret scan. Windows Server 2025 builds the static monitor and
+Gitleaks secret scan. Windows Server 2025 builds the static monitor/widget and
 driver; Ubuntu 24.04 builds the portable core. Both jobs compile both board
 profiles and run CTest. Windows also rebuilds/tests the source kit and creates
 CPack ZIPs with checksums. Successful jobs retain build artifacts for 14 days;

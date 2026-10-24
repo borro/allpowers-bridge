@@ -40,7 +40,8 @@ within 48 hours. All disk/history/export work runs separately from the GUI.
 The diagnostics page includes source RAW, freshness, packet counters, GATT UUIDs,
 MTU, last packet/error, history state and chart rendering time.
 
-The runtime is one EXE. Qt, SQLite, plugins and the C++ runtime are statically
+The monitor and desktop widget each run as an independent EXE. Qt, SQLite,
+plugins and the C++ runtime are statically
 linked. About displays embedded notices; --export-licenses extracts them.
 The separate sources ZIP contains corresponding application/Qt source and
 docs/relinking.md. Users can replace/relink Qt; the application does not restrict

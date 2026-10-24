@@ -20,7 +20,7 @@ ExternalProject_Add(windows-monitor
     "-DALLPOWERS_DRIVER_PACKAGE_DIR=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     "-DBUILD_TESTING=${BUILD_TESTING}"
   BUILD_ALWAYS TRUE
-  INSTALL_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe"
+  INSTALL_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe" "${windows_output}/AllpowersWidget.exe"
   ${windows_test_options}
   LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON LOG_OUTPUT_ON_FAILURE ON
   USES_TERMINAL_BUILD TRUE EXCLUDE_FROM_ALL TRUE)
@@ -44,6 +44,7 @@ if(BUILD_TESTING)
     -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
 endif()
 install(PROGRAMS "${windows_output}/AllpowersMonitor.exe" DESTINATION .)
+install(PROGRAMS "${windows_output}/AllpowersWidget.exe" DESTINATION .)
 set(CPACK_GENERATOR ZIP)
 set(CPACK_PACKAGE_NAME AllpowersMonitor)
 set(CPACK_PACKAGE_VERSION "${ALLPOWERS_VERSION}")

@@ -57,7 +57,7 @@ is used. The first build takes longer; subsequent builds reuse the static SDK.
 ALLPOWERS_QT_ROOT selects a compatible existing static MSVC Qt installation.
 ALLPOWERS_QT_SOURCE_CACHE stores verified upstream archives and extracted notices.
 Generated resources and staging remain in the selected binary directory. With
-the presets, the EXE is installed in `dist/windows/AllpowersMonitor/`. Windows system DLLs
+the presets, both EXEs are installed in `dist/windows/AllpowersMonitor/`. Windows system DLLs
 remain OS dependencies. No bundled DLLs are unpacked at startup.
 
 CTest runs native UI/history/graph tests and checks the EXE's PE imports. It then
@@ -119,7 +119,7 @@ The audit job checks the index and working tree, rejects unexpected public files
 scans reachable history, and runs checksum-pinned Gitleaks. The build matrix uses
 Windows Server 2025 (MSVC x64, SDK 10.0.26100.0) and Ubuntu 24.04. Both compile
 the core and both firmware profiles, and run CTest. Windows bootstraps static Qt,
-builds the driver/monitor and verifies the CPack source-kit rebuild.
+builds the driver/monitor/widget and verifies the CPack source-kit rebuild.
 
 Actions are pinned to commit hashes; Dependabot proposes monthly updates. The
 workflow has read-only repository permissions, does not persist Git credentials,

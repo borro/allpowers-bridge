@@ -1,4 +1,5 @@
 #pragma once
+#include "connection_lease.h"
 #include "transport.h"
 #include <functional>
 class TransportRouter : public TelemetryTransport {
@@ -6,7 +7,8 @@ class TransportRouter : public TelemetryTransport {
 public:
   using Factory = std::function<TelemetryTransport *(const QString &, QObject *)>;
   explicit TransportRouter(QObject *parent, bool offline, bool service, QString mode,
-                           Factory factory = {});
+                           Factory factory = {},
+                           QString leaseKey = QStringLiteral("ALLPOWERS.DirectConnection.v1"));
   ~TransportRouter() override;
   QString mode() const {
     return mode_;
@@ -28,10 +30,15 @@ public:
     return current->endpoint();
   }
   QString phase() const override {
-    return current->phase();
+    return blocked_ ? QStringLiteral("Подключение занято другим приложением ALLPOWERS. Отключите "
+                                     "его и повторите попытку.")
+                    : current->phase();
   }
   QJsonObject diagnostics() const override {
-    return current->diagnostics();
+    auto info = current->diagnostics();
+    if (blocked_)
+      info["error"] = phase();
+    return info;
   }
   bool remote() const override {
     return current->remote();
@@ -46,19 +53,32 @@ public:
     current->scan();
   }
   void start(const QString &id, int model) override {
-    current->start(id, model);
+    if (claim())
+      current->start(id, model);
   }
   void resume(const QString &id, const QString &name, int model) override {
-    current->resume(id, name, model);
+    if (claim())
+      current->resume(id, name, model);
   }
   void stop() override {
     current->stop();
+    lease.release();
+    blocked_ = false;
+    emit stateChanged();
   }
   void requestHistory() override {
     current->requestHistory();
   }
 
 private:
+  ConnectionLease lease;
+  bool blocked_ = false;
+  bool claim() {
+    blocked_ = !current->remote() && !lease.acquire();
+    if (blocked_)
+      emit stateChanged();
+    return !blocked_;
+  }
   TelemetryTransport *current = nullptr;
   QString mode_;
   Factory factory;

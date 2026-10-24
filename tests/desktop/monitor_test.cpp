@@ -414,7 +414,8 @@ private slots:
       bluetoothCreates++;
       return new BleTransport(parent, true, false);
     };
-    auto *router = new TransportRouter(nullptr, false, false, "usb", factory);
+    auto *router = new TransportRouter(nullptr, false, false, "usb", factory,
+                                     "ALLPOWERS.Test." + dir.path().section('/', -1));
     MonitorWindow window(false, nullptr, router);
     window.show();
     QTRY_VERIFY(io && !io->openedPort.isEmpty());

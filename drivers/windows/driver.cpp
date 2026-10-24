@@ -151,18 +151,9 @@ _Use_decl_annotations_ void watchdog(WDFTIMER timer) {
     notify(c);
 }
 EVT_WDF_DEVICE_FILE_CREATE openFile;
-_Use_decl_annotations_ void openFile(WDFDEVICE device, WDFREQUEST request, WDFFILEOBJECT file) {
-  auto *c = context(device);
-  NTSTATUS status = STATUS_SUCCESS;
-  if (WdfFileObjectWdmGetFileObject(file)->WriteAccess) {
-    WdfWaitLockAcquire(c->stateLock, nullptr);
-    if (c->publisher)
-      status = STATUS_SHARING_VIOLATION;
-    else
-      c->publisher = file;
-    WdfWaitLockRelease(c->stateLock);
-  }
-  WdfRequestComplete(request, status);
+_Use_decl_annotations_ void openFile(WDFDEVICE, WDFREQUEST request, WDFFILEOBJECT) {
+  // Opening a standard Battery Class handle does not claim publication.
+  WdfRequestComplete(request, STATUS_SUCCESS);
 }
 EVT_WDF_FILE_CLOSE closeFile;
 _Use_decl_annotations_ void closeFile(WDFFILEOBJECT file) {
@@ -189,9 +180,17 @@ _Use_decl_annotations_ void ioctl(WDFQUEUE queue, WDFREQUEST request, size_t, si
         WdfRequestRetrieveInputBuffer(request, sizeof(*s), reinterpret_cast<void **>(&s), nullptr);
     if (NT_SUCCESS(status)) {
       WdfWaitLockAcquire(c->stateLock, nullptr);
-      status = c->publisher == WdfRequestGetFileObject(request) && c->cache.accept(*s, nowMs())
-                   ? STATUS_SUCCESS
-                   : STATUS_INVALID_PARAMETER;
+      const auto file = WdfRequestGetFileObject(request);
+      // A standard Battery Class client can also open a read/write handle.
+      // Only our first valid private update claims the publisher role.
+      if (c->publisher && c->publisher != file)
+        status = STATUS_SHARING_VIOLATION;
+      else if (!file || !c->cache.accept(*s, nowMs()))
+        status = STATUS_INVALID_PARAMETER;
+      else {
+        c->publisher = file;
+        status = STATUS_SUCCESS;
+      }
       WdfWaitLockRelease(c->stateLock);
       if (NT_SUCCESS(status))
         notify(c);

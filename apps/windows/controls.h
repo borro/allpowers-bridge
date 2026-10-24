@@ -4,6 +4,9 @@
 
 class Select : public QComboBox {
   Q_OBJECT
+  QWidget *popup = nullptr;
+  bool popupAbove = false;
+
 public:
   explicit Select(QWidget *parent = nullptr);
   void showPopup() override;
@@ -12,6 +15,7 @@ signals:
   void popupClosed();
 
 protected:
+  bool eventFilter(QObject *, QEvent *) override;
   void paintEvent(QPaintEvent *) override;
 };
 

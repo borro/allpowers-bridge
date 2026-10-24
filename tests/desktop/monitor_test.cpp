@@ -7,6 +7,8 @@
 #include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QPainter>
+#include <QScreen>
 #include <QScrollBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -131,6 +133,12 @@ private slots:
     QTest::qWait(50);
     auto *view = select->view();
     QVERIFY(view->isVisible());
+    const auto fieldTop = select->mapToGlobal(QPoint(0, 0));
+    QCOMPARE(view->window()->geometry().left(), fieldTop.x());
+    QCOMPARE(view->window()->geometry().top(), fieldTop.y() + select->height());
+    QCOMPARE(view->window()->width(), select->width());
+    QVERIFY(!view->window()->mask().contains(view->window()->rect().bottomLeft()));
+    QVERIFY(view->window()->mask().contains(QPoint(0, 0)));
     QRect previous;
     for (int i = 0; i < select->count(); ++i) {
       auto row = view->visualRect(select->model()->index(i, 0));
@@ -144,6 +152,12 @@ private slots:
     QVERIFY(view->viewport()->height() >= previous.bottom());
     window.grab().save("dropdown-window.png");
     view->window()->grab().save("dropdown-popup.png");
+    auto joined = window.grab();
+    {
+      QPainter painter(&joined);
+      painter.drawPixmap(window.mapFromGlobal(view->window()->pos()), view->window()->grab());
+    }
+    joined.save("dropdown-joined.png");
     QTest::keyClick(view, Qt::Key_End);
     QTest::keyClick(view, Qt::Key_Return);
     QCOMPARE(select->currentIndex(), select->count() - 1);
@@ -167,6 +181,19 @@ private slots:
     QCOMPARE(devices->count(), 3);
     QCOMPARE(devices->itemData(0).toString(), QString("demo-b"));
     QCOMPARE(devices->currentData().toString(), first);
+
+    Select nearBottom;
+    nearBottom.addItems({"First", "Second", "Third"});
+    nearBottom.resize(250, 42);
+    nearBottom.move(100, nearBottom.screen()->availableGeometry().bottom() - 60);
+    nearBottom.show();
+    nearBottom.showPopup();
+    const auto upper = nearBottom.view()->window();
+    QCOMPARE(upper->geometry().bottom() + 1, nearBottom.mapToGlobal(QPoint(0, 0)).y());
+    QCOMPARE(upper->width(), nearBottom.width());
+    QVERIFY(!upper->mask().contains(QPoint(0, 0)));
+    QVERIFY(upper->mask().contains(upper->rect().bottomLeft()));
+    nearBottom.hidePopup();
   }
   void logFollowsAndPauses() {
     LiveLog log;

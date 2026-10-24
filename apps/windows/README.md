@@ -20,6 +20,9 @@ Live readings share station charts/history. Old board records have no station
 identity and are stored separately while filling gaps in the main USB chart; corrupt or
 undated records are skipped. [USB mode](../../docs/usb-monitor.md).
 Driver management is in Diagnostics, not the main navigation.
+The desktop widget uses the same USB history merger: it reads the archive on
+connection/reconnection, restores its saved board cache and renders one trace
+per power metric. Switching boards or returning to Bluetooth clears that overlay.
 F5 scans. Device/profile controls explain why they are unavailable. Dropdowns
 work with mouse, arrows, Enter and Escape. Disconnect remains available while scanning.
 

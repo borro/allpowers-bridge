@@ -73,6 +73,19 @@ USB detaches this viewer without stopping the service or changing its Bluetooth
 source. USB mode does not publish another virtual battery: the physical board
 already provides HID UPS reporting where supported.
 
+## Desktop widget
+
+The widget automatically reads the archive when USB connects or reconnects. Its
+own history worker also restores previously saved records for the selected board
+before that read finishes. It uses the monitor's merger, with application samples
+taking priority and one line per power metric. Real stale/boot gaps remain.
+Board records retain their original unidentified provenance and remain separate
+from station history in storage. Switching boards clears the previous archive;
+Bluetooth/service mode does not include a USB board overlay. The one-hour graph
+refreshes every second, with disk work on the history worker. Repeated reads do
+not duplicate records. The monitor and widget still use a direct connection in
+turn, so disconnect the monitor before connecting the widget to the same port.
+
 ## Tests
 
 CTest uses fake serial channels only: both profiles, fragmented/malformed/oversize

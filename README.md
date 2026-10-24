@@ -44,6 +44,8 @@ before connecting in the other. Ownership protection requires the new versions
 of both applications; disconnect an already running older monitor manually.
 With the UPS service installed, the widget reads the service's Bluetooth data
 and never stops it on exit. The widget owns its USB port directly.
+On USB connection/reconnection it automatically reads the board archive and merges
+it with current samples into one line per metric, preserving genuine data gaps.
 Run `AllpowersWidget.exe --demo` to preview without hardware; demo uses temporary
 storage and does not change user settings or login startup.
 Diagnostics includes a live event log that follows new entries. Scrolling up

@@ -27,6 +27,9 @@ public:
   void setTelemetry(ap_snapshot value, QString phase);
   void setDeviceName(QString name);
   void setHistory(HistoryPoints points, qint64 now);
+  const HistoryPoints &historyPoints() const {
+    return points_;
+  }
   QImage renderedImage() const;
   void setLocked(bool value) {
     locked_ = value;
@@ -62,19 +65,21 @@ class WidgetController : public QObject {
   QTimer timer;
   ap_snapshot latest{};
   qint64 receivedAt = -1, sampleAt = -1;
-  QString historyAddress, historyError;
-  HistoryPoints stored, remotePoints;
+  QString historyAddress, historyError, usbEndpoint;
+  HistoryPoints stored, remotePoints, usbPoints, plotted;
   bool offline_, locked = false;
   QPointer<QDialog> settingsDialog;
   void save();
   void refresh();
+  void refreshHistory();
   void receive(ap_snapshot);
   void connectStation();
   void disconnectStation();
   Q_INVOKABLE void configure();
 
 public:
-  explicit WidgetController(QString directory, bool offline = false, bool desktop = true);
+  explicit WidgetController(QString directory, bool offline = false, bool desktop = true,
+                            TransportRouter::Factory factory = {});
   ~WidgetController() override;
   WidgetCard *card() {
     return &card_;

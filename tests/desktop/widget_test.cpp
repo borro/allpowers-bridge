@@ -1,3 +1,4 @@
+#include "usb_transport.h"
 #include "widget.h"
 #include <QApplication>
 #include <QDialog>
@@ -75,9 +76,152 @@ public:
   }
 };
 
+class WidgetUsbChannel : public UsbChannel {
+public:
+  QByteArray writes;
+  QString port;
+  void open(const QString &value) override {
+    port = value;
+    emit opened();
+  }
+  void close() override {}
+  void write(const QByteArray &value) override {
+    writes += value;
+  }
+  void feed(const QByteArray &value) {
+    emit received(value);
+  }
+};
+static QByteArray widgetUsbStatus(const QString &board, int frames) {
+  const QList<QJsonObject> rows = {
+      {{"adapter", "UPSDEV"},
+       {"version", "R"},
+       {"fresh", true},
+       {"gatt_connected", true},
+       {"soc", 50},
+       {"charge_w", 0},
+       {"output_w", 150},
+       {"runtime_s", 1800},
+       {"source", "battery"},
+       {"source_raw", 65535},
+       {"ac_output", true},
+       {"usb_output", false},
+       {"dc_output", false},
+       {"valid_frames", frames},
+       {"invalid_frames", 0}},
+      {{"station_name", "AP R2500 V2.0"}, {"station_address", "02:00:00:00:00:03"}},
+      {{"telemetry_known", 895}, {"protocol", 3}, {"ups_source_known", true}},
+      {{"graph_live_latest_s", 180}},
+      {{"history_ready", true},
+       {"history_records", 2},
+       {"history_latest", 2},
+       {"history_session", 7},
+       {"history_clock", false}},
+      {{"board", board}}};
+  QByteArray data;
+  for (const auto &row : rows)
+    data += QJsonDocument(row).toJson(QJsonDocument::Compact) + '\n';
+  return data;
+}
+
 class WidgetTests : public QObject {
   Q_OBJECT
 private slots:
+  void usbArchiveFillsWidgetGraph_data() {
+    QTest::addColumn<QString>("board");
+    QTest::newRow("waveshare") << QString("waveshare-147");
+    QTest::newRow("pocket") << QString("pocket-096");
+  }
+  void usbArchiveFillsWidgetGraph() {
+    QFETCH(QString, board);
+    QTemporaryDir temporary;
+    const auto now = QDateTime::currentSecsSinceEpoch();
+    HistoryPoint cached;
+    cached.address = "usb-board:R2500-000000000001";
+    cached.session = "cached-boot";
+    cached.wall = now - 300;
+    cached.tick = 10;
+    cached.stride = 60;
+    cached.data.fresh = 1;
+    cached.data.known = 7;
+    cached.data.soc = 50;
+    cached.data.output_w = 100;
+    auto other = cached;
+    other.address = "usb-board:R2500-000000000002";
+    other.wall = now - 600;
+    {
+      HistoryStore store(temporary.filePath("history.sqlite3"));
+      QVERIFY(store.importPoints({cached, other}, now));
+    }
+    QFile settings(temporary.filePath("settings.json"));
+    QVERIFY(settings.open(QIODevice::WriteOnly));
+    settings.write("{\"transport\":\"usb\",\"endpoint\":\"R2500-000000000001\"}");
+    settings.close();
+    WidgetUsbChannel *io = nullptr;
+    UsbTransport *usb = nullptr;
+    WidgetController widget(temporary.path(), false, false,
+                            [&](const QString &mode, QObject *parent) -> TelemetryTransport * {
+                              if (mode != "usb")
+                                return new CountingTransport(parent);
+                              io = new WidgetUsbChannel;
+                              usb = new UsbTransport(parent, false, io, [] {
+                                return QList<UsbPort>{
+                                    {"R2500-000000000001", "COM987", "Synthetic board"},
+                                    {"R2500-000000000002", "COM988", "Other synthetic board"}};
+                              });
+                              return usb;
+                            });
+    QVERIFY(usb);
+    usb->resume("R2500-000000000001", {}, 0);
+    io->feed(widgetUsbStatus(board, 10));
+    QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 1);
+    QVERIFY(!widget.diagnostics()["bluetooth_used"].toBool());
+    auto has = [&](const HistoryPoint &point) {
+      for (const auto &shown : widget.card()->historyPoints())
+        if (shown.address == point.address && shown.wall == point.wall)
+          return true;
+      return false;
+    };
+    QTRY_VERIFY(has(cached)); // Cached archive appears before the USB dump completes.
+    QVERIFY(!has(other));
+    QTRY_VERIFY(io->writes.contains("HISTORY-READ 1 2\n"));
+    const QByteArray dump =
+        "{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
+        "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+        "\"crc\":3397945926}\n"
+        "{\"history_record\":true,\"sequence\":2,\"session\":7,\"uptime_s\":160,\"epoch\":0,"
+        "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
+        "\"crc\":874804455}\n{\"history_dump_done\":true}\n";
+    io->feed(dump);
+    QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 3);
+    QVERIFY(widget.diagnostics()["history_error"].toString().isEmpty());
+    QTRY_VERIFY(widget.diagnostics()["output_segments"].toInt() > 0);
+    const auto &points = widget.card()->historyPoints();
+    QVERIFY(points.size() >= 3);
+    QVERIFY(joinPoints(points[points.size() - 2], points.last()));
+    QVERIFY(!joinPoints(points.first(), points[1])); // The genuine older-boot gap remains.
+    // Reconnection re-reads history automatically and deduplicates retained records.
+    io->writes.clear();
+    usb->resume("R2500-000000000001", {}, 0);
+    io->feed(widgetUsbStatus(board, 11));
+    QTRY_VERIFY(io->writes.contains("HISTORY-READ 1 2\n"));
+    io->feed(dump);
+    QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 3);
+    usb->resume("R2500-000000000002", {}, 0);
+    io->feed(widgetUsbStatus(board, 12));
+    QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 1);
+    QTRY_VERIFY(has(other));
+    QVERIFY(!has(cached));
+    QVERIFY(widget.diagnostics()["history_error"].toString().isEmpty());
+    QVERIFY(!io->writes.contains("BOOT"));
+    QVERIFY(!io->writes.contains("SELECT"));
+    QVERIFY(!io->writes.contains("TIME "));
+    auto *router = widget.findChild<TransportRouter *>();
+    QVERIFY(router);
+    router->setMode("bluetooth");
+    QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 0);
+    QVERIFY(!has(other));
+  }
   void remainingTimeUsesDays() {
     ap_snapshot value{};
     QCOMPARE(WidgetCard::remainingTime(value), QStringLiteral("—"));
@@ -130,10 +274,12 @@ private slots:
   void ownershipBlocksBeforeTransportStart() {
     const auto key = "ALLPOWERS.Test." + QUuid::createUuid().toString(QUuid::Id128);
     CountingTransport *first = nullptr, *second = nullptr;
-    TransportRouter a(nullptr, true, false, "bluetooth",
-                      [&](auto, QObject *p) { return first = new CountingTransport(p); }, key);
-    TransportRouter b(nullptr, true, false, "usb",
-                      [&](auto, QObject *p) { return second = new CountingTransport(p); }, key);
+    TransportRouter a(
+        nullptr, true, false, "bluetooth",
+        [&](auto, QObject *p) { return first = new CountingTransport(p); }, key);
+    TransportRouter b(
+        nullptr, true, false, "usb",
+        [&](auto, QObject *p) { return second = new CountingTransport(p); }, key);
     a.resume("synthetic", {}, 0);
     QCOMPARE(first->starts, 1);
     b.resume("synthetic", {}, 0);
@@ -151,9 +297,9 @@ private slots:
     ConnectionLease occupied(key);
     QVERIFY(occupied.acquire());
     CountingTransport *fake = nullptr;
-    TransportRouter service(nullptr, true, true, "bluetooth", [&](auto, QObject *p) {
-      return fake = new CountingTransport(p, true);
-    }, key);
+    TransportRouter service(
+        nullptr, true, true, "bluetooth",
+        [&](auto, QObject *p) { return fake = new CountingTransport(p, true); }, key);
     service.resume("synthetic", {}, 0);
     QCOMPARE(fake->starts, 1);
     QVERIFY(!service.phase().contains(QStringLiteral("занято")));

@@ -17,15 +17,19 @@ BleTransport::BleTransport(QObject *parent, bool offline) : QObject(parent), off
       auto bytes = info.name().toUtf8();
       emit found(address, info.name().isEmpty() ? "Без имени" : info.name(), info.rssi(),
                  int(ap_model_hint(bytes.constData())));
+      if (active_ && address == address_ && !controller)
+        connectDevice();
     };
     connect(scanner, &QBluetoothDeviceDiscoveryAgent::deviceDiscovered, this, device);
     connect(scanner, &QBluetoothDeviceDiscoveryAgent::deviceUpdated, this,
             [device](const auto &i, auto) { device(i); });
-    connect(scanner, &QBluetoothDeviceDiscoveryAgent::finished, this, &BleTransport::stateChanged);
-    connect(scanner, &QBluetoothDeviceDiscoveryAgent::canceled, this, &BleTransport::stateChanged);
+    connect(scanner, &QBluetoothDeviceDiscoveryAgent::finished, this,
+            &BleTransport::discoveryEnded);
+    connect(scanner, &QBluetoothDeviceDiscoveryAgent::canceled, this,
+            &BleTransport::discoveryEnded);
     connect(scanner, &QBluetoothDeviceDiscoveryAgent::errorOccurred, this, [this](auto) {
       error_ = scanner->errorString();
-      emit stateChanged();
+      discoveryEnded();
     });
   }
   tick.setInterval(500);
@@ -62,7 +66,7 @@ void BleTransport::scan() {
     return;
   auto current = devices.value(address_);
   devices.clear();
-  if (active_)
+  if (active_ && current.isValid())
     devices[address_] = current;
   error_.clear();
   scanner->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
@@ -99,6 +103,27 @@ void BleTransport::start(const QString &address, int model) {
   retrySeconds = 2;
   connectDevice();
 }
+void BleTransport::resume(const QString &address, const QString &name, int model) {
+  stop();
+  const QBluetoothAddress saved(address);
+  if (saved.isNull())
+    return;
+  address_ = saved.toString();
+  name_ = name;
+  profile = qBound(0, model, 3);
+  active_ = true;
+  retrySeconds = 2;
+  connectDevice();
+}
+void BleTransport::discoveryEnded() {
+  if (active_ && !controller && !retry.isActive()) {
+    setPhase(QString("Станция пока недоступна · поиск через %1 с").arg(retrySeconds));
+    retry.start(retrySeconds * 1000);
+    retrySeconds = qMin(20, retrySeconds * 2);
+  } else {
+    emit stateChanged();
+  }
+}
 void BleTransport::stop() {
   active_ = false;
   ++epoch;
@@ -124,15 +149,30 @@ void BleTransport::fail(const QString &message) {
 void BleTransport::connectDevice() {
   if (!active_)
     return;
+  // Offline transports are also injected into UI tests. Never create native
+  // discovery/controller objects in this mode, even for explicit requests.
+  if (offline_) {
+    setPhase("Автономный тест: Bluetooth не используется");
+    return;
+  }
+  const auto info = devices.value(address_);
+  if (!info.isValid()) {
+    setPhase("Поиск последней станции…");
+    scan();
+    return;
+  }
+  retry.stop();
   destroyConnection();
   ++epoch;
   const auto generation = epoch;
-  auto info = devices.value(address_);
+  name_ = info.name();
   auto name = info.name().toUtf8();
   session.reset(profile ? profile : int(ap_model_hint(name.constData())));
   emit newSession();
   auto *c = QLowEnergyController::createCentral(info, this);
   controller = c;
+  if (scanner && scanner->isActive())
+    scanner->stop();
   auto current = [this, c, generation] {
     return active_ && controller == c && epoch == generation;
   };

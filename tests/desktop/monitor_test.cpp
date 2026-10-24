@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QPainter>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QScrollBar>
 #include <QTabWidget>
@@ -125,6 +126,97 @@ private slots:
     auto settings = QJsonDocument::fromJson(file.readAll()).object();
     QCOMPARE(settings["page"].toString(), QString("История"));
     QCOMPARE(settings["horizon"].toInt(), 3600);
+  }
+  void startupResumesSavedStationAndCanBeCancelled() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    QFile file(data.filePath("settings.json"));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    const QString address = "02:00:00:00:00:01"; // Synthetic, locally administered address.
+    file.write(
+        QJsonDocument(QJsonObject{{"address", address}, {"name", "AP R2500 V2.0"}, {"profile", 3}})
+            .toJson());
+    file.close();
+    {
+      auto *backend = new BleTransport(nullptr, true);
+      MonitorWindow window(false, nullptr, backend);
+      window.show();
+      QTRY_VERIFY(backend->active());
+      QCOMPARE(backend->address(), address);
+      QVERIFY(!backend->connected());
+      QCOMPARE(backend->diagnostics()["connections"].toInt(), 0);
+      QCOMPARE(window.findChild<QComboBox *>("devices")->currentData().toString(), address);
+      QCOMPARE(window.findChild<QComboBox *>("profile")->currentIndex(), 3);
+      auto *button = window.findChild<QPushButton *>("primary");
+      QVERIFY(button->isEnabled());
+      QCOMPARE(button->text(), QString("Отключить"));
+      emit backend->found("02:00:00:00:00:02", "AP R600 V2.0", -30, 2);
+      QCOMPARE(backend->address(), address);
+      button->click();
+      QVERIFY(!backend->active());
+      emit backend->stateChanged();
+      QTest::qWait(50);
+      QVERIFY(!backend->active());
+      // The saved entry can be retried without a separate manual scan.
+      button->click();
+      QVERIFY(backend->active());
+      QCOMPARE(backend->address(), address);
+      button->click();
+      window.close();
+    }
+    {
+      MonitorWindow demo(true);
+      demo.show();
+      QTest::qWait(30);
+      QVERIFY(!demo.findChild<BleTransport *>()->active());
+    }
+    {
+      auto *backend = new BleTransport(nullptr, true);
+      MonitorWindow closed(false, nullptr, backend);
+      closed.show();
+      closed.close();
+      QTest::qWait(30);
+      QVERIFY(!backend->active());
+    }
+  }
+  void startupWithoutSavedStationStaysIdle() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto *backend = new BleTransport(nullptr, true);
+    MonitorWindow window(false, nullptr, backend);
+    window.show();
+    QTest::qWait(30);
+    QVERIFY(!backend->active());
+    QVERIFY(backend->address().isEmpty());
+  }
+  void overviewHasLargeSourceAndRuntimeCards() {
+    MonitorWindow window(true);
+    window.show();
+    window.loadDemo();
+    window.findChild<QButtonGroup *>()->button(0)->click();
+    window.resize(930, 710);
+    QTest::qWait(20);
+    auto *source = window.findChild<QLabel *>("powerSource");
+    auto *runtime = window.findChild<QLabel *>("remainingTime");
+    QVERIFY(source && runtime);
+    QVERIFY(source->parentWidget() != runtime->parentWidget());
+    QCOMPARE(source->font().pixelSize(), 44);
+    QCOMPARE(runtime->font().pixelSize(), 44);
+    for (const auto &value :
+         {QString("Розетка"), QString("Аккумулятор"), QString("Не определён")}) {
+      source->setText(value);
+      QVERIFY(source->fontMetrics().horizontalAdvance(value) <= source->contentsRect().width());
+    }
+    source->setText("Аккумулятор");
+    for (const auto &value : {QString("6 ч 14 мин"), QString("26 д 16 ч")}) {
+      runtime->setText(value);
+      QVERIFY(runtime->fontMetrics().horizontalAdvance(value) <= runtime->contentsRect().width());
+    }
+    window.grab().save("overview-large-cards.png");
   }
   void dropdownKeyboardAndLayout() {
     MonitorWindow window(true);

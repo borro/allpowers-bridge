@@ -25,6 +25,10 @@ pauses following; “К новым записям” resumes it. The view retain
 the disk log rotates independently.
 Current diagnostic state is a grouped parameter/value table; full JSON can still
 be copied for troubleshooting.
+On normal startup, the monitor automatically searches for and connects to the
+last saved station, using its Bluetooth address and saved protocol profile.
+If it is unavailable, discovery is retried; Disconnect cancels waiting/retries.
+Demo and automated tests do not use real Bluetooth connections.
 
 ## Build
 

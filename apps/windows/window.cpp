@@ -10,7 +10,6 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFrame>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonDocument>
@@ -76,7 +75,7 @@ QString monitorDataDirectory() {
     base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
   return QDir(base).filePath("AllpowersMonitor");
 }
-MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
+MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *transport)
     : QMainWindow(parent), offline(testMode) {
   qRegisterMetaType<ap_snapshot>();
   qRegisterMetaType<HistoryPoints>();
@@ -187,7 +186,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
   auto *footer =
       text("Только просмотр  ·  Прямое BLE  ·  История сохраняется на компьютере", 12, "#7d96b9");
   layout->addWidget(footer);
-  ble = new BleTransport(this, offline);
+  ble = transport ? transport : new BleTransport(this, offline);
+  ble->setParent(this);
   connect(group, &QButtonGroup::idClicked, this, [this, group](int id) {
     pages->setCurrentIndex(id);
     group->button(id)->setChecked(true);
@@ -225,7 +225,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
     settings["name"] = discovered[address]["name"];
     settings["profile"] = profile->currentIndex();
     saveSettings();
-    ble->start(address, profile->currentIndex());
+    ble->resume(address, discovered[address]["name"].toString(), profile->currentIndex());
   });
   connect(ble, &BleTransport::stateChanged, this, [this] {
     bool scanning = ble->scanning();
@@ -293,6 +293,18 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
   updateControls();
   appendLog(QString("ALLPOWERS Monitor %1 · %2")
                 .arg(APP_VERSION, offline ? "демонстрация без Bluetooth" : "готов к подключению"));
+  if (!selectedAddress.isEmpty()) {
+    const QString name = settings["name"].toString();
+    discovered[selectedAddress] = {{"name", name.isEmpty() ? selectedAddress : name},
+                                   {"model", int(ap_model_hint(name.toUtf8().constData()))}};
+    rebuildDevices();
+    const auto address = selectedAddress;
+    const int model = profile->currentIndex();
+    QTimer::singleShot(0, this, [this, address, name, model] {
+      if (!offline && isVisible() && !ble->active())
+        ble->resume(address, name, model);
+    });
+  }
 }
 MonitorWindow::~MonitorWindow() {
   // QObject deletes the central widget before later child objects. Stop signals
@@ -313,7 +325,7 @@ QWidget *MonitorWindow::overviewPage() {
   layout->setSpacing(12);
   auto *cards = new QHBoxLayout;
   cards->setSpacing(12);
-  auto card = [&](const QString &title, QLabel *&value) {
+  auto card = [&](QHBoxLayout *row, const QString &title, QLabel *&value) {
     auto *frame = new QFrame;
     frame->setObjectName("card");
     auto *l = new QVBoxLayout(frame);
@@ -321,24 +333,19 @@ QWidget *MonitorWindow::overviewPage() {
     l->addWidget(text(title, 14));
     value = text("—", 44, "#f1f6ff", true);
     l->addWidget(value);
-    cards->addWidget(frame, 1);
+    row->addWidget(frame, 1);
   };
-  card("Заряд", soc);
-  card("Вход / заряд", input);
-  card("Выход", output);
+  card(cards, "Заряд", soc);
+  card(cards, "Вход / заряд", input);
+  card(cards, "Выход", output);
   layout->addLayout(cards);
-  auto *details = new QFrame;
-  details->setObjectName("card");
-  auto *grid = new QGridLayout(details);
-  grid->setContentsMargins(22, 20, 22, 20);
-  grid->setVerticalSpacing(18);
-  grid->addWidget(text("Источник питания"), 0, 0);
-  source = text("—", 20, "#f1f6ff", true);
-  grid->addWidget(source, 0, 1, Qt::AlignRight);
-  grid->addWidget(text("Оставшееся время"), 1, 0);
-  runtime = text("—", 20, "#f1f6ff", true);
-  grid->addWidget(runtime, 1, 1, Qt::AlignRight);
-  layout->addWidget(details);
+  auto *details = new QHBoxLayout;
+  details->setSpacing(12);
+  card(details, "Источник питания", source);
+  card(details, "Оставшееся время", runtime);
+  source->setObjectName("powerSource");
+  runtime->setObjectName("remainingTime");
+  layout->addLayout(details);
   auto *outputs = new QHBoxLayout;
   for (auto pair : {qMakePair(QString("AC"), &outputAC), qMakePair(QString("USB"), &outputUSB),
                     qMakePair(QString("DC"), &outputDC)}) {
@@ -565,11 +572,12 @@ void MonitorWindow::rebuildDevices() {
   });
   for (const auto &address : addresses) {
     auto d = discovered[address];
-    if (stationsOnly->isChecked() && !d["model"].toInt())
+    if (stationsOnly->isChecked() && !d["model"].toInt() && address != selectedAddress)
       continue;
-    devices->addItem(
-        QString("%1  ·  %2  ·  %3 dBm").arg(d["name"].toString(), address).arg(d["rssi"].toInt()),
-        address);
+    const QString signal =
+        d.contains("rssi") ? QString("%1 dBm").arg(d["rssi"].toInt()) : "сохранённая станция";
+    devices->addItem(QString("%1  ·  %2  ·  %3").arg(d["name"].toString(), address, signal),
+                     address);
   }
   int selected = devices->findData(previous);
   devices->setCurrentIndex(selected >= 0 ? selected : devices->count() ? 0 : -1);
@@ -577,7 +585,9 @@ void MonitorWindow::rebuildDevices() {
 }
 void MonitorWindow::updateControls() {
   bool active = ble->active(), scanning = ble->scanning();
-  scanButton->setEnabled(!scanning && !offline);
+  scanButton->setEnabled(!active && !scanning && !offline);
+  scanButton->setToolTip(active ? "Для нового поиска сначала отключитесь от станции"
+                                : "Найти доступные станции Bluetooth");
   scanButton->setText(scanning ? "Поиск…" : "Найти станции");
   bool canConnect = active || (!scanning && devices->currentIndex() >= 0 && !offline);
   connectButton->setEnabled(canConnect);

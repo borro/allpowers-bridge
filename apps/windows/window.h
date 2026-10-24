@@ -54,7 +54,9 @@ protected:
   void closeEvent(QCloseEvent *) override;
 
 public:
-  explicit MonitorWindow(bool offline = false, QWidget *parent = nullptr);
+  // An injected transport becomes a child of the window (used by offline tests).
+  explicit MonitorWindow(bool offline = false, QWidget *parent = nullptr,
+                         BleTransport *transport = nullptr);
   ~MonitorWindow() override;
   void loadDemo();
   HistoryChart *historyChart() const {

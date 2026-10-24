@@ -25,6 +25,7 @@ class BleTransport : public QObject {
   quint64 epoch = 0;
   quint64 connects = 0, drops = 0, polls = 0, packets = 0;
   void connectDevice();
+  void discoveryEnded();
   void fail(const QString &message);
   void destroyConnection();
   void readyService(quint64 generation);
@@ -53,6 +54,7 @@ public:
 public slots:
   void scan();
   void start(const QString &address, int model);
+  void resume(const QString &address, const QString &name, int model);
   void stop();
 signals:
   void found(QString address, QString name, int rssi, int model);

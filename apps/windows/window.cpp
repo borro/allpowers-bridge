@@ -204,6 +204,19 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   connect(scanButton, &QPushButton::clicked, ble, &BleTransport::scan);
   connect(new QShortcut(QKeySequence("F5"), this), &QShortcut::activated, scanButton,
           &QPushButton::click);
+  auto *fullScreen = new QShortcut(QKeySequence(Qt::Key_F11), this);
+  fullScreen->setAutoRepeat(false);
+  connect(fullScreen, &QShortcut::activated, this, [this, wasMaximized = false]() mutable {
+    if (isFullScreen()) {
+      if (wasMaximized)
+        showMaximized();
+      else
+        showNormal();
+    } else {
+      wasMaximized = isMaximized();
+      showFullScreen();
+    }
+  });
   connect(stationsOnly, &QCheckBox::toggled, this, [this] { rebuildDevices(); });
   connect(devices, &QComboBox::currentIndexChanged, this, [this] {
     updateControls();

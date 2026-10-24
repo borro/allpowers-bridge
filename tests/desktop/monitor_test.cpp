@@ -127,6 +127,30 @@ private slots:
     QCOMPARE(settings["page"].toString(), QString("История"));
     QCOMPARE(settings["horizon"].toInt(), 3600);
   }
+  void f11RestoresPreviousWindowMode() {
+    MonitorWindow window(true);
+    window.resize(1120, 820);
+    window.show();
+    window.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+    const auto originalSize = window.size();
+    QTest::keyClick(&window, Qt::Key_F11);
+    QTRY_VERIFY(window.isFullScreen());
+    QTest::keyClick(&window, Qt::Key_F11);
+    QTRY_VERIFY(!window.isFullScreen());
+    QVERIFY(!window.isMaximized());
+    QCOMPARE(window.size(), originalSize);
+    window.showMaximized();
+    QTRY_VERIFY(window.isMaximized());
+    window.findChild<QButtonGroup *>()->button(2)->click();
+    auto *log = window.findChild<LiveLog *>("eventLog");
+    log->setFocus();
+    QTest::keyClick(log, Qt::Key_F11);
+    QTRY_VERIFY(window.isFullScreen());
+    QTest::keyClick(log, Qt::Key_F11);
+    QTRY_VERIFY(!window.isFullScreen());
+    QVERIFY(window.isMaximized());
+  }
   void startupResumesSavedStationAndCanBeCancelled() {
     QTemporaryDir data;
     qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());

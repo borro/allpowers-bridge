@@ -1,6 +1,6 @@
 # ALLPOWERS
 
-Телеметрия ALLPOWERS по BLE: общее C++17-ядро, две платы USB-ИБП и нативный
+Телеметрия ALLPOWERS по BLE: общее C++23-ядро, две платы USB-ИБП и нативный
 монитор Windows. [English](README.md).
 
 | Версия | Подключение | Возможности |
@@ -76,9 +76,9 @@ F11 переключает полноэкранный режим; повторн
 
 ## Сборка
 
-Нужны Git, CMake 3.26+ и Ninja (проверены CMake 3.31.6 / Ninja 1.11.1). Для Windows
-также MSVC 2022 C++ Build Tools и Windows 11 SDK 10.0.26100.0. Команды Windows выполняйте
-в **x64 Developer PowerShell**. Для Linux нужен компилятор C++17. Python и uv
+Нужны Git, CMake 4.4+ и Ninja (закреплены CMake 4.4.4 / Ninja 1.13.2). Для Windows
+также MSVC 2026 C++ Build Tools и Windows 11 SDK 10.0.26100.0. Команды Windows выполняйте
+в **x64 Developer PowerShell**. Для Linux нужен компилятор C++23. Python и uv
 для сборки проекта, тестов и упаковки не используются.
 
 ```sh
@@ -94,7 +94,7 @@ cmake --build --preset native
 ctest --preset native
 ```
 
-Первая Windows-сборка скачивает исходники Qt 6.8.3 с проверкой SHA256 и собирает
+Первая Windows-сборка скачивает исходники Qt 6.12.0 с проверкой SHA256 и собирает
 статический SDK MSVC/WinRT через ExternalProject. Следующие используют готовый SDK.
 Свою статическую установку можно указать через `-DALLPOWERS_QT_ROOT=/path/to/qt`.
 Windows-цель также собирает и встраивает драйвер через WDK 10.0.26100.6584

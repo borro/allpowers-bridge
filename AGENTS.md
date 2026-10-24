@@ -1,6 +1,6 @@
 # Working on ALLPOWERS
 
-- Product code is C++17: portable `core/`, common dual-board `firmware/`, native
+- Product code is C++23: portable `core/`, common dual-board `firmware/`, native
   Qt Windows monitor. Python is build/test/maintenance tooling only.
 - Build with CMake Presets/Ninja, CTest and CPack. No Python build wrapper.
   Windows Qt requires static MSVC libraries, /MT and the WinRT backend, not MinGW.

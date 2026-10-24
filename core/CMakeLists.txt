@@ -4,7 +4,7 @@ target_include_directories(allpowers_core PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/native>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>")
 target_compile_definitions(allpowers_core PUBLIC AP_CORE_SHARED PRIVATE AP_BUILD_CORE)
-target_compile_features(allpowers_core PUBLIC cxx_std_17)
+target_compile_features(allpowers_core PUBLIC cxx_std_23)
 set_target_properties(allpowers_core PROPERTIES CXX_VISIBILITY_PRESET hidden)
 if(WIN32)
   set_target_properties(allpowers_core PROPERTIES PREFIX "")

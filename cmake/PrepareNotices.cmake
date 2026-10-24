@@ -10,7 +10,7 @@ foreach(module qtbase qtconnectivity)
     if(NOT FETCH)
       message(FATAL_ERROR "Qt sources are missing. Build the root windows target or run PrepareNotices.cmake with FETCH=ON before configuring the standalone app")
     endif()
-    file(DOWNLOAD "https://download.qt.io/archive/qt/6.8/${ALLPOWERS_QT_VERSION}/submodules/${name}.tar.xz"
+    file(DOWNLOAD "${ALLPOWERS_QT_SOURCE_URL}/${name}.tar.xz"
       "${archive}" EXPECTED_HASH "SHA256=${ALLPOWERS_${key}_SHA256}" TLS_VERIFY ON SHOW_PROGRESS
       TIMEOUT 180 INACTIVITY_TIMEOUT 30)
   endif()

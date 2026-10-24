@@ -1,6 +1,6 @@
 # ALLPOWERS
 
-ALLPOWERS BLE telemetry: one portable C++17 core, two USB UPS boards and a
+ALLPOWERS BLE telemetry: one portable C++23 core, two USB UPS boards and a
 native Windows monitor. [Русская версия](README.ru.md).
 
 | Product | Connection | Features |
@@ -73,9 +73,9 @@ Standalone monitoring remains available without integration. See
 
 ## Build
 
-Use Git, CMake 3.26+ and Ninja (tested with CMake 3.31.6 / Ninja 1.11.1). Windows also
-needs MSVC 2022 C++ Build Tools and Windows 11 SDK 10.0.26100.0. Run Windows commands in an
-**x64 Developer PowerShell**; Linux needs a C++17 compiler. Python and uv are not
+Use Git, CMake 4.4+ and Ninja (pinned CMake 4.4.4 / Ninja 1.13.2). Windows also
+needs MSVC 2026 C++ Build Tools and Windows 11 SDK 10.0.26100.0. Run Windows commands in an
+**x64 Developer PowerShell**; Linux needs a C++23 compiler. Python and uv are not
 used by the project build, tests or packaging.
 
 ```sh
@@ -91,7 +91,7 @@ cmake --build --preset native
 ctest --preset native
 ```
 
-The first Windows build downloads checksum-pinned Qt 6.8.3 source and builds the
+The first Windows build downloads checksum-pinned Qt 6.12.0 source and builds the
 static MSVC/WinRT SDK with ExternalProject. Later builds reuse it. Existing static
 Qt can be selected with `-DALLPOWERS_QT_ROOT=/path/to/qt`.
 The Windows target also builds/embeds the driver using checksum-pinned WDK

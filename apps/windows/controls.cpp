@@ -116,18 +116,34 @@ Select::Select(QWidget *parent) : QComboBox(parent) {
   setCursor(Qt::PointingHandCursor);
 }
 void Select::showPopup() {
+  // Qt's scroll effect later restores its captured geometry, undoing our
+  // joined-popup placement and clipping the list by the layout margins.
+  // Suppress it for this call only; preserve the application's effect setting.
+  const bool animate = QApplication::isEffectEnabled(Qt::UI_AnimateCombo);
+  QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false);
   QComboBox::showPopup();
+  QApplication::setEffectEnabled(Qt::UI_AnimateCombo, animate);
   if (!popup->isVisible())
     return;
+  popup->layout()->activate();
+  view()->doItemsLayout();
+  int rowsHeight = 0;
+  for (int row = 0; row < qMin(count(), maxVisibleItems()); ++row)
+    rowsHeight += view()->sizeHintForRow(row);
+  // Measure all frame/layout/viewport insets instead of duplicating them.
+  const int insets = popup->height() - view()->viewport()->height();
   const QRect available = screen()->availableGeometry();
   const QPoint top = mapToGlobal(QPoint(0, 0));
   const int below = available.bottom() + 1 - (top.y() + height());
   const int above = top.y() - available.top();
-  const int preferred = qMin(count(), maxVisibleItems()) * 40 + 9;
+  const int preferred = rowsHeight + insets;
   popupAbove = preferred > below && above > below;
   const int popupHeight = qMin(preferred, popupAbove ? above : below);
   popup->setGeometry(top.x(), popupAbove ? top.y() - popupHeight : top.y() + height(), width(),
                      popupHeight);
+  popup->layout()->activate();
+  view()->doItemsLayout();
+  view()->scrollTo(view()->currentIndex(), QAbstractItemView::EnsureVisible);
   // The popup and field share side edges. Only the outer corners are rounded.
   QPainterPath shape;
   QRectF bounds(popup->rect());

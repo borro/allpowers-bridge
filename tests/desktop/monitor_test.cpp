@@ -655,6 +655,79 @@ private slots:
       QVERIFY(metrics.horizontalAdvance(label->text()) <= label->contentsRect().width());
     }
   }
+  void dropdownFitsVisibleRows_data() {
+    QTest::addColumn<int>("items");
+    QTest::addColumn<bool>("lastSelected");
+    for (int count : {1, 2, 3, 4, 8, 12})
+      for (bool last : {false, true})
+        QTest::newRow(qPrintable(QString("%1-%2").arg(count).arg(last))) << count << last;
+  }
+  void dropdownFitsVisibleRows() {
+    QFETCH(int, items);
+    QFETCH(bool, lastSelected);
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restoreData =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    MonitorWindow window(true);
+    window.show();
+    window.findChild<QComboBox *>("transportMode")->setCurrentIndex(1);
+    auto *select = window.findChild<Select *>("historySource");
+    const bool animate = QApplication::isEffectEnabled(Qt::UI_AnimateCombo);
+    const auto restoreEffect =
+        qScopeGuard([animate] { QApplication::setEffectEnabled(Qt::UI_AnimateCombo, animate); });
+    QApplication::setEffectEnabled(Qt::UI_AnimateCombo, true);
+    // The offscreen platform may report all UI effects unavailable.
+    const bool effectiveAnimation = QApplication::isEffectEnabled(Qt::UI_AnimateCombo);
+    if (items != 2) {
+      select->clear();
+      for (int i = 0; i < items; ++i)
+        select->addItem(QString("Пункт %1 · длинная подпись").arg(i + 1));
+    }
+    select->setCurrentIndex(lastSelected ? items - 1 : 0);
+    window.findChild<QButtonGroup *>()->button(1)->click();
+    for (int attempt = 0; attempt < 2; ++attempt) {
+      select->showPopup();
+      QTest::qWait(220); // Include the completion of native popup effects.
+      auto *view = select->view();
+      const auto viewport = view->viewport()->rect();
+      qInfo() << "Popup rows" << items << "selected" << select->currentIndex() << "popup"
+              << view->window()->size() << "viewport" << viewport << "margins"
+              << view->window()->contentsMargins() << "scroll"
+              << view->verticalScrollBar()->minimum() << view->verticalScrollBar()->maximum();
+      const auto screen = select->screen()->availableGeometry();
+      const auto top = select->mapToGlobal(QPoint(0, 0)).y();
+      const int space = qMax(top - screen.top(), screen.bottom() + 1 - top - select->height());
+      int contentHeight = 0;
+      for (int row = 0; row < items; ++row)
+        contentHeight += view->sizeHintForRow(row);
+      const int insets = view->window()->height() - viewport.height();
+      const auto shots = qEnvironmentVariable("ALLPOWERS_TEST_SHOTS");
+      if (items == 2 && attempt == 0 && !shots.isEmpty()) {
+        QDir().mkpath(shots);
+        auto joined = window.grab();
+        {
+          QPainter painter(&joined);
+          painter.drawPixmap(window.mapFromGlobal(view->window()->pos()), view->window()->grab());
+        }
+        joined.save(QDir(shots).filePath(QString("dropdown-%1.png").arg(select->currentIndex())));
+      }
+      if (items <= select->maxVisibleItems() && contentHeight + insets <= space) {
+        QCOMPARE(view->verticalScrollBar()->maximum(), 0);
+        for (int row = 0; row < items; ++row)
+          QVERIFY2(view->visualRect(select->model()->index(row, 0)).top() >= viewport.top() &&
+                       view->visualRect(select->model()->index(row, 0)).bottom() <=
+                           viewport.bottom(),
+                   "A short popup must display each row completely");
+      } else {
+        QVERIFY(view->verticalScrollBar()->maximum() > 0);
+        const auto selected = view->visualRect(select->model()->index(select->currentIndex(), 0));
+        QVERIFY(selected.top() >= viewport.top() && selected.bottom() <= viewport.bottom());
+      }
+      select->hidePopup();
+      QCOMPARE(QApplication::isEffectEnabled(Qt::UI_AnimateCombo), effectiveAnimation);
+    }
+  }
   void dropdownKeyboardAndLayout() {
     MonitorWindow window(true);
     window.show();

@@ -9,6 +9,11 @@ Dropdown regression tests cover row geometry, keyboard selection/cancel and list
 stability during discovery updates. Live-log tests cover tail following, paused
 scrolling/selection and preservation of visible entries as the 2000-line buffer
 rotates. These UI tests run offline, including at 150% display scale.
+The native Windows popup regression waits beyond the animation interval and
+checks the actual two-option history selector at 150%, including reopening and
+the last selected item. Component geometry was also checked at 125% and 200%.
+This catches Qt's delayed scroll effect restoring a popup height that omits our
+layout margins; the offscreen backend alone cannot reproduce that effect.
 
 Firmware targets check USB descriptors, partition offsets, ABI/updater/startup
 contracts and source/artifact hashes. The Git-index audit checks private identities,

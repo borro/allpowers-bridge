@@ -107,6 +107,9 @@ if(MSVC)
   target_compile_options(monitor_tests PRIVATE /utf-8 /UNDEBUG)
 endif()
 add_test(NAME desktop COMMAND monitor_tests -platform offscreen -o desktop-tests.txt,txt)
+add_test(NAME dropdown-native COMMAND monitor_tests dropdownFitsVisibleRows:2-0 dropdownFitsVisibleRows:2-1
+  -platform windows -o dropdown-native-tests.txt,txt)
+set_tests_properties(dropdown-native PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5")
 add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersMonitor>"
   "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/single-exe-check"
   "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"

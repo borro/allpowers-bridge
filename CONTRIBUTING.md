@@ -10,7 +10,9 @@
 - Keep protocol code OS-independent. Put wiring/layout differences in board/display
   abstractions, not forked firmware. Keep C ABI v1 compatible.
 - Never commit identities, captures, user databases, factory images, build products
-  or SDK copies. Stage changes and build target `audit` against the index before committing.
+  or SDK copies. Run `audit-worktree`, review/stage changes, then run `audit`,
+  `audit-history` and `audit-secrets` before committing. Publication checks must
+  also cover deleted historical secrets; ignoring a file is not history cleanup.
 - Any USB descriptor, partition or maintenance change needs deliberate fixture
   review and accessible recovery plus a real second-write test. Do not merely
   regenerate a passing fixture to bypass a mismatch.

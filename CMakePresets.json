@@ -1,10 +1,12 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": {"major": 3, "minor": 25, "patch": 0},
+  "cmakeMinimumRequired": {"major": 3, "minor": 26, "patch": 0},
   "configurePresets": [
     {"name": "base", "hidden": true, "generator": "Ninja",
      "binaryDir": "${sourceDir}/build/${presetName}",
-     "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON"}},
+     "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON",
+       "ALLPOWERS_RELEASE_DIR": "${sourceDir}/dist",
+       "ALLPOWERS_DEPS_DIR": "${sourceDir}/build/deps"}},
     {"name": "native", "inherits": "base", "displayName": "Portable core and firmware targets"},
     {"name": "windows", "inherits": "base", "displayName": "Static Windows monitor + portable targets",
      "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows"},

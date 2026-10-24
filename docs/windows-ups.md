@@ -99,50 +99,27 @@ and SQLite; they cover multiple viewers, continued history after window close,
 invalid IPC and merging legacy/service history. These tests do not load kernel
 code and do not prove native Battery Class behavior or service-mode WinRT BLE.
 
-## Deferred VM procedure
+## Deferred VM validation
 
-The scripts are preparation tools; their syntax is tested, their actual VM
-operations have not yet been verified. Take a checkpoint before installation.
-Use a Windows 11 x64 guest (4 vCPU, 8 GB RAM, 80 GB disk). Built-in Hyper-V is an
-option on Windows Pro. `tools/Prepare-UpsLab.ps1` can inspect/enable Hyper-V without
-rebooting, create the dedicated VM and create a checkpoint. Enabling a host feature
-requires a separate explicit operation and may require a later host reboot.
-VM preparation is currently deferred by the user.
+The driver is experimental. VM runtime validation remains outstanding; unverified
+VM provisioning, test-signing and replay scripts are not shipped with the public
+repository. Building the driver and parsing helper scripts do not prove that it
+works inside the Windows kernel.
 
-Hyper-V does not provide ordinary raw USB Bluetooth passthrough. Enhanced-session
-device redirection is not proof that a LocalSystem service can use BLE before
-login. Real BLE testing needs a demonstrated guest-visible BLE adapter or a
-different VM solution with full USB passthrough. Synthetic driver testing can
-proceed independently. Do not mark the real BLE path verified if this is blocked.
+Further validation requires a disposable Windows 11 x64 guest and a checkpoint,
+Microsoft SDK signing tools, a guest-only test certificate and a signed driver
+package. Keep guest test-signing changes and certificates inside that guest.
+A privately signed payload can be selected with
+-DALLPOWERS_DRIVER_PACKAGE_DIR=<signed-package-directory> before rebuilding the
+monitor. Do not copy the guest private key or trust its certificate on the host.
 
-For later guest tests only:
-
-1. Disable Secure Boot on the **guest** and explicitly enable guest test signing;
-   never change the host's boot options. Reboot the guest as required.
-2. Copy the package and `tools/Sign-UpsLabPackage.ps1` to the guest. In an elevated
-   guest shell, sign the package with its generated non-exportable guest test key.
-   The script validates Microsoft SDK tool signatures, trusts the test certificate
-   only in the guest, signs SYS, regenerates CAT, signs CAT and verifies both.
-3. Copy only the three signed package files back to a private build directory.
-   Reconfigure with `-DALLPOWERS_DRIVER_PACKAGE_DIR=<signed-package-directory>`,
-   rebuild the EXE, and copy it to the guest. Do not copy/import the private key or
-   trust the guest certificate on the host.
-4. Run the GUI's integration action in the guest, or elevate
-   `AllpowersMonitor.exe --integration-action install`. Signature verification
-   precedes installation. The installer uses exact ALLPOWERS hardware/service IDs,
-   avoids duplicate devices, preserves the previous executable/driver for rollback,
-   and configures service restart on failure. Test update and rollback errors too.
-5. Prepare a synthetic scenario with `tools/Test-UpsLab.ps1 -Monitor <exe>
-   -Stage PrepareReplay`. It deliberately ends at 0% battery: first disable critical
-   power actions **in the guest**, take a checkpoint, then test power policy separately.
-   `-Stage Probe` records native battery IOCTLs, `GetSystemPowerStatus` and power
-   notifications. `-Stage RestoreRealBle` returns the service to its normal mode.
-6. Exercise 100/50/5/0%, mains→battery→mains, unknown time, stale data, service
-   stop/crash/hang, station change, sleep, Bluetooth restart, and multiple viewers.
-   Test Driver Verifier, uninstall/reinstall and native policy shutdown/hibernate
-   only inside the checkpointed guest. Verify standalone mode after removal.
-7. Separately verify real BLE from LocalSystem before login, after logout and
-   resume. Interactive GUI BLE success is not a substitute for that check.
+The remaining checks are installation/update/rollback/removal, Battery Class
+IOCTLs, unknown and stale readings, connection loss, sleep/resume, Driver Verifier
+and Windows power policy. Synthetic replay support in the application is a test
+facility, not a verified test procedure. Real service BLE also requires a proven
+guest-visible adapter: Hyper-V device redirection alone is not evidence of BLE
+access from LocalSystem. Verify that path separately before login and after
+logout/resume. No provisioning or hardware test runs as part of CMake or CI.
 
 CLI reference (administrative actions are lab-gated):
 

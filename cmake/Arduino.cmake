@@ -13,6 +13,7 @@ if(NOT EXISTS "${local_config}")
   set(local_config "${PROJECT_SOURCE_DIR}/.local/arduino.json")
 endif()
 if(EXISTS "${local_config}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${local_config}")
   file(READ "${local_config}" settings)
   string(JSON saved_platform ERROR_VARIABLE error GET "${settings}" platform)
   if(error OR saved_platform STREQUAL host_platform)
@@ -21,28 +22,32 @@ if(EXISTS "${local_config}")
       list(GET pair 1 key)
       string(JSON value ERROR_VARIABLE error GET "${settings}" "${key}")
       if(NOT error AND NOT ${variable})
-        set(${variable} "${value}" CACHE PATH "Local Arduino setting" FORCE)
+        if(variable STREQUAL ARDUINO_CLI)
+          set(${variable} "${value}" CACHE FILEPATH "Local Arduino executable" FORCE)
+        else()
+          set(${variable} "${value}" CACHE PATH "Local Arduino package data" FORCE)
+        endif()
       endif()
     endforeach()
   endif()
 endif()
 if(NOT ARDUINO_CLI)
-  find_program(detected_cli NAMES arduino-cli)
+  find_program(detected_cli NAMES arduino-cli NO_CACHE)
   if(detected_cli)
     set(ARDUINO_CLI "${detected_cli}" CACHE FILEPATH "Arduino CLI" FORCE)
   else()
-    set(ARDUINO_CLI "${PROJECT_SOURCE_DIR}/build/deps/arduino-cli/${CMAKE_HOST_SYSTEM_NAME}/arduino-cli${cli_suffix}"
+    set(ARDUINO_CLI "${ALLPOWERS_DEPS_DIR}/arduino-cli/${CMAKE_HOST_SYSTEM_NAME}/arduino-cli${cli_suffix}"
       CACHE FILEPATH "Arduino CLI" FORCE)
   endif()
 endif()
 if(NOT ARDUINO_DATA_DIR)
-  set(ARDUINO_DATA_DIR "${PROJECT_SOURCE_DIR}/build/deps/arduino/${CMAKE_HOST_SYSTEM_NAME}/data"
+  set(ARDUINO_DATA_DIR "${ALLPOWERS_DEPS_DIR}/arduino/${CMAKE_HOST_SYSTEM_NAME}/data"
     CACHE PATH "Arduino package data" FORCE)
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/Json.cmake")
 file(TO_CMAKE_PATH "${ARDUINO_DATA_DIR}" data)
 ap_json_quote(data "${data}")
-ap_json_quote(downloads "${PROJECT_SOURCE_DIR}/build/deps/arduino/${CMAKE_HOST_SYSTEM_NAME}/downloads")
+ap_json_quote(downloads "${ALLPOWERS_DEPS_DIR}/arduino/${CMAKE_HOST_SYSTEM_NAME}/downloads")
 ap_json_quote(user "${PROJECT_BINARY_DIR}/arduino/user")
 set(arduino_config "${PROJECT_BINARY_DIR}/arduino/config.json")
 file(GENERATE OUTPUT "${arduino_config}" CONTENT
@@ -50,14 +55,29 @@ file(GENERATE OUTPUT "${arduino_config}" CONTENT
 add_custom_target(arduino-setup COMMAND "${CMAKE_COMMAND}"
   "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}" "-DCONFIG=${arduino_config}"
   -P "${PROJECT_SOURCE_DIR}/cmake/SetupArduino.cmake" USES_TERMINAL VERBATIM)
-file(GLOB_RECURSE firmware_sources CONFIGURE_DEPENDS
-  "${PROJECT_SOURCE_DIR}/core/src/*" "${PROJECT_SOURCE_DIR}/firmware/R2500Adapter/*")
-list(APPEND firmware_sources "${PROJECT_SOURCE_DIR}/core/library.properties.in")
+set(firmware_sources
+  core/library.properties.in
+  core/src/AllpowersCore.h core/src/AllpowersModels.h
+  core/src/AllpowersModels.LICENSE.txt core/src/TelemetryState.h core/src/UpsState.h
+  firmware/R2500Adapter/AllpowersModels.h firmware/R2500Adapter/AllpowersModels.LICENSE.txt
+  firmware/R2500Adapter/BoardProfile.h firmware/R2500Adapter/BootButton.h
+  firmware/R2500Adapter/BootGestures.h firmware/R2500Adapter/BuildVersion.h
+  firmware/R2500Adapter/Diagnostics.h firmware/R2500Adapter/Display.h
+  firmware/R2500Adapter/DisplayPanel.h firmware/R2500Adapter/GraphHistory.h
+  firmware/R2500Adapter/HistoryRing.h firmware/R2500Adapter/HistoryStore.h
+  firmware/R2500Adapter/MaintenanceProtocol.h firmware/R2500Adapter/R2500Adapter.ino
+  firmware/R2500Adapter/StationIdentity.h firmware/R2500Adapter/StationPicker.h
+  firmware/R2500Adapter/TargetPreferences.h firmware/R2500Adapter/Telemetry.h
+  firmware/R2500Adapter/UpsDescriptor.h firmware/R2500Adapter/partitions.csv)
+list(TRANSFORM firmware_sources PREPEND "${PROJECT_SOURCE_DIR}/")
 set(board_number 0)
 foreach(board waveshare-147 pocket-096)
   math(EXPR board_number "${board_number}+1")
   set(output "${ALLPOWERS_RELEASE_DIR}/firmware/${board}")
   add_custom_command(OUTPUT "${output}/manifest.json"
+    BYPRODUCTS "${output}/R2500Adapter.ino.bin" "${output}/R2500Adapter.ino.bootloader.bin"
+      "${output}/R2500Adapter.ino.partitions.bin" "${output}/boot_app0.bin"
+      "${output}/LICENSE" "${output}/THIRD_PARTY_NOTICES.md" "${output}/AllpowersModels.LICENSE.txt"
     COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}" "-DBOARD=${board}"
       "-DBOARD_NUMBER=${board_number}" "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}"
       "-DCONFIG=${arduino_config}" "-DWORK=${PROJECT_BINARY_DIR}/firmware/${board}"
@@ -65,8 +85,10 @@ foreach(board waveshare-147 pocket-096)
       "-DOUTPUT=${output}" "-DVERSION=${ALLPOWERS_VERSION}"
       -P "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake"
     DEPENDS ${firmware_sources} "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
+      "${arduino_config}" "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
       "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake" "${PROJECT_SOURCE_DIR}/cmake/Partitions.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/CheckContracts.cmake" "${PROJECT_SOURCE_DIR}/cmake/Json.cmake"
+      "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake" "${PROJECT_BINARY_DIR}/product-version.txt"
     USES_TERMINAL VERBATIM)
   add_custom_target(${board} DEPENDS "${output}/manifest.json")
 endforeach()

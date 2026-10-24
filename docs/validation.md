@@ -16,11 +16,14 @@ This catches Qt's delayed scroll effect restoring a popup height that omits our
 layout margins; the offscreen backend alone cannot reproduce that effect.
 
 Firmware targets check USB descriptors, partition offsets, ABI/updater/startup
-contracts and source/artifact hashes. The Git-index audit checks private identities,
-absolute user paths, generated outputs and staged contents. CI builds Windows and
-Ubuntu, fetches tags and packages Windows. CI never opens USB or BLE connections.
+contracts and source/artifact hashes. Publication audits check private identities,
+absolute user paths, unexpected files, staged/working contents and reachable Git
+history. Gitleaks checks credentials in history and changes. Regression tests use
+temporary repositories to verify rejection of ignored-but-force-staged outputs,
+unreviewed files, staged keys and secrets deleted in a later commit. CI builds
+Windows and Ubuntu, fetches tags and packages Windows. CI never opens USB or BLE.
 
-The Windows external project runs CTest before installation. Single-EXE tests
+CTest and the release target run the Windows external project's tests. Single-EXE tests
 inspect PE imports, reject Qt/shared CRT DLLs and run only the EXE in an isolated
 folder with a system-only PATH. Embedded LGPL notices and SQLite/UI startup are
 also checked. CPack release builds additionally extract their source archive and
@@ -34,7 +37,13 @@ rebuild/test the portable core without .git or Python, checking its saved versio
 | New CMake native core / C ABI / fixtures on Ubuntu WSL, GCC 13.3 | Passed |
 | Waveshare/Pocket firmware compilation and USB/partition checks through CMake on Windows | Passed |
 | Static Qt UI/history/graph tests, isolated EXE, CPack/source-kit rebuild | Passed |
-| New CMake Linux firmware orchestration | Not completed: SDK index HEAD request to espressif.github.io timed out |
+| Clean Qt 6.8.3 static MSVC/WinRT bootstrap, then monitor tests | Passed |
+| Header-only incremental rebuild and unchanged no-op build, MSVC/Ninja and GCC/Ninja | Passed |
+| Separate source/binary directories, Windows `BUILD_TESTING=OFF`, source-kit packaging outside the checkout | Passed |
+| Deleted firmware byproduct restored by the next Linux build | Passed |
+| New CMake Linux firmware orchestration, both boards | Passed; official SHA256-verified SDK archives were downloaded through Windows because WSL could not reach the ESP32 index |
+| Reachable Git history and current public sources, Gitleaks 8.30.1 | No leaks detected |
+| GitHub workflow, Actionlint 1.7.12 | Passed; remote execution pending publication |
 
 ## USB monitor — 2026-10-24
 
@@ -44,12 +53,10 @@ unknown dates, archive deduplication and separate station/archive retention.
 UI tests cover live recording, archive selection, USB/Bluetooth choice and driver
 management being located only in Diagnostics.
 
-A manual USB-only test on the registered Waveshare read fresh telemetry for 25s:
-100%, 0 W charging input, 138 W output and mains. It imported 19 archive points;
-214 undated records from previous boots were skipped. USB/CRC error counts were
-zero, the board retained BLE and the COM port closed afterwards. Computer Bluetooth
-was not used; no firmware, clock or selection command was sent. Pocket was not
-connected: its hardware path remains unverified beyond protocol tests.
+An earlier manual Waveshare USB-only test verified fresh telemetry and archive
+import, with invalid/undated records skipped and no USB/CRC errors. Pocket's
+hardware path remains unverified beyond protocol tests. Publication preparation
+uses only offline tests and compilation, without contacting either board.
 
 ## Experimental Windows UPS work — offline boundary
 
@@ -69,16 +76,14 @@ Driver Verifier, Windows shutdown/hibernate policy and real BLE from LocalSystem
 before login are **unverified** until guest tests. Hyper-V raw Bluetooth passthrough
 is not assumed. See [the lab procedure](windows-ups.md).
 
-Both firmwares were previously compiled successfully on Linux before the CMake
-orchestration replacement. That earlier result is not proof of the new Linux
-setup/build path; its CI run is still required. Windows and Ubuntu CI jobs are
-configured, but have not run remotely because the repository has not been pushed.
+Both firmware targets now pass the CMake build/contract path on Linux. This does
+not verify WSL's failed network/index-update path: the pinned SDK was installed
+from verified cached downloads. Windows and Ubuntu CI jobs are configured, but
+have not run remotely because the repository has not been pushed.
 
-A manual test, explicitly authorized after Waveshare was unplugged, connected the
-static WinRT app to the real R2500 V2: one connection, 12 valid packets, zero invalid
-packets/drops, fresh telemetry and a confirmed subscription. It reported 100%,
-0 W input, 208 W output and mains power. The test then disconnected automatically.
-No board was flashed and no station control/settings commands were sent.
+An earlier authorized manual WinRT test verified a real Central/GATT connection,
+subscription and fresh R2500 V2 telemetry. That result is separate from BLE
+observation, hardware USB UPS reporting and the unverified kernel-driver path.
 
 An offscreen software-rendering benchmark used 6,480 history samples in a
 1,120 × 820 window: full plot redraws were about 20–30 ms; cached redraws about

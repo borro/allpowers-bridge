@@ -17,7 +17,7 @@ source kit available alongside any binary distribution.
 
 ## Rebuild or replace Qt
 
-1. Extract allpowers/ from the source ZIP. Install CMake, Ninja, MSVC 2022 C++ Build
+1. Extract allpowers/ from the source ZIP. Install Git, CMake 3.26+, Ninja, MSVC 2022 C++ Build
    Tools and Windows 11 SDK 10.0.26100.0; open an x64 Developer PowerShell.
 2. Copy qt-source/*.tar.xz to allpowers/build/deps/downloads/.
 3. In allpowers/, run cmake --preset windows, then cmake --build --preset windows.
@@ -31,7 +31,8 @@ source kit available alongside any binary distribution.
    activation, device unlock or permission from the author is required.
 
 The source archive's generated VERSION file retains the release identity without
-Git. In a Git checkout, the version comes from its tag. Source archives and Qt
+the original `.git` directory. Git is still required by the publication regression
+tests. In a Git checkout, the version comes from its tag. Source archives and Qt
 build/plugin documentation:
 
 - https://download.qt.io/archive/qt/6.8/6.8.3/submodules/

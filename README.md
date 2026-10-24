@@ -19,7 +19,7 @@ and CSV; board diagnostics appear in the table. No flashing or extra driver is
 required. The old board archive has no station identity and is viewed separately.
 See [USB mode](docs/usb-monitor.md).
 
-![Windows monitor with synthetic data](docs/images/windows-monitor.png)
+![Earlier Windows monitor UI with synthetic data](docs/images/windows-monitor.png)
 
 The Windows runtime is **one EXE**: Qt, SQLite, platform plugins, the protocol core
 and the C++ runtime are statically linked. No Qt/Python installation is needed.
@@ -49,7 +49,7 @@ Standalone monitoring remains available without integration. See
 
 ## Build
 
-Use CMake 3.25+ and Ninja (tested with CMake 3.31.6 / Ninja 1.11.1). Windows also
+Use Git, CMake 3.26+ and Ninja (tested with CMake 3.31.6 / Ninja 1.11.1). Windows also
 needs MSVC 2022 C++ Build Tools and Windows 11 SDK 10.0.26100.0. Run Windows commands in an
 **x64 Developer PowerShell**; Linux needs a C++17 compiler. Python and uv are not
 used by the project build, tests or packaging.
@@ -92,6 +92,23 @@ The `release` target uses CPack to create runtime and corresponding-source ZIPs
 with SHA256 files. The source ZIP includes complete Qt archives and relinking
 instructions; keep it with binary distributions.
 
+## GitHub builds and publication checks
+
+GitHub Actions runs on pushes, pull requests and manual requests. A publication
+gate checks the index, working tree and reachable history, including a pinned
+Gitleaks secret scan. Windows Server 2025 builds the static monitor and
+driver; Ubuntu 24.04 builds the portable core. Both jobs compile both board
+profiles and run CTest. Windows also rebuilds/tests the source kit and creates
+CPack ZIPs with checksums. Successful jobs retain build artifacts for 14 days;
+they do not create GitHub Releases or install/flash anything. No repository
+secrets are required. The first remote run is still pending publication.
+
+Before committing, run `audit-worktree`; after reviewing/staging files, run
+`audit`, `audit-history` and `audit-secrets` in the configured build directory.
+Source packages use a reviewed file inventory, never a directory-wide copy.
+Private configuration, recovery images and local build caches stay outside Git.
+See [building and publication](docs/building.md) for the commands.
+
 ## Versions and layout
 
 Product versions come from Git tags such as `v0.4.0`, using `git describe`.
@@ -103,7 +120,7 @@ There is no hand-maintained product version in CMake or a package manifest.
 board profiles; `apps/windows/` is the native Qt monitor; `tests/` contains C++
 tests and sanitized fixtures; `cmake/` owns build/dependency/package rules.
 `drivers/windows/` owns the optional battery miniclass. `tools/` contains explicit
-board maintenance and guest-lab PowerShell scripts. Real identities,
+board maintenance only (updating, identity and image-integrity checks). Real identities,
 ports and rollback paths are ignored local settings, never public defaults.
 
 Boards remember the selected station in NVS. Without one, the device picker opens.

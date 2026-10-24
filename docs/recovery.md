@@ -41,6 +41,8 @@ After a new firmware's first activation, actually test another write before
 further experiments. A retained ROM or old updater alone is not proof of an
 accessible recovery path. Do not revive the retired AULA experiment.
 
-`tools/history_host.py` and `tools/device_host.py` retain bounded diagnostics,
-history export and explicit device-picker operations. They require `--board`,
-use the same local identity and save reports under `.local/reports/`.
+The optional maintenance command uses `boards.py` for board/identity checks and
+`image_contract.py` for image hashes and partition validation. Its dependencies
+are pinned in `requirements-maintenance.txt`. These four files are independent
+of the CMake build. For telemetry and archive import, use the monitor's USB mode;
+select a station with the board's physical controls.

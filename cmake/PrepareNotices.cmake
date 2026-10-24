@@ -1,11 +1,15 @@
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/Dependencies.cmake")
 file(MAKE_DIRECTORY "${SOURCE_CACHE}" "${WORK}/notices")
+file(LOCK "${SOURCE_CACHE}/notices.lock" GUARD PROCESS TIMEOUT 180)
 foreach(module qtbase qtconnectivity)
   string(TOUPPER "${module}" key)
   set(name "${module}-everywhere-src-${ALLPOWERS_QT_VERSION}")
   set(archive "${SOURCE_CACHE}/${name}.tar.xz")
   if(NOT EXISTS "${archive}")
+    if(NOT FETCH)
+      message(FATAL_ERROR "Qt sources are missing. Build the root windows target or run PrepareNotices.cmake with FETCH=ON before configuring the standalone app")
+    endif()
     file(DOWNLOAD "https://download.qt.io/archive/qt/6.8/${ALLPOWERS_QT_VERSION}/submodules/${name}.tar.xz"
       "${archive}" EXPECTED_HASH "SHA256=${ALLPOWERS_${key}_SHA256}" TLS_VERIFY ON SHOW_PROGRESS
       TIMEOUT 180 INACTIVITY_TIMEOUT 30)

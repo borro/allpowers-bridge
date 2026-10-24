@@ -32,8 +32,8 @@ static QString labelStyle(const QString &color, int size, bool bold = false) {
       .arg(bold ? 700 : 400);
 }
 static QLabel *text(const QString &s, int size = 14, const QString &color = "#b0c0db",
-                    bool bold = false) {
-  auto *l = new QLabel(s);
+                    bool bold = false, bool adaptive = false) {
+  QLabel *l = adaptive ? new AdaptiveLabel(s) : new QLabel(s);
   l->setStyleSheet(labelStyle(color, size, bold));
   return l;
 }
@@ -341,39 +341,41 @@ QWidget *MonitorWindow::overviewPage() {
   auto card = [&](QHBoxLayout *row, const QString &title, QLabel *&value) {
     auto *frame = new QFrame;
     frame->setObjectName("card");
+    frame->setMinimumHeight(112);
     auto *l = new QVBoxLayout(frame);
     l->setContentsMargins(22, 20, 22, 20);
-    l->addWidget(text(title, 14));
-    value = text("—", 44, "#f1f6ff", true);
-    l->addWidget(value);
+    l->addWidget(text(title, 14, "#b0c0db", false, true), 1);
+    value = text("—", 44, "#f1f6ff", true, true);
+    l->addWidget(value, 3);
     row->addWidget(frame, 1);
   };
   card(cards, "Заряд", soc);
   card(cards, "Вход / заряд", input);
   card(cards, "Выход", output);
-  layout->addLayout(cards);
+  soc->setObjectName("chargeValue");
+  layout->addLayout(cards, 3);
   auto *details = new QHBoxLayout;
   details->setSpacing(12);
   card(details, "Источник питания", source);
   card(details, "Оставшееся время", runtime);
   source->setObjectName("powerSource");
   runtime->setObjectName("remainingTime");
-  layout->addLayout(details);
+  layout->addLayout(details, 3);
   auto *outputs = new QHBoxLayout;
   for (auto pair : {qMakePair(QString("AC"), &outputAC), qMakePair(QString("USB"), &outputUSB),
                     qMakePair(QString("DC"), &outputDC)}) {
     auto *f = new QFrame;
     f->setObjectName("card");
+    f->setMinimumHeight(44);
     auto *l = new QVBoxLayout(f);
-    *pair.second = text(pair.first + "  —", 19, "#91a6c3", true);
+    *pair.second = text(pair.first + "  —", 19, "#91a6c3", true, true);
     (*pair.second)->setAlignment(Qt::AlignCenter);
     l->addWidget(*pair.second);
     outputs->addWidget(f, 1);
   }
-  layout->addLayout(outputs);
+  layout->addLayout(outputs, 1);
   freshness = text("Ожидание данных", 13, "#8ca6cb");
   layout->addWidget(freshness);
-  layout->addStretch();
   return page;
 }
 QWidget *MonitorWindow::historyPage() {

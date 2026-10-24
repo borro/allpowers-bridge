@@ -12,6 +12,35 @@
 #include <QStyledItemDelegate>
 #include <QTextCursor>
 
+AdaptiveLabel::AdaptiveLabel(const QString &text, QWidget *parent) : QLabel(text, parent) {
+  // Text must fit the allocated space without forcing the window to grow when
+  // the font or telemetry changes. The overview layout determines cell sizes.
+  setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+  setMinimumSize(0, 0);
+}
+QFont AdaptiveLabel::fittedFont() const {
+  QFont result = font();
+  const auto bounds = contentsRect();
+  int low = 1, high = qMax(1, bounds.height());
+  while (low < high) {
+    const int candidate = (low + high + 1) / 2;
+    result.setPixelSize(candidate);
+    const QFontMetrics metrics(result);
+    if (metrics.height() <= bounds.height() && metrics.horizontalAdvance(text()) <= bounds.width())
+      low = candidate;
+    else
+      high = candidate - 1;
+  }
+  result.setPixelSize(low);
+  return result;
+}
+void AdaptiveLabel::paintEvent(QPaintEvent *) {
+  QPainter painter(this);
+  painter.setFont(fittedFont());
+  painter.setPen(palette().color(QPalette::WindowText));
+  painter.drawText(contentsRect(), alignment() | Qt::TextSingleLine, text());
+}
+
 namespace {
 class SelectStyle : public QProxyStyle {
 public:

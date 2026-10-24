@@ -242,6 +242,44 @@ private slots:
     }
     window.grab().save("overview-large-cards.png");
   }
+  void overviewScalesWithWindow() {
+    MonitorWindow window(true);
+    window.show();
+    window.loadDemo();
+    window.findChild<QButtonGroup *>()->button(0)->click();
+    window.resize(930, 710);
+    QTest::qWait(20);
+    auto *charge = window.findChild<AdaptiveLabel *>("chargeValue");
+    auto *source = window.findChild<AdaptiveLabel *>("powerSource");
+    auto *runtime = window.findChild<AdaptiveLabel *>("remainingTime");
+    QVERIFY(charge && source && runtime);
+    const int smallFont = charge->fittedFont().pixelSize();
+    const int smallCard = charge->parentWidget()->height();
+    for (const auto &size : {QSize(1920, 1080), QSize(3840, 2160)}) {
+      window.resize(size);
+      QTest::qWait(20);
+      QVERIFY(charge->parentWidget()->height() > smallCard);
+      QVERIFY(charge->fittedFont().pixelSize() > smallFont * 1.5);
+      source->setText("Аккумулятор");
+      runtime->setText("26 д 16 ч");
+      for (auto *label : window.findChildren<AdaptiveLabel *>()) {
+        const QFontMetrics metrics(label->fittedFont());
+        QVERIFY2(metrics.horizontalAdvance(label->text()) <= label->contentsRect().width(),
+                 qPrintable(label->text()));
+        QVERIFY(metrics.height() <= label->contentsRect().height());
+      }
+      window.grab().save(QString("overview-%1x%2.png").arg(size.width()).arg(size.height()));
+    }
+    window.resize(930, 710);
+    QTest::qWait(20);
+    QCOMPARE(charge->fittedFont().pixelSize(), smallFont);
+    source->setText("Не определён");
+    runtime->setText("999 д 23 ч");
+    for (auto *label : {source, runtime}) {
+      const QFontMetrics metrics(label->fittedFont());
+      QVERIFY(metrics.horizontalAdvance(label->text()) <= label->contentsRect().width());
+    }
+  }
   void dropdownKeyboardAndLayout() {
     MonitorWindow window(true);
     window.show();

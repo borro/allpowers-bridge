@@ -30,6 +30,7 @@ last saved station, using its Bluetooth address and saved protocol profile.
 If it is unavailable, discovery is retried; Disconnect cancels waiting/retries.
 Demo and automated tests do not use real Bluetooth connections.
 F11 toggles fullscreen and restores the previous normal/maximized window mode.
+Overview cards and text scale to the available window space, including fullscreen.
 
 ## Build
 

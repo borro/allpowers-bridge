@@ -1,6 +1,17 @@
 #pragma once
 #include <QComboBox>
+#include <QLabel>
 #include <QPlainTextEdit>
+
+class AdaptiveLabel : public QLabel {
+  Q_OBJECT
+public:
+  explicit AdaptiveLabel(const QString &text, QWidget *parent = nullptr);
+  QFont fittedFont() const;
+
+protected:
+  void paintEvent(QPaintEvent *) override;
+};
 
 class Select : public QComboBox {
   Q_OBJECT

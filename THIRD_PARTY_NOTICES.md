@@ -1,12 +1,15 @@
 # Third-party software
 
-Project code is MIT. Dependencies keep their licenses; this does not relicense
+Project code is MIT except the adapted Windows driver/INF, which retain MS-PL.
+Dependencies keep their licenses; this does not relicense
 Qt, Python build tools, compiler runtimes or the Arduino/Espressif SDK.
 
 | Component | Notice |
 | --- | --- |
 | ALLPOWERS protocol/model definitions, James Johnston | MIT; core/src/AllpowersModels.LICENSE.txt, adapted from https://github.com/madninjaskillz/allpowers-ble |
-| Qt 6.8.3 Core, Gui, Widgets, Bluetooth, Sql | Statically linked under LGPLv3; original Qt and bundled-component notices are embedded in the EXE. The release includes corresponding application and Qt sources with relinking instructions. |
+| Qt 6.8.3 Core, Gui, Widgets, Bluetooth, Sql, Network | Statically linked under LGPLv3; original Qt and bundled-component notices are embedded in the EXE. The release includes corresponding application and Qt sources with relinking instructions. |
+| Microsoft Windows-driver-samples / SimBatt | MS-PL; the adapted drivers/windows/driver.cpp and AllpowersUps.inf.in retain this license. Source reference bb68ed5e770bce04dc5395ec9258dafab034184d; drivers/windows/LICENSE.MS-PL.txt. |
+| Microsoft WDK/Windows SDK | Build tools/headers/import libraries under Microsoft's SDK license; original SDK sources and tools are not bundled in the application. |
 | SQLite bundled with Qt | Public domain plus notices supplied by Qt |
 | Microsoft C++ runtime | Statically linked with /MT under Microsoft's runtime redistribution terms |
 | Arduino ESP32 Core / ESP-IDF | LGPL-2.1 / Apache-2.0 and component-specific licenses in the pinned Espressif SDK |

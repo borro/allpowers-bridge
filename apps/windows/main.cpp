@@ -1,4 +1,7 @@
+#include "battery_probe.h"
+#include "integration.h"
 #include "notices.h"
+#include "service_host.h"
 #include "window.h"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -12,6 +15,22 @@
 #include <QTimer>
 
 int main(int argc, char **argv) {
+  // A service never constructs QApplication or loads the windowing platform.
+  for (int i = 1; i < argc; ++i) {
+    if (QByteArray(argv[i]) == "--service")
+      return runWindowsService(argc, argv);
+    if ((QByteArray(argv[i]) == "--integration-action" ||
+         QByteArray(argv[i]) == "--extract-driver") &&
+        i + 1 < argc) {
+      const bool extract = QByteArray(argv[i]) == "--extract-driver";
+      const QString operation = QString::fromLocal8Bit(argv[i + 1]);
+      QCoreApplication app(argc, argv);
+      const auto error = extract ? extractDriverPackage(operation) : integrationAction(operation);
+      if (!error.isEmpty())
+        qCritical().noquote() << error;
+      return error.isEmpty() ? 0 : 5;
+    }
+  }
   QApplication app(argc, argv);
   app.setApplicationName("AllpowersMonitor");
   app.setApplicationVersion(APP_VERSION);
@@ -34,8 +53,12 @@ int main(int argc, char **argv) {
        {"export-licenses", "Extract embedded notices and license texts", "directory"},
        {"verify-station", "Verify saved station telemetry, then disconnect", "seconds"},
        {"test-seconds", "Close automatically", "seconds"},
-       {"scan-seconds", "Scan BLE without making a connection", "seconds"}});
+       {"scan-seconds", "Scan BLE without making a connection", "seconds"},
+       {"battery-probe", "Read native battery IOCTLs/power events without BLE or mutations",
+        "seconds"}});
   parser.process(app);
+  if (parser.isSet("battery-probe"))
+    return runBatteryProbe(parser.value("report"), parser.value("battery-probe").toInt());
   if (parser.isSet("export-licenses"))
     return exportEmbeddedLicenses(parser.value("export-licenses")) ? 0 : 4;
   if (parser.isSet("verify-station")) {

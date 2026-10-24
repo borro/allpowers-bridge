@@ -33,29 +33,35 @@ class BleTransport : public QObject {
   void setPhase(const QString &phase);
 
 public:
-  explicit BleTransport(QObject *parent = nullptr, bool offline = false);
+  explicit BleTransport(QObject *parent = nullptr, bool offline = false, bool snapshots = true);
   ~BleTransport() override;
-  bool active() const {
+  virtual bool active() const {
     return active_;
   }
-  bool connected() const {
+  virtual bool connected() const {
     return connected_;
   }
-  bool scanning() const {
+  virtual bool scanning() const {
     return scanner && scanner->isActive();
   }
-  QString address() const {
+  virtual QString address() const {
     return address_;
   }
-  QString phase() const {
+  virtual QString phase() const {
     return phase_;
   }
-  QJsonObject diagnostics() const;
+  virtual QJsonObject diagnostics() const;
+  virtual bool remote() const {
+    return false;
+  }
+  virtual bool available() const {
+    return true;
+  }
 public slots:
-  void scan();
-  void start(const QString &address, int model);
-  void resume(const QString &address, const QString &name, int model);
-  void stop();
+  virtual void scan();
+  virtual void start(const QString &address, int model);
+  virtual void resume(const QString &address, const QString &name, int model);
+  virtual void stop();
 signals:
   void found(QString address, QString name, int rssi, int model);
   void stateChanged();

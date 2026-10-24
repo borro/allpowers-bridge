@@ -31,7 +31,7 @@ foreach(name IN LISTS names)
   if(NOT name)
     continue()
   endif()
-  if(name MATCHES "\\.(bin|zip|elf|dll|so|exe|sqlite3|log|pdb|jsonl)$" OR
+  if(name MATCHES "\\.(bin|zip|elf|dll|so|exe|sys|cat|pfx|p12|cer|vhdx|iso|sqlite3|log|pdb|jsonl)$" OR
       name MATCHES "^(\\.local|recovery|artifacts|evidence|research|dist|build|\\.venv)/")
     message(FATAL_ERROR "Private/generated file in index: ${name}")
   endif()

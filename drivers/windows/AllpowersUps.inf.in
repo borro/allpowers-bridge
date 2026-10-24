@@ -1,0 +1,42 @@
+; Adapted from Microsoft SimBatt. Copyright (c) Microsoft Corporation.
+; Distributed under LICENSE.MS-PL.txt.
+[Version]
+Signature="$WINDOWS NT$"
+Class=Battery
+ClassGuid={72631e54-78a4-11d0-bcf7-00aa00b7b32a}
+Provider=%Provider%
+DriverVer=10/24/2026,@ALLPOWERS_VERSION_NUMERIC@.0
+CatalogFile=AllpowersUps.cat
+PnpLockdown=1
+[Manufacturer]
+%Provider%=Models,NTamd64.10.0...22000
+[Models.NTamd64.10.0...22000]
+%Device%=Ups,ROOT\ALLPOWERSUPS
+[Ups.NT]
+CopyFiles=DriverFiles
+Include=battery.inf
+Needs=Battery_Inst
+[Ups.NT.Services]
+AddService=AllpowersUps,0x2,DriverService
+[Ups.NT.Wdf]
+KmdfService=AllpowersUps,WdfSection
+[WdfSection]
+KmdfLibraryVersion=1.31
+[DriverService]
+DisplayName=%Device%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%13%\AllpowersUps.sys
+[DestinationDirs]
+DriverFiles=13
+[SourceDisksNames]
+1=%Disk%,,,""
+[SourceDisksFiles]
+AllpowersUps.sys=1
+[DriverFiles]
+AllpowersUps.sys
+[Strings]
+Provider="ALLPOWERS Monitor"
+Device="ALLPOWERS Virtual UPS (experimental)"
+Disk="ALLPOWERS driver package"

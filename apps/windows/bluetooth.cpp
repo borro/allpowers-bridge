@@ -1,7 +1,8 @@
 #include "bluetooth.h"
 #include <QBluetoothUuid>
 
-BleTransport::BleTransport(QObject *parent, bool offline) : QObject(parent), offline_(offline) {
+BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots)
+    : QObject(parent), offline_(offline) {
   elapsed.start();
   lastValid.start();
   if (!offline) {
@@ -41,7 +42,8 @@ BleTransport::BleTransport(QObject *parent, bool offline) : QObject(parent), off
     if (connected_ && lastValid.elapsed() > ap_reconnect_silence_ms())
       fail("Данные не поступают");
   });
-  tick.start();
+  if (snapshots)
+    tick.start();
   poll.setInterval(int(ap_poll_interval_ms()));
   connect(&poll, &QTimer::timeout, this, &BleTransport::sendPoll);
   retry.setSingleShot(true);

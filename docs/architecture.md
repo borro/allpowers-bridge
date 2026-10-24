@@ -26,7 +26,13 @@ GATT discovery validates service, RX notification/indication and writable TX
 where a read-only poll is required. Subscription confirmation gates connection
 state. Generation tokens reject old notifications after stop/reconnect/selection.
 Disconnect cancels retries and timers. Scanning never switches the selected peer.
-There is no desktop UPS driver and no dependency on a USB adapter.
+No USB adapter is required. The optional Windows integration runs the same BLE
+transport/decoder in a QCoreApplication service and publishes a versioned,
+pointer-free state to a KMDF Battery Class miniclass. Viewers use local named-pipe
+IPC and never acquire a second BLE connection. The kernel independently expires
+updates at 15 seconds, without inventing critical/discharging data on loss.
+This path remains experimental pending native VM and service BLE tests. See
+[Windows UPS](windows-ups.md) for implementation, permissions and test boundaries.
 
 Qt widgets and BLE callbacks use the GUI event loop. SQLite, CSV export and
 rotating logs live in a dedicated worker thread; at most one telemetry-history

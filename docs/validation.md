@@ -31,6 +31,24 @@ rebuild/test the portable core without .git or Python, checking its saved versio
 | Static Qt UI/history/graph tests, isolated EXE, CPack/source-kit rebuild | Passed |
 | New CMake Linux firmware orchestration | Not completed: SDK index HEAD request to espressif.github.io timed out |
 
+## Experimental Windows UPS work — offline boundary
+
+The new UPS mapper and the exact kernel state validator/cache are tested on
+synthetic snapshots for 100/50/5/0%, missing required fields, unknown runtime,
+15-second expiry, replay rejection and connection-generation/tag changes.
+QtTest exercises the service host with an offline BLE transport, real named pipes
+and SQLite: multiple viewers, data recording after closing a window, invalid IPC,
+and legacy/service history merging. No CTest test connects a station.
+
+The x64 KMDF driver compiles and its INF/catalog pass WDK tools; PE imports and
+embedded package hashes are checked. This is build validation, **not kernel runtime
+validation**. VM provisioning was deferred by the user. No ALLPOWERS service/driver
+has been installed on the host; Secure Boot, BCD and host certificates are unchanged.
+SCM lifecycle, installation/update/rollback/removal, Battery Class IOCTL behavior,
+Driver Verifier, Windows shutdown/hibernate policy and real BLE from LocalSystem
+before login are **unverified** until guest tests. Hyper-V raw Bluetooth passthrough
+is not assumed. See [the lab procedure](windows-ups.md).
+
 Both firmwares were previously compiled successfully on Linux before the CMake
 orchestration replacement. That earlier result is not proof of the new Linux
 setup/build path; its CI run is still required. Windows and Ubuntu CI jobs are

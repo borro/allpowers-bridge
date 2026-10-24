@@ -10,7 +10,7 @@ if(NOT ALLPOWERS_QT_SOURCE_CACHE)
 endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
-find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Bluetooth Sql Test)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Bluetooth Sql Network Test)
 get_target_property(qt_core_type Qt6::Core TYPE)
 if(NOT qt_core_type STREQUAL "STATIC_LIBRARY")
   message(FATAL_ERROR "Use a static Qt SDK, or build the root windows target to bootstrap Qt")
@@ -27,16 +27,22 @@ file(READ "${bluetooth_config}" bluetooth_features)
 if(NOT bluetooth_features MATCHES "#define QT_FEATURE_winrt_bt 1")
   message(FATAL_ERROR "Qt Bluetooth must contain the real WinRT backend")
 endif()
-add_library(monitor_lib STATIC session.cpp history.cpp bluetooth.cpp chart.cpp controls.cpp window.cpp notices.cpp)
+add_library(monitor_backend STATIC session.cpp history.cpp bluetooth.cpp ipc.cpp service_host.cpp service_client.cpp integration.cpp battery_probe.cpp)
+target_include_directories(monitor_backend PUBLIC . ../../core/native ../../core/src)
+target_compile_definitions(monitor_backend PUBLIC NOMINMAX)
+target_link_libraries(monitor_backend PUBLIC Qt6::Core Qt6::Bluetooth Qt6::Sql Qt6::Network
+  advapi32 setupapi newdev shell32 wintrust crypt32 ole32 user32)
+add_library(monitor_lib STATIC chart.cpp controls.cpp window.cpp notices.cpp)
 target_include_directories(monitor_lib PUBLIC . ../../core/native)
-target_link_libraries(monitor_lib PUBLIC Qt6::Widgets Qt6::Bluetooth Qt6::Sql)
+target_link_libraries(monitor_lib PUBLIC Qt6::Widgets monitor_backend)
 add_library(protocol STATIC ../../core/native/api.cpp)
 target_include_directories(protocol PUBLIC ../../core/src ../../core/native)
-target_link_libraries(monitor_lib PUBLIC protocol)
+target_link_libraries(monitor_backend PUBLIC protocol)
 # Keep project-header invalidation deterministic even with localized MSVC
 # /showIncludes output (some Windows toolchains do not report a usable prefix).
 file(GLOB_RECURSE model_headers CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/windows/*.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../core/src/*.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../core/native/*.h")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${model_headers})
@@ -47,14 +53,32 @@ foreach(header IN LISTS model_headers)
 endforeach()
 string(SHA256 header_digest "${header_digests}")
 target_compile_definitions(monitor_lib PUBLIC ALLPOWERS_HEADER_HASH="${header_digest}")
+target_compile_definitions(monitor_backend PUBLIC ALLPOWERS_HEADER_HASH="${header_digest}" APP_VERSION="${ALLPOWERS_VERSION}")
 target_compile_definitions(protocol PRIVATE ALLPOWERS_HEADER_HASH="${header_digest}")
 target_compile_definitions(monitor_lib PUBLIC APP_VERSION="${ALLPOWERS_VERSION}")
 if(MSVC)
   target_compile_options(monitor_lib PRIVATE /utf-8 /W4)
+  target_compile_options(monitor_backend PRIVATE /utf-8 /W4)
   target_compile_options(protocol PRIVATE /utf-8)
 endif()
 qt_add_executable(AllpowersMonitor WIN32 main.cpp)
 qt_add_resources(AllpowersMonitor icons PREFIX "/" FILES assets/allpowers.ico assets/logo.png)
+if(ALLPOWERS_DRIVER_PACKAGE_DIR)
+  foreach(name AllpowersUps.sys AllpowersUps.inf AllpowersUps.cat)
+    if(NOT EXISTS "${ALLPOWERS_DRIVER_PACKAGE_DIR}/${name}")
+      message(FATAL_ERROR "Driver payload missing: ${name}; build root ups-driver first")
+    endif()
+    # Inf2Cat writes a lowercase filename; Qt resource lookup is case-sensitive
+    # even on Windows. Keep the public resource names deterministic.
+    set_source_files_properties("${ALLPOWERS_DRIVER_PACKAGE_DIR}/${name}"
+      PROPERTIES QT_RESOURCE_ALIAS "${name}")
+  endforeach()
+  qt_add_resources(AllpowersMonitor driver_payload PREFIX "/driver"
+    BASE "${ALLPOWERS_DRIVER_PACKAGE_DIR}" FILES
+    "${ALLPOWERS_DRIVER_PACKAGE_DIR}/AllpowersUps.sys"
+    "${ALLPOWERS_DRIVER_PACKAGE_DIR}/AllpowersUps.inf"
+    "${ALLPOWERS_DRIVER_PACKAGE_DIR}/AllpowersUps.cat")
+endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${ALLPOWERS_ROOT}"
   "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}"
   -P "${ALLPOWERS_ROOT}/cmake/PrepareNotices.cmake" COMMAND_ERROR_IS_FATAL ANY)
@@ -84,5 +108,6 @@ endif()
 add_test(NAME desktop COMMAND monitor_tests -platform offscreen -o desktop-tests.txt,txt)
 add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersMonitor>"
   "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/single-exe-check"
+  "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
   -P "${ALLPOWERS_ROOT}/cmake/CheckSingleExe.cmake")
 install(TARGETS AllpowersMonitor RUNTIME DESTINATION .)

@@ -34,6 +34,7 @@ class MonitorWindow : public QMainWindow {
   QString dataPath;
   ap_snapshot last{};
   HistoryPoints points;
+  HistoryPoints localPoints, servicePoints;
   QElapsedTimer uptime;
   bool historyBusy = false, offline = false;
   bool wasScanning = false;
@@ -45,6 +46,7 @@ class MonitorWindow : public QMainWindow {
   void updateSnapshot(ap_snapshot);
   void refreshDiagnostics();
   void appendLog(const QString &message);
+  void showIntegration();
   void saveSettings();
   QWidget *overviewPage();
   QWidget *historyPage();
@@ -69,6 +71,7 @@ signals:
   void historySample(QString address, ap_snapshot data, qint64 wall, qint64 tick);
   void historyLoad(QString address, qint64 now);
   void historyExport(QString address, qint64 now, QString path);
+  void historyExportPoints(HistoryPoints points, QString path);
   void historyLog(QString message);
   void settingsSave(QString path, QJsonObject settings);
 };

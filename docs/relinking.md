@@ -1,6 +1,7 @@
 # Static Qt build and relinking
 
-The application source is MIT. Qt Core, Gui, Widgets, Bluetooth and Sql 6.8.3 are
+The application source is MIT; the separate adapted driver is MS-PL. Qt Core,
+Gui, Widgets, Bluetooth, Network and Sql 6.8.3 are
 statically linked under LGPLv3. About displays embedded Qt/component notices;
 AllpowersMonitor.exe --export-licenses <directory> extracts them.
 
@@ -17,7 +18,7 @@ source kit available alongside any binary distribution.
 ## Rebuild or replace Qt
 
 1. Extract allpowers/ from the source ZIP. Install CMake, Ninja, MSVC 2022 C++ Build
-   Tools and Windows 11 SDK; open an x64 Developer PowerShell.
+   Tools and Windows 11 SDK 10.0.26100.0; open an x64 Developer PowerShell.
 2. Copy qt-source/*.tar.xz to allpowers/build/deps/downloads/.
 3. In allpowers/, run cmake --preset windows, then cmake --build --preset windows.
    CMake builds static Qt from the supplied verified archives and then the EXE.

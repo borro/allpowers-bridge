@@ -7,7 +7,7 @@ native Windows monitor. [Русская версия](README.ru.md).
 | --- | --- | --- |
 | Waveshare ESP32-S3-LCD-1.47 | BLE Central → USB Device | HID UPS, display, history, diagnostics, RGB |
 | Pocket-Dongle-S3 0.96 N16R8 | BLE Central → USB Device | HID UPS, compact display, history, diagnostics |
-| Windows Monitor | Computer Bluetooth / Qt WinRT | Telemetry, interactive graphs and diagnostics; no OS UPS driver |
+| Windows Monitor | Computer Bluetooth / Qt WinRT | Telemetry, graphs, diagnostics; optional experimental Windows UPS integration |
 
 The core recognizes 17 model names and three protocol families. USB UPS reporting
 is implemented for R2500 V2; other profiles expose only their known fields.
@@ -32,10 +32,18 @@ Demo and automated tests do not use real Bluetooth connections.
 F11 toggles fullscreen and restores the previous normal/maximized window mode.
 Overview cards and text scale to the available window space, including fullscreen.
 
+An optional LocalSystem service owns BLE and shared history and feeds a KMDF
+Battery Class miniclass. Multiple monitors then share its connection. The EXE
+embeds the driver package, but the default payload is unsigned and installation
+is restricted to a test VM with a trusted signed payload. **Native driver/service
+BLE and Windows power actions are not yet validated; VM tests are deferred.**
+Standalone monitoring remains available without integration. See
+[Windows UPS implementation and test status](docs/windows-ups.md).
+
 ## Build
 
 Use CMake 3.25+ and Ninja (tested with CMake 3.31.6 / Ninja 1.11.1). Windows also
-needs MSVC 2022 C++ Build Tools and Windows 11 SDK. Run Windows commands in an
+needs MSVC 2022 C++ Build Tools and Windows 11 SDK 10.0.26100.0. Run Windows commands in an
 **x64 Developer PowerShell**; Linux needs a C++17 compiler. Python and uv are not
 used by the project build, tests or packaging.
 
@@ -55,6 +63,9 @@ ctest --preset native
 The first Windows build downloads checksum-pinned Qt 6.8.3 source and builds the
 static MSVC/WinRT SDK with ExternalProject. Later builds reuse it. Existing static
 Qt can be selected with `-DALLPOWERS_QT_ROOT=/path/to/qt`.
+The Windows target also builds/embeds the driver using checksum-pinned WDK
+10.0.26100.6584 (KMDF 1.31), with INF/catalog/kernel-PE checks. `ups-driver` builds
+only that package. Building or testing does not install it.
 
 Firmware targets are available in either preset:
 
@@ -84,7 +95,8 @@ There is no hand-maintained product version in CMake or a package manifest.
 `core/` owns protocol/model state and C ABI v1; `firmware/` shares logic between
 board profiles; `apps/windows/` is the native Qt monitor; `tests/` contains C++
 tests and sanitized fixtures; `cmake/` owns build/dependency/package rules.
-`tools/` contains optional explicit Python USB maintenance only. Real identities,
+`drivers/windows/` owns the optional battery miniclass. `tools/` contains explicit
+board maintenance and guest-lab PowerShell scripts. Real identities,
 ports and rollback paths are ignored local settings, never public defaults.
 
 Boards remember the selected station in NVS. Without one, the device picker opens.
@@ -95,5 +107,6 @@ flash partitions and the existing maintenance command remain compatible.
 [Build details](docs/building.md) · [Architecture](docs/architecture.md) ·
 [Boards](docs/boards.md) · [Validation](docs/validation.md) · [Relinking](docs/relinking.md).
 
-Project code is MIT; [third-party notices](THIRD_PARTY_NOTICES.md) retain their
+Original project code is MIT; the adapted Windows driver is MS-PL.
+[Third-party notices](THIRD_PARTY_NOTICES.md) retain their
 licenses. Factory images, raw captures and user data are kept outside Git.

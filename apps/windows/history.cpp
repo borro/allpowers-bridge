@@ -26,6 +26,24 @@ int sourceChange(const HistoryPoint &a, const HistoryPoint &b) {
 double logPosition(double age, double horizon) {
   return 1 - std::log1p(qBound(0., age, horizon)) / std::log1p(horizon);
 }
+HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &remote) {
+  QMap<QPair<QString, qint64>, HistoryPoint> selected;
+  QSet<QPair<QString, qint64>> seconds;
+  for (const auto *list : {&local, &remote})
+    for (const auto &p : *list)
+      if (p.stride == 1)
+        seconds.insert({p.address, p.wall / 60});
+  for (const auto *list : {&local, &remote})
+    for (const auto &p : *list) {
+      if (p.stride == 60 && seconds.contains({p.address, p.wall / 60}))
+        continue;
+      selected.insert({p.address, p.wall}, p);
+    }
+  auto result = selected.values();
+  std::sort(result.begin(), result.end(),
+            [](const auto &a, const auto &b) { return a.wall < b.wall; });
+  return result;
+}
 
 HistoryStore::HistoryStore(const QString &path, int live, int minutes)
     : liveLimit(live), minuteLimit(minutes) {
@@ -151,6 +169,9 @@ QJsonObject HistoryStore::stats() const {
   return result;
 }
 bool HistoryStore::exportCsv(const QString &address, qint64 now, const QString &path) const {
+  return exportHistoryCsv(points(address, now), path);
+}
+bool exportHistoryCsv(const HistoryPoints &points, const QString &path) {
   QFile file(path);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
     return false;
@@ -158,7 +179,7 @@ bool HistoryStore::exportCsv(const QString &address, qint64 now, const QString &
   out.setGenerateByteOrderMark(true);
   out << "address,wall,tick,session,fresh,known,soc,input_w,output_w,source,ac_output,usb_output,"
          "dc_output,stride\n";
-  for (const auto &p : points(address, now)) {
+  for (const auto &p : points) {
     const auto &s = p.data;
     out << '"' << QString(p.address).replace('"', "\"\"") << "\"," << p.wall << ',' << p.tick << ','
         << p.session << ',' << s.fresh << ',' << s.known << ',' << s.soc << ',' << s.input_w << ','
@@ -166,6 +187,9 @@ bool HistoryStore::exportCsv(const QString &address, qint64 now, const QString &
         << s.dc_output << ',' << p.stride << '\n';
   }
   return out.status() == QTextStream::Ok;
+}
+void HistoryWorker::exportPoints(HistoryPoints points, QString path) {
+  emit exported(path, exportHistoryCsv(points, path));
 }
 HistoryWorker::~HistoryWorker() {
   delete store;
@@ -189,7 +213,7 @@ void HistoryWorker::sample(QString a, ap_snapshot s, qint64 w, qint64 t) {
 }
 void HistoryWorker::load(QString a, qint64 now) {
   if (store && store->valid())
-    emit loaded(store->points(a, now), store->stats());
+    emit loaded(a, store->points(a, now), store->stats());
 }
 void HistoryWorker::exportFile(QString a, qint64 now, QString path) {
   emit exported(path, store && store->exportCsv(a, now, path));

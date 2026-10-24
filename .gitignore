@@ -19,3 +19,10 @@ Thumbs.db
 *.pdb
 *.sqlite3*
 *.log
+*.sys
+*.cat
+*.pfx
+*.p12
+*.cer
+*.vhdx
+*.iso

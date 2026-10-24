@@ -1,11 +1,14 @@
 #include "window.h"
 #include "AllpowersModels.h"
+#include "integration.h"
 #include "notices.h"
+#include "service_client.h"
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
 #include <QDateTime>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -24,6 +27,7 @@
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 static QString labelStyle(const QString &color, int size, bool bold = false) {
   return QString("color:%1;font-size:%2px;font-weight:%3;")
@@ -175,6 +179,9 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
     ++pageIndex;
   }
   navigation->addStretch();
+  auto *integration = new QPushButton("ИБП Windows");
+  connect(integration, &QPushButton::clicked, this, &MonitorWindow::showIntegration);
+  navigation->addWidget(integration);
   auto *about = new QPushButton("О программе");
   connect(about, &QPushButton::clicked, this, [this] { showNotices(this); });
   navigation->addWidget(about);
@@ -186,8 +193,13 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   auto *footer =
       text("Только просмотр  ·  Прямое BLE  ·  История сохраняется на компьютере", 12, "#7d96b9");
   layout->addWidget(footer);
-  ble = transport ? transport : new BleTransport(this, offline);
+  ble = transport ? transport
+        : !offline && integrationInstalled()
+            ? static_cast<BleTransport *>(new ServiceTransport(this))
+            : new BleTransport(this, offline);
   ble->setParent(this);
+  if (ble->remote())
+    footer->setText("Только просмотр  ·  Служба Windows  ·  Общая история компьютера");
   connect(group, &QButtonGroup::idClicked, this, [this, group](int id) {
     pages->setCurrentIndex(id);
     group->button(id)->setChecked(true);
@@ -241,6 +253,23 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
     ble->resume(address, discovered[address]["name"].toString(), profile->currentIndex());
   });
   connect(ble, &BleTransport::stateChanged, this, [this] {
+    if (ble->remote() && !ble->address().isEmpty()) {
+      const auto info = ble->diagnostics();
+      if (selectedAddress != ble->address()) {
+        localPoints.clear();
+        servicePoints.clear();
+        points.clear();
+        selectedAddress = ble->address();
+        emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
+      }
+      auto known = discovered.value(selectedAddress);
+      known["name"] = info["name"];
+      known["model"] = int(ap_model_hint(info["name"].toString().toUtf8().constData()));
+      discovered[selectedAddress] = known;
+      const QSignalBlocker blocker(profile);
+      profile->setCurrentIndex(qBound(0, info["profile"].toInt(), 3));
+      rebuildDevices();
+    }
     bool scanning = ble->scanning();
     if (scanning && !wasScanning) {
       auto current = discovered.value(ble->address());
@@ -277,18 +306,33 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
   connect(this, &MonitorWindow::historySample, history, &HistoryWorker::sample);
   connect(this, &MonitorWindow::historyLoad, history, &HistoryWorker::load);
   connect(this, &MonitorWindow::historyExport, history, &HistoryWorker::exportFile);
+  connect(this, &MonitorWindow::historyExportPoints, history, &HistoryWorker::exportPoints);
   connect(this, &MonitorWindow::historyLog, history, &HistoryWorker::log);
   connect(this, &MonitorWindow::settingsSave, history, &HistoryWorker::saveSettings);
   connect(ble, &BleTransport::newSession, this, &MonitorWindow::historySession);
-  connect(history, &HistoryWorker::loaded, this, [this](HistoryPoints values, QJsonObject stats) {
-    historyBusy = false;
-    historyStats = stats;
-    if (offline)
-      return;
-    points = values;
-    chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
-    exportButton->setEnabled(!points.isEmpty());
-  });
+  connect(history, &HistoryWorker::loaded, this,
+          [this](QString address, HistoryPoints values, QJsonObject stats) {
+            if (address != selectedAddress)
+              return;
+            historyBusy = false;
+            historyStats = stats;
+            if (offline)
+              return;
+            localPoints = values;
+            points = ble->remote() ? mergeHistory(localPoints, servicePoints) : values;
+            chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
+            exportButton->setEnabled(!points.isEmpty());
+          });
+  if (auto *remote = qobject_cast<ServiceTransport *>(ble)) {
+    connect(remote, &ServiceTransport::historyReady, this, [this](HistoryPoints values) {
+      servicePoints = values;
+      points = mergeHistory(localPoints, servicePoints);
+      chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
+      exportButton->setEnabled(!points.isEmpty());
+    });
+    connect(remote, &ServiceTransport::logReceived, this,
+            [this](QString message) { appendLog(message); });
+  }
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
     historyBusy = false;
     historyError = message;
@@ -314,7 +358,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, BleTransport *trans
     const auto address = selectedAddress;
     const int model = profile->currentIndex();
     QTimer::singleShot(0, this, [this, address, name, model] {
-      if (!offline && isVisible() && !ble->active())
+      if (!offline && !ble->remote() && isVisible() && !ble->active())
         ble->resume(address, name, model);
     });
   }
@@ -323,7 +367,8 @@ MonitorWindow::~MonitorWindow() {
   // QObject deletes the central widget before later child objects. Stop signals
   // here, while controls still exist, rather than from the transport destructor.
   ble->disconnect(this);
-  ble->stop();
+  if (!ble->remote())
+    ble->stop();
   delete ble;
   ble = nullptr;
   // Finish queued history/settings writes before terminating their event loop.
@@ -440,8 +485,12 @@ QWidget *MonitorWindow::historyPage() {
   connect(exportButton, &QPushButton::clicked, this, [this] {
     auto path = QFileDialog::getSaveFileName(
         this, "Экспорт истории", QDir::homePath() + "/allpowers-history.csv", "CSV (*.csv)");
-    if (!path.isEmpty())
-      emit historyExport(selectedAddress, QDateTime::currentSecsSinceEpoch(), path);
+    if (!path.isEmpty()) {
+      if (ble->remote())
+        emit historyExportPoints(points, path);
+      else
+        emit historyExport(selectedAddress, QDateTime::currentSecsSinceEpoch(), path);
+    }
   });
   return page;
 }
@@ -497,6 +546,10 @@ QWidget *MonitorWindow::diagnosticPage() {
                                             {"service", "UUID сервиса"},
                                             {"notify", "UUID уведомлений"},
                                             {"write", "UUID записи"},
+                                            {"service", "Служба Windows"},
+                                            {"ups_present", "Системный ИБП доступен"},
+                                            {"ups_reason", "Причина недоступности ИБП"},
+                                            {"driver_error", "Ошибка драйвера"},
                                             {"", "Телеметрия"},
                                             {"fresh", "Данные актуальны"},
                                             {"model", "Профиль протокола"},
@@ -600,14 +653,17 @@ void MonitorWindow::rebuildDevices() {
 }
 void MonitorWindow::updateControls() {
   bool active = ble->active(), scanning = ble->scanning();
-  scanButton->setEnabled(!active && !scanning && !offline);
-  scanButton->setToolTip(active ? "Для нового поиска сначала отключитесь от станции"
-                                : "Найти доступные станции Bluetooth");
+  scanButton->setEnabled(!active && !scanning && !offline && ble->available());
+  scanButton->setToolTip(!ble->available() ? "Запустите службу через «ИБП Windows»"
+                         : active ? "Для нового поиска сначала отключитесь от станции"
+                                  : "Найти доступные станции Bluetooth");
   scanButton->setText(scanning ? "Поиск…" : "Найти станции");
-  bool canConnect = active || (!scanning && devices->currentIndex() >= 0 && !offline);
+  bool canConnect =
+      ble->available() && (active || (!scanning && devices->currentIndex() >= 0 && !offline));
   connectButton->setEnabled(canConnect);
   connectButton->setText(active ? "Отключить" : "Подключить");
-  connectButton->setToolTip(offline ? "Демонстрация: Bluetooth не используется"
+  connectButton->setToolTip(!ble->available() ? "Запустите службу через «ИБП Windows»"
+                            : offline ? "Демонстрация: Bluetooth не используется"
                             : active ? "Завершить соединение со станцией"
                             : scanning ? "Дождитесь завершения поиска"
                             : devices->count() == 0 ? "Сначала найдите и выберите станцию"
@@ -652,7 +708,8 @@ void MonitorWindow::updateSnapshot(ap_snapshot s) {
                                .arg(s.main_age_ms / 1000., 0, 'f', 1)
                          : "Нет актуальной телеметрии · последнее значение может быть устаревшим");
   auto now = QDateTime::currentSecsSinceEpoch();
-  if (!offline && ble->active() && s.main_seen && now != lastSample && !historyBusy) {
+  if (!offline && !ble->remote() && ble->active() && s.main_seen && now != lastSample &&
+      !historyBusy) {
     historyBusy = true;
     lastSample = now;
     emit historySample(selectedAddress, s, now, uptime.elapsed() / 1000);
@@ -674,9 +731,12 @@ QJsonObject MonitorWindow::diagnostics() const {
   info["source_raw"] = int(last.source_raw);
   info["main_age_ms"] = double(last.main_age_ms);
   info["settings_age_ms"] = double(last.settings_age_ms);
-  info["history"] = historyStats;
-  info["history_error"] = historyError;
-  info["history_path"] = QDir(dataPath).filePath("history.sqlite3");
+  if (!ble->remote()) {
+    info["history"] = historyStats;
+    info["history_error"] = historyError;
+    info["history_path"] = QDir(dataPath).filePath("history.sqlite3");
+  } else
+    info["legacy_history_path"] = QDir(dataPath).filePath("history.sqlite3");
   info["last_packet"] = lastPacket;
   info["chart_render_ms"] = chart->renderMs();
   info["chart_vertices"] = chart->vertices();
@@ -737,9 +797,67 @@ void MonitorWindow::saveSettings() {
     emit settingsSave(QDir(dataPath).filePath("settings.json"), settings);
 }
 void MonitorWindow::closeEvent(QCloseEvent *event) {
-  ble->stop();
+  if (!ble->remote())
+    ble->stop();
   saveSettings();
   event->accept();
+}
+void MonitorWindow::showIntegration() {
+  auto *dialog = new QDialog(this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  dialog->setWindowTitle("ИБП Windows");
+  dialog->resize(600, 300);
+  dialog->setStyleSheet("QDialog{background:#0e1727;color:#ecf3ff;}QLabel{color:#bdcce2;font-"
+                        "family:'Segoe UI';font-size:14px;}");
+  auto *layout = new QVBoxLayout(dialog);
+  auto *description =
+      new QLabel("Необязательная интеграция: служба получает BLE-данные, а драйвер передаёт их "
+                 "системе питания Windows. Без неё монитор работает самостоятельно.");
+  description->setWordWrap(true);
+  layout->addWidget(description);
+  const auto info = integrationStatus();
+  auto *status = new QLabel(info["installed"].toBool()
+                                ? "Служба установлена. Монитор использует её данные."
+                                : "Служба не установлена. Монитор использует прямое BLE.");
+  status->setWordWrap(true);
+  layout->addWidget(status);
+  auto *notice = new QLabel(
+      "Экспериментальная версия: установка и удаление доступны только в тестовой VM. Нужен "
+      "подписанный пакет драйвера. Secure Boot и параметры загрузки эта программа не меняет.");
+  notice->setWordWrap(true);
+  layout->addWidget(notice);
+  auto *row = new QHBoxLayout;
+  layout->addLayout(row);
+  for (auto action : {qMakePair(QString("Установить / обновить"), QString("install")),
+                      qMakePair(QString("Запустить"), QString("start")),
+                      qMakePair(QString("Остановить"), QString("stop")),
+                      qMakePair(QString("Удалить"), QString("remove"))}) {
+    auto *button = new QPushButton(action.first);
+    row->addWidget(button);
+    button->setEnabled(!offline && info["virtual_machine"].toBool());
+    button->setToolTip("Потребуются права администратора; история и настройки сохраняются");
+    connect(button, &QPushButton::clicked, dialog, [dialog, status, operation = action.second] {
+      for (auto *b : dialog->findChildren<QPushButton *>())
+        b->setEnabled(false);
+      status->setText("Выполняется операция Windows…");
+      auto result = std::make_shared<bool>(false);
+      auto *thread =
+          QThread::create([result, operation] { *result = elevateIntegrationAction(operation); });
+      // The dialog context disconnects this callback if the window is closed
+      // while UAC or installation is running. The worker never touches widgets.
+      connect(thread, &QThread::finished, dialog, [result, status, dialog] {
+        status->setText(
+            *result ? "Готово. Перезапустите монитор, чтобы применить режим работы."
+                    : "Операция не выполнена. Проверьте подпись пакета, тестовый режим гостевой "
+                      "Windows и права администратора.");
+        for (auto *b : dialog->findChildren<QPushButton *>())
+          b->setEnabled(true);
+      });
+      connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+      thread->start();
+    });
+  }
+  dialog->show();
 }
 void MonitorWindow::loadDemo() {
   offline = true;

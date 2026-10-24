@@ -1,15 +1,17 @@
 include("${CMAKE_CURRENT_LIST_DIR}/QtStatic.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/UpsDriver.cmake")
 set(windows_build "${PROJECT_BINARY_DIR}/windows-monitor")
 set(windows_output "${ALLPOWERS_RELEASE_DIR}/windows/AllpowersMonitor")
 ExternalProject_Add(windows-monitor
   SOURCE_DIR "${PROJECT_SOURCE_DIR}/apps/windows"
   BINARY_DIR "${windows_build}"
   DOWNLOAD_COMMAND "" UPDATE_COMMAND ""
-  DEPENDS qt-static
+  DEPENDS qt-static ups-driver-project
   CMAKE_GENERATOR Ninja
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=${ALLPOWERS_QT_ROOT}"
     "-DALLPOWERS_VERSION=${ALLPOWERS_VERSION}" "-DALLPOWERS_QT_SOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}"
     "-DCMAKE_INSTALL_PREFIX=${windows_output}"
+    "-DALLPOWERS_DRIVER_PACKAGE_DIR=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
   BUILD_ALWAYS TRUE
   BUILD_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe"
   LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON LOG_OUTPUT_ON_FAILURE ON
@@ -22,6 +24,7 @@ if(BUILD_TESTING)
   add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure)
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
     "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
+    "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
 endif()
 install(PROGRAMS "${windows_output}/AllpowersMonitor.exe" DESTINATION .)

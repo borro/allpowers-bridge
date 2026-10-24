@@ -16,6 +16,8 @@ Q_DECLARE_METATYPE(HistoryPoints)
 bool joinPoints(const HistoryPoint &, const HistoryPoint &);
 int sourceChange(const HistoryPoint &, const HistoryPoint &);
 double logPosition(double age, double horizon);
+HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &service);
+bool exportHistoryCsv(const HistoryPoints &, const QString &path);
 
 class HistoryStore {
   QString connection_;
@@ -47,6 +49,7 @@ class HistoryWorker : public QObject {
 public:
   ~HistoryWorker() override;
 public slots:
+  void exportPoints(HistoryPoints points, QString path);
   void open(const QString &path);
   void newSession();
   void sample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick);
@@ -55,7 +58,7 @@ public slots:
   void log(QString message);
   void saveSettings(QString path, QJsonObject settings);
 signals:
-  void loaded(HistoryPoints points, QJsonObject stats);
+  void loaded(QString address, HistoryPoints points, QJsonObject stats);
   void problem(QString message);
   void exported(QString path, bool ok);
 };

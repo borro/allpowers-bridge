@@ -10,6 +10,11 @@ SDK tools may internally use their own Python.
 On Windows install MSVC 2022 x64 C++ Build Tools with Windows 11 SDK and open
 an x64 Developer PowerShell. Local verification used MSVC 19.44 / SDK 10.0.26100.
 On Linux use the system C++17 compiler. Do not cross-build the Windows desktop.
+The driver additionally pins SDK 10.0.26100.0, WDK NuGet 10.0.26100.6584 and
+KMDF 1.31. `ups-driver` runs InfVerif/Inf2Cat and kernel-import checks; the normal
+Windows target embeds that unsigned package and tests its extraction hashes.
+No build/test operation installs a service or driver. A private VM-signed package
+may be supplied with `ALLPOWERS_DRIVER_PACKAGE_DIR`; see [Windows UPS](windows-ups.md).
 
 ```sh
 cmake --preset windows

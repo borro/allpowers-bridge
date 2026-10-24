@@ -1,3 +1,7 @@
+#include "integration.h"
+#include "ipc.h"
+#include "service_client.h"
+#include "service_host.h"
 #include "window.h"
 #include <QAbstractItemView>
 #include <QApplication>
@@ -13,10 +17,12 @@
 #include <QScopeGuard>
 #include <QScreen>
 #include <QScrollBar>
+#include <QSignalSpy>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextBlock>
+#include <QUuid>
 #include <QWheelEvent>
 
 class MonitorTests : public QObject {
@@ -44,6 +50,122 @@ private slots:
     session.reset(3);
     QVERIFY(!session.receive(token, QByteArray::fromHex("a565b1000108010264000000e696006f"), 300));
     QVERIFY(!session.snapshot(301).main_seen);
+  }
+  void ipcRejectsInvalidAndSplitFrames() {
+    auto bytes = Ipc::frame({{"v", 1}, {"op", "state"}});
+    QByteArray partial = bytes.left(3);
+    QList<QJsonObject> messages;
+    QVERIFY(Ipc::consume(partial, messages));
+    QVERIFY(messages.isEmpty());
+    partial += bytes.mid(3);
+    QVERIFY(Ipc::consume(partial, messages));
+    QCOMPARE(messages.size(), 1);
+    QByteArray bad = Ipc::frame({{"v", 2}, {"op", "state"}});
+    QVERIFY(!Ipc::consume(bad, messages));
+    bad = QByteArray::fromHex("ffffffff");
+    QVERIFY(!Ipc::consume(bad, messages));
+    ap_snapshot data{};
+    data.abi_version = 1;
+    data.soc = 100;
+    auto json = Ipc::snapshot(data);
+    ap_snapshot decoded{};
+    QVERIFY(Ipc::snapshot(json, decoded));
+    QCOMPARE(decoded.soc, 100u);
+    json["soc"] = 101;
+    QVERIFY(!Ipc::snapshot(json, decoded));
+    json["soc"] = 0;
+    json["runtime_s"] = -1;
+    QVERIFY(!Ipc::snapshot(json, decoded));
+  }
+  void serviceOwnsConnectionAcrossMonitorClose() {
+    QTemporaryDir ui, serverData;
+    qputenv("ALLPOWERS_DATA_DIR", ui.path().toUtf8());
+    const auto restore =
+        qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    const QString pipe = "AllpowersTest-" + QUuid::createUuid().toString(QUuid::Id128);
+    ServiceHost host({serverData.path(), pipe, true, false});
+    QVERIFY2(host.start(), qPrintable(host.error()));
+    {
+      auto *client = new ServiceTransport(nullptr, pipe, false);
+      MonitorWindow window(false, nullptr, client);
+      window.show();
+      QTRY_VERIFY(client->diagnostics()["service"].toBool());
+      QTRY_VERIFY(client->diagnostics().contains("application"));
+      client->resume("02:00:00:00:00:03", "AP R2500 V2.0", 3);
+      QTRY_VERIFY(client->active());
+      QTRY_COMPARE(client->address(), QString("02:00:00:00:00:03"));
+      QCOMPARE(host.diagnostics()["diagnostics"].toObject()["connections"].toInt(), 0);
+      ServiceTransport second(nullptr, pipe, false);
+      QTRY_VERIFY(second.active());
+      window.close();
+      QTest::qWait(30);
+      QVERIFY(second.active()); // Closing a viewer must never stop the system UPS.
+      QSignalSpy historyReceived(&second, &ServiceTransport::historyReady);
+      ap_snapshot sample{};
+      sample.abi_version = 1;
+      sample.model = 3;
+      sample.fresh = sample.main_seen = sample.settings_seen = 1;
+      sample.known = 1 | 512;
+      sample.soc = 42;
+      sample.source = 2;
+      QVERIFY(host.injectLabSnapshot(sample));
+      QTRY_VERIFY(!historyReceived.isEmpty());
+      QTRY_VERIFY(
+          host.diagnostics()["diagnostics"].toObject()["history"].toObject()["live"].toInt() > 0);
+      second.stop();
+      QTRY_VERIFY(!client->active());
+    }
+    QFile config(serverData.filePath("settings.json"));
+    QVERIFY(config.open(QIODevice::ReadOnly));
+    QCOMPARE(QJsonDocument::fromJson(config.readAll()).object()["profile"].toInt(), 3);
+    HistoryStore localHistory(ui.filePath("history.sqlite3"));
+    QCOMPARE(localHistory.stats()["live"].toInt(),
+             0); // The viewer did not write a duplicate database.
+    QLocalSocket malformed;
+    malformed.connectToServer(pipe);
+    QTRY_COMPARE(malformed.state(), QLocalSocket::ConnectedState);
+    malformed.write(Ipc::frame({{"v", 99}, {"op", "select"}}));
+    malformed.flush();
+    QTRY_COMPARE(malformed.state(), QLocalSocket::UnconnectedState);
+    QVERIFY(!host.diagnostics()["diagnostics"].toObject()["active"].toBool());
+    QVERIFY(!integrationAction("not-an-operation").isEmpty());
+    if (!integrationStatus()["virtual_machine"].toBool())
+      QVERIFY(integrationAction("install").contains("test VM"));
+  }
+  void serviceAndLegacyHistoryMerge() {
+    HistoryPoint minute;
+    minute.address = "test";
+    minute.wall = 120;
+    minute.stride = 60;
+    auto live = minute;
+    live.wall = 125;
+    live.stride = 1;
+    live.data.soc = 55;
+    auto duplicate = live;
+    duplicate.data.soc = 56;
+    auto merged = mergeHistory({minute, live}, {duplicate});
+    QCOMPARE(merged.size(), 1);
+    QCOMPARE(merged[0].data.soc, 56u);
+    QTemporaryDir out;
+    QVERIFY(exportHistoryCsv(merged, out.filePath("combined.csv")));
+  }
+  void failedSelectionKeepsPreviousStation() {
+    QTemporaryDir data;
+    const QString pipe = "AllpowersTest-" + QUuid::createUuid().toString(QUuid::Id128);
+    ServiceHost host({data.path(), pipe, true, false});
+    QVERIFY(host.start());
+    ServiceTransport client(nullptr, pipe, false);
+    QTRY_VERIFY(client.available());
+    client.resume("02:00:00:00:00:01", "Synthetic station", 3);
+    QTRY_VERIFY(client.active());
+    QTRY_COMPARE(client.address(), QString("02:00:00:00:00:01"));
+    const auto settings = data.filePath("settings.json");
+    QVERIFY(QFile::rename(settings, settings + ".saved"));
+    QVERIFY(QDir().mkdir(settings)); // An unwritable target must not interrupt the working UPS.
+    client.resume("02:00:00:00:00:02", "Other station", 1);
+    QTRY_VERIFY(client.diagnostics()["error"].toString().contains("Could not save"));
+    QVERIFY(client.active());
+    QCOMPARE(client.address(), QString("02:00:00:00:00:01"));
   }
   void fixtureSession() {
     QFile file(QString(FIXTURE_DIR) + "/notifications.json");

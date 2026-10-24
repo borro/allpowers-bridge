@@ -42,10 +42,10 @@ void showNotices(QWidget *parent) {
   dialog.setWindowTitle("О программе · ALLPOWERS Monitor");
   dialog.resize(900, 620);
   auto *layout = new QVBoxLayout(&dialog);
-  auto *title = new QLabel(QString("ALLPOWERS Monitor %1 · C++17\n"
-                                   "Использует Qt 6.8.3, статическая линковка, LGPLv3.\n"
+  auto *title = new QLabel(QString("ALLPOWERS Monitor %1 · C++23\n"
+                                   "Использует Qt %2, статическая линковка, LGPLv3.\n"
                                    "Исходники и инструкции замены Qt доступны в пакете sources.")
-                               .arg(APP_VERSION));
+                               .arg(APP_VERSION, qVersion()));
   title->setWordWrap(true);
   layout->addWidget(title);
   auto *row = new QHBoxLayout;

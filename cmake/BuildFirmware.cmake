@@ -28,7 +28,7 @@ configure_file("${ROOT}/core/library.properties.in" "${library}/library.properti
 execute_process(COMMAND "${CLI}" --config-file "${CONFIG}" compile --fqbn "${ALLPOWERS_FQBN}"
   --jobs "${JOBS}"
   --library "${library}" --build-path "${WORK}/compile" --output-dir "${OUTPUT}"
-  --build-property "compiler.cpp.extra_flags=-DADAPTER_BOARD=${BOARD_NUMBER}" "${sketch}"
+  --build-property "compiler.cpp.extra_flags=-std=gnu++${ALLPOWERS_CXX_STANDARD} -DADAPTER_BOARD=${BOARD_NUMBER}" "${sketch}"
   COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${ROOT}/tests/fixtures/usb-contract.json" contract)
 ap_partitions(partitions "${OUTPUT}/R2500Adapter.ino.partitions.bin" "${contract}")

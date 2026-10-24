@@ -7,7 +7,7 @@ ALLPOWERS BLE GATT
 USB board CDC ── native serial worker ── TelemetryTransport ── same desktop/history
 ```
 
-All product code and ABI tests are C++17. CMake/Ninja, CTest and CPack own the
+All product code and ABI tests are C++23. CMake/Ninja, CTest and CPack own the
 build graph, tests and packaging. Python remains only in optional explicit board
 maintenance tools; it is not part of the build or Windows application.
 

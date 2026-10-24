@@ -29,6 +29,26 @@ folder with a system-only PATH. Embedded LGPL notices and SQLite/UI startup are
 also checked. CPack release builds additionally extract their source archive and
 rebuild/test the portable core without .git or Python, checking its saved version.
 
+## Toolchain upgrade — 2026-10-25
+
+Qt is pinned to 6.12.0, MSVC CI to toolset 14.51, CMake to 4.4.4 and Ninja to
+1.13.2. Product targets use C++23; MSVC uses its dedicated `/std:c++23preview`
+mode rather than draft-standard `/std:c++latest`. C ABI v1 is unchanged.
+
+The Windows publication run failed with Qt 6.8.3 and the hosted runner's newer
+compiler: Qt's C++17 WinRT probe selected the removed experimental coroutine
+header and silently disabled Qt Core's WinRT feature. Bluetooth then failed on
+the missing private factory-cache header. The new build explicitly requires
+Qt Core C++/WinRT and the Bluetooth WinRT backend and configures Qt with C++23.
+
+- Ubuntu WSL / GCC 13.3: core, both firmware profiles and all six CTest checks pass.
+- Windows / locally installed MSVC 19.44: all six portable CTest checks pass.
+- A clean Qt 6.12.0 bootstrap passed the required C++/WinRT configuration probe;
+  full Windows application tests and the hosted MSVC 19.51 run are pending.
+- USB descriptor, partition and maintenance contracts pass without changing fixtures.
+
+These results do not replace the driver VM/runtime checks below.
+
 ## Local checks — 2026-10-24
 
 | Check | Result |

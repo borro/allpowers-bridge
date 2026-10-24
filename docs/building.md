@@ -2,16 +2,16 @@
 
 ## Tools and presets
 
-Git, CMake 3.26+, Ninja and a C++17 compiler are required; CMake 3.31.6 and Ninja
-1.11.1 were tested locally. No Python or uv wrapper drives the build, tests or
+Git, CMake 4.4+, Ninja and a C++23 compiler are required. The pinned build tools
+are CMake 4.4.4 and Ninja 1.13.2. No Python or uv wrapper drives the build, tests or
 packaging. The optional USB maintenance tools are separate; upstream Arduino
 SDK tools may internally use their own Python.
 Git is also used by the publication regression tests when rebuilding a source kit
 without its original `.git` directory.
 
-On Windows install MSVC 2022 x64 C++ Build Tools with Windows 11 SDK and open
-an x64 Developer PowerShell. Local verification used MSVC 19.44 / SDK 10.0.26100.
-On Linux use the system C++17 compiler. Do not cross-build the Windows desktop.
+On Windows install MSVC 2026 x64 C++ Build Tools with Windows 11 SDK and open
+an x64 Developer PowerShell. CI pins MSVC 19.51 (toolset 14.51) / SDK 10.0.26100.0.
+On Linux use a C++23 compiler (GCC 13 or newer). Do not cross-build the Windows desktop.
 The driver additionally pins SDK 10.0.26100.0, WDK NuGet 10.0.26100.6584 and
 KMDF 1.31. `ups-driver` runs InfVerif/Inf2Cat and kernel-import checks; the normal
 Windows target embeds that unsigned package and tests its extraction hashes.
@@ -48,7 +48,7 @@ enabled, and always rebuilds/tests the corresponding-source archive before CPack
 
 ## Static Qt dependency
 
-The windows target uses ExternalProject for Qt Base and Qt Connectivity 6.8.3,
+The windows target uses ExternalProject for Qt Base and Qt Connectivity 6.12.0,
 verified with SHA256 from cmake/Dependencies.cmake. It builds Release static
 libraries, bundled third-party libraries and the /MT C++ runtime. WinRT BLE is
 required; the MinGW Bluetooth dummy backend is rejected. No QML or web runtime
@@ -67,8 +67,7 @@ explicit manual commands, never CTest steps.
 
 The managed Qt install lives in the selected binary directory and retains its
 ExternalProject producer targets after installation. `ALLPOWERS_QT_ROOT` instead
-selects an explicitly supplied SDK. CMake 3.26 is the minimum because installed
-ExternalProject outputs use `INSTALL_BYPRODUCTS`. WDK preparation and missing Qt
+selects an explicitly supplied SDK. The build requires CMake 4.4 or newer. WDK preparation and missing Qt
 source downloads run as build steps, not during configuration. Configuring the
 standalone application/driver therefore requires their dependencies to be
 prepared first; the root build performs that preparation automatically.
@@ -117,7 +116,9 @@ external preservation folders when cleaning build output.
 `.github/workflows/build.yml` checks every push, pull request and manual run.
 The audit job checks the index and working tree, rejects unexpected public files,
 scans reachable history, and runs checksum-pinned Gitleaks. The build matrix uses
-Windows Server 2025 (MSVC x64, SDK 10.0.26100.0) and Ubuntu 24.04. Both compile
+Windows Server 2025 (Visual Studio 2026, MSVC 14.51 x64, SDK 10.0.26100.0) and
+Ubuntu 24.04. CI validates the selected toolset before configuring Qt; it must
+not silently switch to a newer Visual Studio installed on the hosted image. Both compile
 the core and both firmware profiles, and run CTest. Windows bootstraps static Qt,
 builds the driver/monitor/widget and verifies the CPack source-kit rebuild.
 
@@ -126,6 +127,9 @@ workflow has read-only repository permissions, does not persist Git credentials,
 and requires no user secrets. Only dependency downloads/Arduino packages are
 cached; installed Qt is rebuilt so cached absolute paths cannot break another
 runner. Qt defaults to two parallel compiler jobs (`ALLPOWERS_QT_JOBS`).
+Qt Core C++/WinRT and the Qt Bluetooth WinRT backend are required explicitly;
+unsupported compiler/SDK combinations fail configuration instead of disabling
+WinRT and failing later on a missing private Qt header.
 Artifacts contain the two firmware packages and, on Windows, runtime/source ZIPs
 and SHA256 files. They expire after 14 days. No automatic GitHub Release, push,
 driver/service installation or device access is part of this workflow.
@@ -154,3 +158,10 @@ and repackaged without `.git`. Their contents are checked again after extraction
 Local `.local/`, SDKs, reports, firmware outputs and recovery storage are not part
 of the published repository. Keep private recovery material; do not use a blanket
 `git clean -xfd` to prepare a publication.
+
+C++23 is selected through CMake compile features and the ESP32 compiler flag.
+MSVC currently spells its dedicated C++23 mode `/std:c++23preview`; the
+compiler compatibility module selects it instead of enabling draft features
+through `/std:c++latest`. Qt uses the same language mode, including its
+C++/WinRT configuration probes. C ABI v1 and the firmware USB/flash contracts
+remain unchanged.

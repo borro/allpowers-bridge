@@ -1,5 +1,12 @@
 include_guard(GLOBAL)
 
+# CMake still maps C++23 to /std:c++latest. MSVC's dedicated C++23 mode
+# avoids opting into the next draft standard while preserving CMake features.
+if(MSVC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.43)
+  set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23preview")
+  set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23preview")
+endif()
+
 # CMake 3.31's MSVC probe decodes /showIncludes with ENCODING AUTO. On some
 # localized Windows installations this corrupts the prefix while Ninja sees
 # the original bytes. Probe the same compiler with ENCODING NONE so Ninja can

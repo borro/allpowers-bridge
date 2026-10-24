@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 4.4)
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 include("${ROOT}/cmake/Version.cmake")
 include("${ROOT}/cmake/Dependencies.cmake")
@@ -19,7 +19,7 @@ if(NOT EXISTS "${sdk}/Include/${kit}/shared/batclass.h")
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(AllpowersUps driver.cpp)
-target_compile_features(AllpowersUps PRIVATE cxx_std_17)
+target_compile_features(AllpowersUps PRIVATE cxx_std_23)
 set_target_properties(AllpowersUps PROPERTIES SUFFIX .sys
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/package")
 target_include_directories(AllpowersUps PRIVATE "${ROOT}/core/src"

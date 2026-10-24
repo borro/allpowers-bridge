@@ -5,6 +5,10 @@ C++ tests exercise the actual shared C ABI, model decoding, recorded packets,
 freshness, malformed data, timer wrap and bounds. QtTest covers session generations,
 controls, bounded compatible history, immediate-close settings persistence,
 source transitions, graph interactions and rendering.
+Dropdown regression tests cover row geometry, keyboard selection/cancel and list
+stability during discovery updates. Live-log tests cover tail following, paused
+scrolling/selection and preservation of visible entries as the 2000-line buffer
+rotates. These UI tests run offline, including at 150% display scale.
 
 Firmware targets check USB descriptors, partition offsets, ABI/updater/startup
 contracts and source/artifact hashes. The Git-index audit checks private identities,

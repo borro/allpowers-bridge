@@ -1,6 +1,7 @@
 #pragma once
 #include "bluetooth.h"
 #include "chart.h"
+#include "controls.h"
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -25,6 +26,7 @@ class MonitorWindow : public QMainWindow {
       *outputDC;
   QStackedWidget *pages;
   QPlainTextEdit *technical;
+  LiveLog *eventLog;
   QJsonObject settings, historyStats;
   QMap<QString, QJsonObject> discovered;
   QString selectedAddress, lastPacket, historyError;
@@ -35,11 +37,13 @@ class MonitorWindow : public QMainWindow {
   bool historyBusy = false, offline = false;
   bool wasScanning = false;
   bool historyStarted = false;
+  bool deviceListPending = false;
   qint64 lastSample = -1;
   void rebuildDevices();
   void updateControls();
   void updateSnapshot(ap_snapshot);
   void refreshDiagnostics();
+  void appendLog(const QString &message);
   void saveSettings();
   QWidget *overviewPage();
   QWidget *historyPage();

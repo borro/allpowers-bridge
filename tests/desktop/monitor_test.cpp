@@ -1,4 +1,5 @@
 #include "window.h"
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
@@ -6,8 +7,11 @@
 #include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QScrollBar>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextBlock>
 #include <QWheelEvent>
 
 class MonitorTests : public QObject {
@@ -15,6 +19,7 @@ class MonitorTests : public QObject {
   QTemporaryDir temp;
 private slots:
   void initTestCase() {
+    QApplication::setStyle("Fusion");
     qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8());
     auto fonts = QDir(qEnvironmentVariable("SystemRoot") + "/Fonts");
     for (const QString &name : {QString("segoeui.ttf"), QString("segoeuib.ttf")})
@@ -116,6 +121,111 @@ private slots:
     auto settings = QJsonDocument::fromJson(file.readAll()).object();
     QCOMPARE(settings["page"].toString(), QString("История"));
     QCOMPARE(settings["horizon"].toInt(), 3600);
+  }
+  void dropdownKeyboardAndLayout() {
+    MonitorWindow window(true);
+    window.show();
+    auto *select = window.findChild<Select *>("profile");
+    QVERIFY(select);
+    select->showPopup();
+    QTest::qWait(50);
+    auto *view = select->view();
+    QVERIFY(view->isVisible());
+    QRect previous;
+    for (int i = 0; i < select->count(); ++i) {
+      auto row = view->visualRect(select->model()->index(i, 0));
+      QCOMPARE(row.height(), 40);
+      QVERIFY(row.width() >= select->width() - 12);
+      QVERIFY(row.height() >= view->fontMetrics().height() + 12);
+      if (i)
+        QCOMPARE(row.top(), previous.bottom() + 1);
+      previous = row;
+    }
+    QVERIFY(view->viewport()->height() >= previous.bottom());
+    window.grab().save("dropdown-window.png");
+    view->window()->grab().save("dropdown-popup.png");
+    QTest::keyClick(view, Qt::Key_End);
+    QTest::keyClick(view, Qt::Key_Return);
+    QCOMPARE(select->currentIndex(), select->count() - 1);
+    QVERIFY(!view->isVisible());
+    select->showPopup();
+    QTest::keyClick(view, Qt::Key_Home);
+    QTest::keyClick(view, Qt::Key_Escape);
+    QCOMPARE(select->currentIndex(), select->count() - 1);
+
+    auto *devices = window.findChild<Select *>("devices");
+    auto *transport = window.findChild<BleTransport *>();
+    emit transport->found("demo-a", "AP R2500 V2", -70, 3);
+    emit transport->found("demo-b", "AP R600", -80, 1);
+    devices->showPopup();
+    const QString first = devices->itemData(0).toString();
+    emit transport->found("demo-b", "AP R600", -30, 1);
+    emit transport->found("demo-c", "AP S700", -50, 1);
+    QCOMPARE(devices->count(), 2);
+    QCOMPARE(devices->itemData(0).toString(), first);
+    devices->hidePopup();
+    QCOMPARE(devices->count(), 3);
+    QCOMPARE(devices->itemData(0).toString(), QString("demo-b"));
+    QCOMPARE(devices->currentData().toString(), first);
+  }
+  void logFollowsAndPauses() {
+    LiveLog log;
+    log.resize(600, 240);
+    log.show();
+    for (int i = 0; i < 100; ++i)
+      log.appendEntry(QString("Event %1").arg(i));
+    QTest::qWait(20);
+    QVERIFY(log.following());
+    log.verticalScrollBar()->setValue(20);
+    QVERIFY(!log.following());
+    auto cursor = log.textCursor();
+    cursor.setPosition(10);
+    cursor.setPosition(18, QTextCursor::KeepAnchor);
+    log.setTextCursor(cursor);
+    const int position = log.verticalScrollBar()->value();
+    const QString selected = log.textCursor().selectedText();
+    log.appendEntry("Arrives while reading older entries");
+    QCOMPARE(log.verticalScrollBar()->value(), position);
+    QCOMPARE(log.textCursor().selectedText(), selected);
+    QVERIFY(!log.following());
+    log.followTail();
+    QVERIFY(log.following());
+    for (int i = 0; i < 2100; ++i)
+      log.appendEntry(QString("Event %1").arg(i));
+    QCOMPARE(log.document()->blockCount(), 2000);
+    QVERIFY(log.following());
+    QVERIFY(log.toPlainText().endsWith("Event 2099"));
+    QVERIFY(!log.toPlainText().contains("Event 99\n"));
+    log.verticalScrollBar()->setValue(400);
+    const auto firstVisible = log.cursorForPosition(QPoint(4, 4)).block().text();
+    for (int i = 0; i < 100; ++i)
+      log.appendEntry(QString("Later %1").arg(i));
+    QCOMPARE(log.cursorForPosition(QPoint(4, 4)).block().text(), firstVisible);
+    QVERIFY(!log.following());
+  }
+  void diagnosticLogKeepsGrowing() {
+    MonitorWindow window(true);
+    window.show();
+    auto *transport = window.findChild<BleTransport *>();
+    auto *log = window.findChild<LiveLog *>("eventLog");
+    QVERIFY(transport && log);
+    for (int i = 0; i < 80; ++i)
+      emit transport->packet(QString("test %1").arg(i), true);
+    auto *pages = window.findChild<QStackedWidget *>();
+    pages->setCurrentIndex(2);
+    QTest::qWait(20);
+    QVERIFY(log->toPlainText().contains("RX test 0"));
+    QVERIFY(log->toPlainText().endsWith("RX test 79"));
+    QVERIFY(log->following());
+    window.grab().save("diagnostic-log.png");
+    log->verticalScrollBar()->setValue(0);
+    emit transport->packet("newest", false);
+    QCOMPARE(log->verticalScrollBar()->value(), 0);
+    auto *follow = window.findChild<QPushButton *>("logFollow");
+    QVERIFY(follow->isEnabled());
+    follow->click();
+    QVERIFY(log->following());
+    QVERIFY(!follow->isEnabled());
   }
   void nativeControlsAndChart() {
     MonitorWindow window(true);

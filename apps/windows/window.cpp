@@ -1,6 +1,7 @@
 #include "window.h"
 #include "AllpowersModels.h"
 #include "notices.h"
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
@@ -15,9 +16,11 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QSaveFile>
+#include <QScrollBar>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QStandardPaths>
+#include <QTabWidget>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
@@ -44,23 +47,6 @@ static QString duration(quint32 seconds) {
               : QString("%1 ч %2 мин").arg(hours).arg(minutes % 60);
 }
 
-class Select : public QComboBox {
-public:
-  using QComboBox::QComboBox;
-
-protected:
-  void paintEvent(QPaintEvent *event) override {
-    QComboBox::paintEvent(event);
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(isEnabled() ? QColor("#b9cbe7") : QColor("#60718b"), 1.8, Qt::SolidLine,
-                  Qt::RoundCap, Qt::RoundJoin));
-    int x = width() - 23, y = height() / 2;
-    QPolygonF line;
-    line << QPointF(x - 4, y - 2) << QPointF(x, y + 2) << QPointF(x + 4, y - 2);
-    p.drawPolyline(line);
-  }
-};
 class Check : public QCheckBox {
 public:
   using QCheckBox::QCheckBox;
@@ -112,14 +98,20 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
     QPushButton:disabled{background:#172339;border-color:#24344c;color:#71829c;}
     QPushButton#primary:disabled{background:#172339;border-color:#24344c;color:#71829c;}
     QPushButton:checked{background:#294366;border-color:#5481ba;color:#fff;}
-    QComboBox{background:#19283e;border:1px solid #354b6c;border-radius:9px;padding:10px 38px 10px 12px;color:#eaf2ff;min-height:19px;}
-    QComboBox:hover{border-color:#6488ba;}QComboBox:focus{border-color:#69b3ff;}QComboBox:disabled{color:#71829c;border-color:#24344c;}
-    QComboBox::drop-down{border:0;width:34px;}QComboBox::down-arrow{image:none;width:0;height:0;}
-    QComboBox QAbstractItemView{background:#1c2c44;border:1px solid #48617f;color:#edf5ff;selection-background-color:#345987;outline:0;padding:5px;}
-    QComboBox QAbstractItemView::item{min-height:34px;padding:5px;}
+    QTabWidget::pane{border:0;}
+    QTabBar::tab{background:#172235;color:#a9bedb;padding:10px 18px;border-bottom:2px solid #24344c;margin-bottom:8px;}
+    QTabBar::tab:selected{color:#edf5ff;border-color:#69b3ff;}
+    QTabBar::tab:hover{background:#20324c;}
     QCheckBox{color:#bdcce2;spacing:8px;}QCheckBox::indicator{width:17px;height:17px;border:1px solid #627a9d;border-radius:4px;background:#17263d;}
     QCheckBox::indicator:checked{background:#54a0ff;border-color:#89beff;}
     QPlainTextEdit{background:#172235;color:#b9cee9;border:1px solid #2b405c;border-radius:10px;padding:12px;font-family:Consolas;font-size:13px;}
+    QScrollBar:vertical{background:#172235;width:10px;margin:2px;}
+    QScrollBar::handle:vertical{background:#526d91;min-height:24px;border-radius:4px;}
+    QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
+    QScrollBar:horizontal{background:#172235;height:10px;margin:2px;}
+    QScrollBar::handle:horizontal{background:#526d91;min-width:24px;border-radius:4px;}
+    QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;}
+    QScrollBar::add-page,QScrollBar::sub-page{background:none;}
     QToolTip{background:#253b59;color:#fff;border:1px solid #52759f;padding:7px;}
   )");
   auto *root = new QWidget;
@@ -139,6 +131,10 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
   devices->setObjectName("devices");
   devices->setPlaceholderText("Найдите и выберите станцию");
   devices->setMinimumWidth(360);
+  connect(static_cast<Select *>(devices), &Select::popupClosed, this, [this] {
+    if (deviceListPending)
+      rebuildDevices();
+  });
   connection->addWidget(devices, 1);
   scanButton = new QPushButton("Найти станции");
   scanButton->setObjectName("scan");
@@ -153,6 +149,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
   options->addWidget(stationsOnly);
   options->addStretch();
   profile = new Select;
+  profile->setObjectName("profile");
   profile->addItems(
       {"Авто по имени станции", "Старый протокол · Old10", "Протокол V2 · Legacy16", "R2500 V2"});
   profile->setCurrentIndex(qBound(0, settings["profile"].toInt(), 3));
@@ -194,6 +191,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
     saveSettings();
     if (id == 1)
       chart->update();
+    if (id == 2)
+      refreshDiagnostics();
   });
   int savedPage =
       QStringList{"Показания", "История", "Диагностика"}.indexOf(settings["page"].toString());
@@ -236,16 +235,19 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
     wasScanning = scanning;
     updateControls();
     refreshDiagnostics();
-    emit historyLog(
-        QString::fromUtf8(QJsonDocument(ble->diagnostics()).toJson(QJsonDocument::Compact)));
+    const auto info = ble->diagnostics();
+    appendLog(ble->phase() +
+              (info["error"].toString().isEmpty() ? QString() : " · " + info["error"].toString()));
   });
   connect(ble, &BleTransport::found, this,
           [this](QString address, QString name, int rssi, int model) {
             discovered[address] = {{"name", name}, {"rssi", rssi}, {"model", model}};
             rebuildDevices();
           });
-  connect(ble, &BleTransport::packet, this,
-          [this](QString hex, bool valid) { lastPacket = (valid ? "RX " : "INVALID ") + hex; });
+  connect(ble, &BleTransport::packet, this, [this](QString hex, bool valid) {
+    lastPacket = (valid ? "RX " : "INVALID ") + hex;
+    appendLog(lastPacket);
+  });
   connect(ble, &BleTransport::snapshot, this, [this](ap_snapshot s) {
     if (!offline)
       updateSnapshot(s);
@@ -273,6 +275,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
     historyBusy = false;
     historyError = message;
+    appendLog("Ошибка истории · " + message);
     refreshDiagnostics();
   });
   connect(history, &HistoryWorker::exported, this, [this](QString path, bool ok) {
@@ -284,6 +287,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent)
   emit openHistory(QDir(dataPath).filePath("history.sqlite3"));
   emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
   updateControls();
+  appendLog(QString("ALLPOWERS Monitor %1 · %2")
+                .arg(APP_VERSION, offline ? "демонстрация без Bluetooth" : "готов к подключению"));
 }
 MonitorWindow::~MonitorWindow() {
   // QObject deletes the central widget before later child objects. Stop signals
@@ -353,6 +358,7 @@ QWidget *MonitorWindow::historyPage() {
   layout->setContentsMargins(0, 0, 0, 0);
   auto *toolbar = new QHBoxLayout;
   horizon = new Select;
+  horizon->setObjectName("horizon");
   horizon->addItem("Последний час", 3600);
   horizon->addItem("24 часа", 86400);
   horizon->addItem("48 часов", 172800);
@@ -418,21 +424,53 @@ QWidget *MonitorWindow::diagnosticPage() {
   auto *l = new QVBoxLayout(page);
   l->setContentsMargins(0, 0, 0, 0);
   auto *row = new QHBoxLayout;
-  row->addWidget(text("Состояние соединения и приложения", 16, "#d6e5f8", true));
+  row->addWidget(text("Диагностика", 16, "#d6e5f8", true));
   row->addStretch();
+  auto *follow = new QPushButton("К новым записям ↓");
+  follow->setObjectName("logFollow");
+  row->addWidget(follow);
   auto *copy = new QPushButton("Скопировать");
   row->addWidget(copy);
   l->addLayout(row);
+  auto *tabs = new QTabWidget;
+  tabs->setObjectName("diagnosticTabs");
+  eventLog = new LiveLog;
+  eventLog->setObjectName("eventLog");
+  tabs->addTab(eventLog, "Журнал событий");
   technical = new QPlainTextEdit;
+  technical->setObjectName("diagnosticState");
   technical->setReadOnly(true);
-  l->addWidget(technical, 1);
-  connect(copy, &QPushButton::clicked, this, [this] {
+  tabs->addTab(technical, "Текущее состояние");
+  l->addWidget(tabs, 1);
+  auto *hint =
+      text("Новые записи внизу · прокрутите вверх, чтобы приостановить слежение", 12, "#819cc1");
+  l->addWidget(hint);
+  follow->setEnabled(false);
+  connect(follow, &QPushButton::clicked, eventLog, &LiveLog::followTail);
+  connect(eventLog, &LiveLog::followingChanged, this, [follow, hint](bool following) {
+    follow->setEnabled(!following);
+    hint->setText(following ? "Новые записи внизу · прокрутите вверх, чтобы приостановить слежение"
+                            : "Просмотр старых записей · новые продолжают поступать");
+  });
+  connect(tabs, &QTabWidget::currentChanged, this, [this, follow, hint](int index) {
+    follow->setVisible(index == 0);
+    hint->setVisible(index == 0);
+    refreshDiagnostics();
+  });
+  connect(copy, &QPushButton::clicked, this, [this, tabs] {
     QApplication::clipboard()->setText(
-        QString::fromUtf8(QJsonDocument(diagnostics()).toJson(QJsonDocument::Indented)));
+        tabs->currentIndex() == 0
+            ? eventLog->toPlainText()
+            : QString::fromUtf8(QJsonDocument(diagnostics()).toJson(QJsonDocument::Indented)));
   });
   return page;
 }
 void MonitorWindow::rebuildDevices() {
+  if (devices->view()->isVisible()) {
+    deviceListPending = true;
+    return;
+  }
+  deviceListPending = false;
   QString previous = devices->currentData().toString();
   if (previous.isEmpty())
     previous = selectedAddress;
@@ -542,9 +580,16 @@ QJsonObject MonitorWindow::diagnostics() const {
   return info;
 }
 void MonitorWindow::refreshDiagnostics() {
-  if (technical)
+  if (technical && !technical->textCursor().hasSelection()) {
+    const int position = technical->verticalScrollBar()->value();
     technical->setPlainText(
         QString::fromUtf8(QJsonDocument(diagnostics()).toJson(QJsonDocument::Indented)));
+    technical->verticalScrollBar()->setValue(position);
+  }
+}
+void MonitorWindow::appendLog(const QString &message) {
+  eventLog->appendEntry(QDateTime::currentDateTime().toString("HH:mm:ss.zzz") + "  " + message);
+  emit historyLog(message);
 }
 void MonitorWindow::saveSettings() {
   if (historyStarted)

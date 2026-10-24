@@ -20,6 +20,9 @@ and the C++ runtime are statically linked. No Qt/Python installation is needed.
 Graphs support wheel zoom, panning, crosshair values, series visibility,
 linear/logarithmic time, source-change markers and CSV export. Disk work runs
 outside the UI thread. History/settings stay in `%LOCALAPPDATA%/AllpowersMonitor`.
+Diagnostics includes a live event log that follows new entries. Scrolling up
+pauses following; “К новым записям” resumes it. The view retains 2000 lines;
+the disk log rotates independently.
 
 ## Build
 

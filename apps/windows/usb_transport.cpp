@@ -290,7 +290,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
     return;
   if (bytes.size() > 65536 || buffer.size() + bytes.size() > 65536) {
     badLines++;
-    if(importing)importCompromised=true;
+    if(importing&&(importVersion!=3||importBegun))importCompromised=true;
     buffer.clear();
     return;
   }
@@ -302,14 +302,14 @@ void UsbTransport::receive(const QByteArray &bytes) {
       continue;
     if (line.size() > 8192) {
       badLines++;
-      if(importing)importCompromised=true;
+      if(importing&&(importVersion!=3||importBegun))importCompromised=true;
       continue;
     }
     QJsonParseError error;
     auto doc = QJsonDocument::fromJson(line, &error);
     if (error.error != QJsonParseError::NoError || !doc.isObject()) {
       badLines++;
-      if(importing)importCompromised=true;
+      if(importing&&(importVersion!=3||importBegun))importCompromised=true;
       continue;
     }
     row(doc.object());
@@ -317,7 +317,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
   if (buffer.size() > 8192) {
     buffer.clear();
     badLines++;
-    if(importing)importCompromised=true;
+    if(importing&&(importVersion!=3||importBegun))importCompromised=true;
   }
 }
 void UsbTransport::row(const QJsonObject &o) {
@@ -408,6 +408,9 @@ void UsbTransport::row(const QJsonObject &o) {
     emit stateChanged();
   } else if (o["history_export_begin"].toBool() && importing) {
     quint32 version,request,session,generation,count,oldest,latest;
+    // Before our authoritative begin, complete frames from a timed-out prior
+    // request are channel residue rather than records of the new transaction.
+    if(importVersion==3&&!importBegun&&(!number(o,"request",request)||request!=importRequest))return;
     if(importVersion!=3||importBegun||!number(o,"history_export_version",version,3)||version!=3||
        !number(o,"request",request)||request!=importRequest||!number(o,"export_session",session)||!session||session!=importSession||
        !number(o,"generation",generation)||!number(o,"count",count,2880)||
@@ -415,7 +418,8 @@ void UsbTransport::row(const QJsonObject &o) {
        (count?(!oldest||!latest):(oldest||latest))){
       finishImport("error","Некорректное начало USB-архива");return;
     }
-    importBegun=true;importGeneration=generation;importExpected=count;importOldest=oldest;importLatest=latest;
+    importBegun=true;importCompromised=false;
+    importGeneration=generation;importExpected=count;importOldest=oldest;importLatest=latest;
     details_["usb_history_frozen"]=true;
   } else if (o.contains("history_ready")) {
     quint32 session=0,count=0,latest=0,oldestInventory=0;
@@ -470,6 +474,7 @@ void UsbTransport::row(const QJsonObject &o) {
       anchorWall = QDateTime::currentSecsSinceEpoch();
     }
   } else if (o["history_record"].toBool() && importing) {
+    if(importVersion==3&&!importBegun)return;
     HistoryPoint p;
     quint32 session, epoch;
     if (!historyRecord(o, p, session, epoch)) {
@@ -518,6 +523,10 @@ void UsbTransport::row(const QJsonObject &o) {
     }
     importPoints.append(p);
   } else if (o["history_dump_done"].toBool() && importing) {
+    if(importVersion==3&&!importBegun){
+      quint32 previousRequest;
+      if(number(o,"request",previousRequest)&&previousRequest!=importRequest)return;
+    }
     if(importVersion!=3 && o.contains("history_legacy_status")){
       quint32 sent=0;
       if(o["history_legacy_status"]!="complete"){

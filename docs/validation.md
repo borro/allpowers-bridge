@@ -15,7 +15,7 @@ Historical hardware observations below do not validate these new images.
 | --- | --- | --- | --- |
 | R1 | `HistoryWire.h` legacy projection and separate versioned export | `usbLegacyProjectionAcceptedByFrozenOldParser`: AHP1-only, mixed and AHP2-only; old CRC contract accepts rows and flash stays byte-identical | Old wire format cannot carry known/model; unknown-output projections clear Fresh and old graphs may omit them |
 | R2 | `HistoryCompatibility.h`, build/package metadata, `history_contract`/`rollback_check` before ROM access | `history-rollback`: original Ring demonstrates old erase; compatible rollback preserves all records through upgrade/write/upgrade. Stdlib maintenance tests bind app/hash/manifest/marker and reject unsafe combinations before device access | Supported rollback keeps an AHP1/AHP2 reader/writer; AHP1-only downgrade is refused |
-| R3 | `HistoryExport.h` typed reads, frozen snapshot, bounded retries, short-write offsets, acknowledged cursor; strict desktop completion | `exportSelfTest`, versioned fault, legacy final-read error and invalid/empty inventory tests: busy/timeout/short/failed writes, lost/corrupt lines, early done, session/generation, append/retention | Complete means all valid wire records received; unusable dates are counted separately. v2 completion stays partial |
+| R3 | `HistoryExport.h` typed reads, frozen snapshot, bounded retries, short-write offsets, acknowledged cursor and persistent retry framing; strict desktop transaction boundary | `exportSelfTest`, actual exporter/parser retry, versioned fault, legacy final-read error and invalid/empty inventory tests: busy/timeout/short/failed writes, lost/corrupt lines, early done, session/generation, append/retention | Complete means all valid wire records received; unusable dates are counted separately. v2 completion stays partial |
 | R4 | `UsbTransport::nextLegacyPage`, bounded 5888-position search, frozen inventory/final recheck | `usbLegacyPaginationRecoversRetainedRecords`, bounds/inventory tests: `{1,3…2881}`, `{1,3}`, wrap, three pages including RAM span beyond physical slots, deduplication, changed inventory | Legacy mutation/unconfirmed count/deadline yields partial; max 2880 positions/request, 2880 retained records, 120 s total |
 | R5 | Sorted relative generated firmware inventory is a real command dependency; staging mirror retained | `firmware-graph`: ordinary build of both targets with all byproducts present; unchanged/add/rename/deletion-only while identity stays dirty; source kit without .git and no-op | Only supported inventory/staging directories participate |
 | R6 | Isolated EXE tests read authoritative generated identity at execution | `windows-identity-graph`: actual root/standalone Monitor+Widget CLI and PE versions, clean → dirty → revert without configure; wrong expected identity fails; tag/INF and package guards retained | Windows MSVC/Qt integration test |
@@ -52,17 +52,17 @@ install or start a Windows service or kernel driver.
 
 ### Follow-up evidence
 
-Local source validation was performed before committing, against the working
-tree based on `b989bd1`, identified as `0.5.2-dirty`. Exact successful hosted
-commit/run links are added after their completion; the old baseline's hosted
-result is listed separately below.
+Local source validation covered the working tree based on `b989bd1` through
+the retry-framing follow-up based on `5884b23` (`0.5.2-4-g5884b23-dirty`).
+Exact successful hosted commit/run links are added after their completion;
+the old baseline's hosted result is listed separately below.
 
 | Environment / check | Result | Scope |
 | --- | --- | --- |
 | Windows 11, MSVC 19.51.36260, Qt 6.12 static, /MT, WinRT | Root CTest 20/20 passed | Real build graphs, core/ABI/UPS, portable firmware, rollback, Qt, isolated EXEs, driver INF/catalog/build checks |
-| Windows extracted source kit, without .git/Python product build | Native 16/16 and supported desktop 4/4 passed; CPack runtime/source ZIP + SHA256 passed | Rebuilds actual source archive; latest desktop run includes invalid/empty-inventory cases |
-| Ubuntu WSL, GCC 13.3 | Full native CTest 14/14 passed; affected firmware-host rerun passed after final legacy footer | Both actual board compiles, USB/partition/maintenance checks and object-kit relink; strict offline image validation and all source/artifact hashes matched |
-| Ubuntu WSL, fatal ASan/UBSan | Full CTest 15/15 passed; affected firmware-host/policy 2/2 rerun passed | No ASAN/UBSAN/LSAN suppression variables; recoverable control exits zero, production-policy UB control diagnoses and exits nonzero |
+| Windows extracted source kit, without .git/Python product build | Native 16/16 and supported desktop 4/4 passed; CPack runtime/source ZIP + SHA256 passed | Rebuilt again after retry framing; actual source archive includes invalid/empty inventory and exporter/parser restart tests |
+| Ubuntu WSL, GCC 13.3 | Full native CTest 14/14 passed after retry framing | Both actual board compiles, USB/partition/maintenance checks and object-kit relink; strict offline image validation and all source/artifact hashes matched |
+| Ubuntu WSL, fatal ASan/UBSan | Full CTest 15/15 passed after retry framing | No ASAN/UBSAN/LSAN suppression variables; recoverable control exits zero, production-policy UB control diagnoses and exits nonzero |
 | Python standard library, Windows and Linux | 11/11 passed | No USB/serial/esptool packages imported; synthetic malformed images and supported/unsupported rollback before device boundary |
 | Workflow / publication source audit | Actionlint, source inventory, local doc links and diff checks passed | No private hardware identities, images, reports or absolute user paths in public files |
 | Historical baseline hosted CI, `b989bd1bc970ce9e5af39d5838413a204b20f64d` | [main run 40199484506 succeeded](https://github.com/borro/allpowers-bridge/actions/runs/40199484506) | Baseline only; not evidence for R1–R8 |

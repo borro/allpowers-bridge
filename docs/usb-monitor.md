@@ -92,8 +92,13 @@ then transmits outside that lock. Busy, end and storage error are distinct; shor
 writes retain their offset and acknowledge a cursor only after the whole line.
 Optional notification logs are suppressed and other console responses deferred
 during a dump to prevent interleaving. Appends and retention after capture do not
-change that snapshot. A new request cancels the previous one; old request/session
-rows cannot complete the replacement import.
+change that snapshot. A new request cancels the previous one. If cancel/timeout
+abandoned a partially accepted line, firmware retains that framing state and
+sends a bounded newline barrier before opening the next snapshot or advancing
+ACK. The desktop treats its own matching begin as the transaction boundary;
+prior framing residue cannot spoil a valid retry. Corruption after that begin
+still prevents complete. Old request/session rows cannot complete the replacement
+import.
 
 Diagnostics distinguishes `usb_history_result` values `reading`, `complete`,
 `partial` and `error`; `usb_history_complete` is true only for verified completion.

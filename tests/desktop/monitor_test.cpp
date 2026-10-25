@@ -829,6 +829,56 @@ private slots:
     QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),QString("complete"));
     QVERIFY(usb.diagnostics()["usb_history_complete"].toBool());
   }
+  void usbVersionedRetryResynchronizesAbandonedLine() {
+    for(int mode:{0,1,2,3,4}){
+      qint64 now=0;auto *io=new FakeUsbChannel;
+      UsbTransport usb(nullptr,false,io,fakeUsbPorts,[&]{return now;});
+      QSignalSpy imported(&usb,&TelemetryTransport::historyImported);
+      usb.resume("R2500-000000000001",{},0);io->feed(usbCycle());
+      io->feed("{\"history_ready\":true,\"history_records\":2,\"history_latest\":3,\"history_oldest\":1,\"history_export_version\":3,\"history_session\":7}\n");
+      usb.requestHistory();TestArchiveSource source;source.input={archiveRecord(1),archiveRecord(3)};
+      TestArchiveSink sink;sink.chunk=7;
+      HistoryFormat::ExportSession writer(source,sink);writer.start(1,0);
+      bool partial=false;
+      for(quint32 tick=0;tick<1000;++tick){
+        writer.pump(tick);
+        const auto tail=sink.bytes.mid(sink.bytes.lastIndexOf('\n')+1);
+        if(tail.contains("\"history_record\":true")&&!tail.contains('\n')){partial=true;break;}
+      }
+      QVERIFY(partial);QVERIFY(writer.active());QCOMPARE(writer.acknowledged(),0u);
+      const auto prefix=sink.bytes.size();io->feed(sink.bytes);
+      if(mode==0||mode==3)writer.pump(62001); // Actual firmware hard deadline.
+      if(mode==1)writer.cancel();
+      now=70001;QTest::qWait(600); // Actual desktop deadline releases request 1.
+      QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),QString("error"));
+      imported.clear();usb.requestHistory();QVERIFY(io->writes.contains("HISTORY-EXPORT 2\n"));
+      if(mode!=2)writer.cancel(); // Production beginHistoryExport also cancels an inactive predecessor.
+      writer.start(2,62002);sink.failedWrites=3;sink.chunk=13;
+      for(quint32 tick=62003;tick<62006;++tick){writer.pump(tick);QCOMPARE(sink.bytes.size(),prefix);QCOMPARE(writer.acknowledged(),0u);}
+      for(quint32 tick=62006;writer.active()&&tick<64000;++tick)writer.pump(tick);
+      QVERIFY(!writer.active());QCOMPARE(writer.acknowledged(),3u);
+      auto retry=sink.bytes.mid(prefix);QVERIFY(retry.startsWith('\n'));
+      // Delayed complete frames of the old request are also outside request 2.
+      TestArchiveSource previous;previous.input=source.input;TestArchiveSink prior;
+      HistoryFormat::ExportSession oldWriter(previous,prior);oldWriter.start(1,0);
+      for(quint32 tick=0;oldWriter.active()&&tick<100;++tick)oldWriter.pump(tick);
+      QVERIFY(!oldWriter.active());retry.insert(1,prior.bytes);
+      if(mode>=3){
+        const auto ownBegin=retry.indexOf("\"request\":2");QVERIFY(ownBegin>=0);
+        const auto newline=retry.indexOf('\n',ownBegin);QVERIFY(newline>=0);
+        if(mode==3)retry.insert(newline+1,"corruption after the new begin\n");
+        else for(const auto &row:prior.bytes.split('\n')){
+          if(QJsonDocument::fromJson(row).object()["history_record"].toBool()){
+            retry.insert(newline+1,row+'\n');break;
+          }
+        }
+      }
+      for(qsizetype offset=0;offset<retry.size();offset+=17)io->feed(retry.mid(offset,17));
+      QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),mode>=3?QString("partial"):QString("complete"));
+      QCOMPARE(usb.diagnostics()["usb_history_complete"].toBool(),mode<3);
+      QCOMPARE(imported.size(),1);QCOMPARE(qvariant_cast<HistoryPoints>(imported.first()[0]).size(),2);
+    }
+  }
   void usbLegacyMissingRecordContinuesPagination() {
     auto *io=new FakeUsbChannel;UsbTransport usb(nullptr,false,io,fakeUsbPorts);
     usb.resume("R2500-000000000001",{},0);io->feed(usbCycle());

@@ -58,6 +58,15 @@ function Read-Release([long]$ReleaseId) {
   $json = Invoke-GitHub @('api', "repos/$Repository/releases/$ReleaseId")
   return ($json -join "`n" | ConvertFrom-Json)
 }
+function Assert-Draft($Release) {
+  if ($Release.id -notmatch '^[1-9][0-9]*$' -or $Release.tag_name -cne $Tag -or
+      -not $Release.draft -or -not ([string]$Release.body).Contains($marker)) {
+    throw 'Draft identity does not match this tag and commit'
+  }
+  if (@($Release.assets | Where-Object { $_.name -cnotin $files.Name }).Count) {
+    throw 'Existing draft contains unexpected assets; refusing to modify it'
+  }
+}
 function Assert-UploadedAssets($Release) {
   if (@($Release.assets).Count -ne $files.Count) { throw 'Uploaded release asset count mismatch' }
   foreach ($file in $files) {
@@ -77,10 +86,6 @@ if ($release) {
     Write-Output "Release already published with matching assets: $Tag"
     return
   }
-  if (-not ([string]$release.body).Contains($marker)) { throw 'Existing draft was not prepared for this commit' }
-  if (@($release.assets | Where-Object { $_.name -cnotin $files.Name }).Count) {
-    throw 'Existing draft contains unexpected assets; refusing to modify it'
-  }
 } else {
   $notes = Join-Path $Assets '.stage/release-notes.md'
   @"
@@ -96,24 +101,45 @@ The applications work without the optional Windows UPS driver. That integration 
 experimental, unsigned and unverified in a VM. Firmware updates require the matching
 board profile; settings and private recovery images are not part of these assets.
 "@ | Set-Content -LiteralPath $notes -Encoding utf8
-  $arguments = @('release', 'create', $Tag, '--repo', $Repository, '--verify-tag', '--target', $commit,
-    '--title', "ALLPOWERS Bridge $Tag", '--draft', '--notes-file', $notes)
-  if (($Tag -split '\+', 2)[0].Contains('-')) { $arguments += '--prerelease' }
-  Invoke-GitHub $arguments
-  $release = Find-Release
-  if (-not $release -or -not $release.draft -or -not ([string]$release.body).Contains($marker)) {
-    throw 'Created draft could not be identified for this commit'
-  }
+  $request = Join-Path $Assets '.stage/create-release.json'
+  @{
+    tag_name = $Tag; target_commitish = $commit; name = "ALLPOWERS Bridge $Tag"
+    draft = $true; prerelease = ($Tag -split '\+', 2)[0].Contains('-')
+    body = Get-Content -LiteralPath $notes -Raw
+  } | ConvertTo-Json | Set-Content -LiteralPath $request -Encoding utf8
+  # The release list can lag behind creation. Keep the ID returned by POST;
+  # never rediscover a newly created draft by tag (including inside gh release).
+  $json = Invoke-GitHub @('api', "repos/$Repository/releases", '--method', 'POST', '--input', $request)
+  $release = $json -join "`n" | ConvertFrom-Json
 }
+Assert-Draft $release
+$releaseId = [long]$release.id
 # Only an unpublished draft may be resumed/replaced after an interrupted upload.
-Invoke-GitHub (@('release', 'upload', $Tag, '--repo', $Repository, '--clobber') + $files.FullName)
-$uploaded = Read-Release $release.id
-if ($uploaded.tag_name -cne $Tag -or -not $uploaded.draft) { throw 'Draft identity changed during upload' }
+foreach ($file in $files) {
+  $existing = @($release.assets | Where-Object { $_.name -ceq $file.Name })
+  if ($existing.Count -gt 1) { throw 'Duplicate draft asset names' }
+  if ($existing.Count) {
+    $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($existing[0].state -eq 'uploaded' -and $existing[0].size -eq $file.Length -and
+        $existing[0].digest -ceq ('sha256:' + $hash)) { continue }
+    if ($existing[0].id -notmatch '^[1-9][0-9]*$') { throw 'Invalid draft asset ID' }
+    Invoke-GitHub @('api', "repos/$Repository/releases/assets/$($existing[0].id)", '--method', 'DELETE') | Out-Null
+  }
+  $name = [Uri]::EscapeDataString($file.Name)
+  Invoke-GitHub @('api', "https://uploads.github.com/repos/$Repository/releases/$releaseId/assets?name=$name",
+    '--method', 'POST', '--header', 'Content-Type: application/octet-stream', '--input', $file.FullName) | Out-Null
+}
+$uploaded = Read-Release $releaseId
+Assert-Draft $uploaded
+if ($uploaded.id -ne $releaseId) { throw 'Draft ID changed during upload' }
 Assert-UploadedAssets $uploaded
 Confirm-RemoteTag
 $prerelease = ($Tag -split '\+', 2)[0].Contains('-')
-$arguments = @('release', 'edit', $Tag, '--repo', $Repository, '--draft=false',
-  ('--prerelease=' + $prerelease.ToString().ToLowerInvariant()),
-  ('--latest=' + (-not $prerelease).ToString().ToLowerInvariant()))
-Invoke-GitHub $arguments
+$json = Invoke-GitHub @('api', "repos/$Repository/releases/$releaseId", '--method', 'PATCH',
+  '-F', 'draft=false', '-F', ('prerelease=' + $prerelease.ToString().ToLowerInvariant()),
+  '-f', ('make_latest=' + (-not $prerelease).ToString().ToLowerInvariant()))
+$published = $json -join "`n" | ConvertFrom-Json
+if ($published.id -ne $releaseId -or $published.tag_name -cne $Tag -or $published.draft -or
+    $published.prerelease -ne $prerelease) { throw 'Release publication was not confirmed' }
+Assert-UploadedAssets $published
 Write-Output "Published verified release: $Tag"

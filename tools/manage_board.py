@@ -30,6 +30,7 @@ def main():
     p.add_argument('action',choices=['identity','status','boot','flash','verify','reset'])
     p.add_argument('--board',choices=BOARDS,required=True);p.add_argument('--config',type=Path)
     p.add_argument('--image-dir',type=Path);p.add_argument('--confirm-write',action='store_true')
+    p.add_argument('--rom-only',action='store_true',help='Use ROM commands without uploading the RAM flasher stub')
     args=p.parse_args();identity=device(args.board,args.config)
     if args.action in ('status','boot'):
         import hid
@@ -56,6 +57,7 @@ def main():
         if hashlib.sha256(backup.read_bytes()).hexdigest()!=rollback['sha256']:raise RuntimeError('Rollback image checksum mismatch')
     port=rom_port(identity)
     command=[sys.executable,'-m','esptool','--chip','esp32s3','--port',port,'--before','no-reset','--after','no-reset']
+    if args.rom_only:command.append('--no-stub')
     result=subprocess.check_output(command+['flash-id'],text=True,stderr=subprocess.STDOUT)
     print(result)
     if identity['mac'] not in result.lower() or 'Detected flash size: 16MB' not in result:

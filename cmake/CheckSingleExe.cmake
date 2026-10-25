@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.25)
 get_filename_component(WORK "${WORK}" ABSOLUTE)
 file(MAKE_DIRECTORY "${WORK}")
 get_filename_component(exe_name "${EXE}" NAME)
+if(VERSION)
+  find_program(powershell NAMES pwsh powershell REQUIRED)
+  execute_process(COMMAND "${powershell}" -NoProfile -File "${CMAKE_CURRENT_LIST_DIR}/CheckExeVersion.ps1"
+    -Path "${EXE}" -ExpectedVersion "${VERSION}" COMMAND_ERROR_IS_FATAL ANY)
+endif()
 file(COPY_FILE "${EXE}" "${WORK}/${exe_name}" ONLY_IF_DIFFERENT)
 find_program(DUMPBIN dumpbin REQUIRED)
 execute_process(COMMAND "${DUMPBIN}" /nologo /dependents "${EXE}"

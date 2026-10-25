@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 4.4)
 include("${CMAKE_CURRENT_LIST_DIR}/ReleaseVersion.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/HistoryCompatibility.cmake")
 ap_release_version("${TAG}" version)
 # GitHub may rename special characters in asset names. Preserve the complete
 # version inside the EXEs/manifests, and encode '+' only in uploaded filenames.
@@ -90,6 +91,7 @@ foreach(board waveshare-147 pocket-096)
       message(FATAL_ERROR "Incomplete firmware package: ${board}/${required}")
     endif()
   endforeach()
+  ap_history_validate("${manifest}" "${folder}/R2500Adapter.ino.bin")
   execute_process(COMMAND "${CMAKE_COMMAND}" -E tar cf
     "${OUTPUT}/AllpowersFirmware-${asset_version}-${board}.zip" --format=zip -- ${files}
     WORKING_DIRECTORY "${folder}" COMMAND_ERROR_IS_FATAL ANY)

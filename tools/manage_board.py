@@ -1,12 +1,12 @@
 """Explicit, identity-checked USB maintenance. Never runs during a build."""
 from __future__ import annotations
-import argparse, hashlib, json, subprocess, sys
+import argparse, json, subprocess, sys
 from pathlib import Path
 from boards import ROOT, BOARDS, device, rom_port
 from image_contract import SEGMENTS
 
 def validate_image(folder,board):
-    from image_contract import write_plan, sha
+    from image_contract import history_contract, write_plan, sha
     manifest=json.loads((folder/'manifest.json').read_text())
     contract=json.loads((ROOT/'tests/fixtures/usb-contract.json').read_text())
     if manifest['board']!=board or manifest['descriptor_sha256']!=contract['descriptor_sha256']:
@@ -21,6 +21,7 @@ def validate_image(folder,board):
         path=(folder/name).resolve()
         if path.parent!=folder.resolve() or sha(path)!=expected:raise ValueError('Image integrity mismatch: '+name)
     write_plan(folder)
+    history_contract(manifest, folder/'R2500Adapter.ino.bin')
     return manifest
 
 def main():
@@ -53,10 +54,8 @@ def main():
     if args.action=='flash':
         if not args.confirm_write:raise RuntimeError('Writing requires --confirm-write')
         if not identity.get('physical_rom_verified'):raise RuntimeError('Verify independent physical BOOT/RESET entry before replacing firmware')
-        rollback=identity.get('rollback')
-        if not rollback:raise RuntimeError('Register an accessible rollback image and its SHA256 first')
-        backup=Path(rollback['path'])
-        if hashlib.sha256(backup.read_bytes()).hexdigest()!=rollback['sha256']:raise RuntimeError('Rollback image checksum mismatch')
+        from image_contract import rollback_check
+        rollback_check(identity.get('rollback'), args.board, validate_image)
     port=rom_port(identity)
     command=[sys.executable,'-m','esptool','--chip','esp32s3','--port',port,'--before','no-reset','--after','no-reset']
     if args.rom_only:command.append('--no-stub')

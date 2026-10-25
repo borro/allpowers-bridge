@@ -28,6 +28,8 @@ class ImageContractTests(unittest.TestCase):
         self.folder = Path(self.temp.name)
         for _, name, _ in contract.SEGMENTS:
             (self.folder / name).write_bytes(b'\xe9' * 32)
+        self.app = self.folder / 'R2500Adapter.ino.bin'
+        self.app.write_bytes(self.app.read_bytes() + contract.HISTORY_CAPABILITY.encode('ascii') + b'\0')
         self.table = self.folder / 'R2500Adapter.ino.partitions.bin'
         self.table.write_bytes(table_bytes())
 
@@ -35,6 +37,7 @@ class ImageContractTests(unittest.TestCase):
         fixture = json.loads((contract.ROOT / 'tests/fixtures/usb-contract.json').read_text())
         manifest = dict(board='waveshare-147', descriptor_sha256=fixture['descriptor_sha256'],
                         maintenance='BOOT-R2500!!', efuse_writes=False,
+                        history_storage=contract.HISTORY_CONTRACT,
                         files={p.name: contract.sha(p) for p in self.folder.glob('*.bin')})
         (self.folder / 'manifest.json').write_text(json.dumps(manifest))
 
@@ -102,6 +105,77 @@ class ImageContractTests(unittest.TestCase):
     def test_extra_binary_cannot_become_an_implicit_segment(self):
         (self.folder / 'unexpected.bin').write_bytes(b'x')
         self.rejected()
+
+    def test_storage_capability_metadata_and_binary_are_both_required(self):
+        self.manifest()
+        path=self.folder/'manifest.json'
+        original=json.loads(path.read_text())
+        for metadata in (None, {}, {**contract.HISTORY_CONTRACT, 'read_versions': [1]},
+                         {**contract.HISTORY_CONTRACT, 'write_version': 1},
+                         {**contract.HISTORY_CONTRACT, 'record_bytes': 64}):
+            value={**original,'history_storage':metadata}
+            path.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):
+                manage_board.validate_image(self.folder,'waveshare-147')
+        # A new sidecar with matching hashes cannot make an unchanged released
+        # old binary safe: the actual compiled capability is also required.
+        self.app.write_bytes(b'\xe9'*32)
+        self.manifest()
+        with self.assertRaisesRegex(ValueError,'Application does not contain'):
+            manage_board.validate_image(self.folder,'waveshare-147')
+
+    def test_supported_rollback_is_bound_to_complete_compatible_package(self):
+        self.manifest()
+        rollback={'path':str(self.app),'sha256':contract.sha(self.app),
+                  'manifest':str(self.folder/'manifest.json')}
+        checked=contract.rollback_check(rollback,'waveshare-147',manage_board.validate_image)
+        self.assertEqual(checked['history_storage']['read_versions'],[1,2])
+        # A separately pinned application must match the app in that manifest.
+        other=self.folder/'other.application'
+        other.write_bytes(self.app.read_bytes()+b'other')
+        rollback.update(path=str(other),sha256=contract.sha(other))
+        with self.assertRaisesRegex(ValueError,'not bound'):
+            contract.rollback_check(rollback,'waveshare-147',manage_board.validate_image)
+
+    def test_unsupported_rollback_rejected_before_device_access(self):
+        self.manifest()
+        args=['manage_board.py','flash','--board','waveshare-147','--confirm-write',
+              '--image-dir',str(self.folder)]
+        identity={'physical_rom_verified':True,
+                  'rollback':{'path':str(self.app),'sha256':contract.sha(self.app)}}
+        with patch.object(sys,'argv',args), patch.object(manage_board,'device',return_value=identity), \
+                patch.object(manage_board,'rom_port') as port, patch.object(manage_board.subprocess,'run') as run:
+            with self.assertRaisesRegex(ValueError,'rollback package manifest'):
+                manage_board.main()
+            port.assert_not_called()
+            run.assert_not_called()
+
+    def test_legacy_candidate_rejected_before_device_access(self):
+        self.manifest()
+        path=self.folder/'manifest.json'
+        value=json.loads(path.read_text());value.pop('history_storage');path.write_text(json.dumps(value))
+        args=['manage_board.py','flash','--board','waveshare-147','--confirm-write',
+              '--image-dir',str(self.folder)]
+        with patch.object(sys,'argv',args), patch.object(manage_board,'device',return_value={}), \
+                patch.object(manage_board,'rom_port') as port:
+            with self.assertRaisesRegex(ValueError,'unsafe downgrade refused'):
+                manage_board.main()
+            port.assert_not_called()
+
+    def test_supported_flash_reaches_only_the_explicit_device_boundary(self):
+        self.manifest()
+        identity={'physical_rom_verified':True,
+                  'rollback':{'path':str(self.app),'sha256':contract.sha(self.app),
+                              'manifest':str(self.folder/'manifest.json')}}
+        args=['manage_board.py','flash','--board','waveshare-147','--confirm-write',
+              '--image-dir',str(self.folder)]
+        with patch.object(sys,'argv',args), patch.object(manage_board,'device',return_value=identity), \
+                patch.object(manage_board,'rom_port',side_effect=RuntimeError('OFFLINE_BOUNDARY')) as port, \
+                patch.object(manage_board.subprocess,'run') as run:
+            with self.assertRaisesRegex(RuntimeError,'OFFLINE_BOUNDARY'):
+                manage_board.main()
+            port.assert_called_once_with(identity)
+            run.assert_not_called()
 
 
 if __name__ == '__main__':

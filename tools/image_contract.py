@@ -20,6 +20,9 @@ SEGMENTS = ((0, 'R2500Adapter.ino.bootloader.bin', 0x8000),
             (0xe000, 'boot_app0.bin', 0x2000),
             (0x10000, 'R2500Adapter.ino.bin', 0x300000))
 SECTOR = 0x1000
+HISTORY_CAPABILITY = 'ALLPOWERS_HISTORY_R12_W2_S32'
+HISTORY_CONTRACT = {'schema': 1, 'read_versions': [1, 2], 'write_version': 2,
+                    'record_bytes': 32, 'capability': HISTORY_CAPABILITY}
 
 
 @dataclass(frozen=True)
@@ -89,3 +92,36 @@ def write_plan(folder):
             raise ValueError('Firmware erase ranges overlap')
         operations.append(WriteOperation(name, start, end, erase_start, erase_end))
     return tuple(operations)
+
+
+def history_contract(manifest, application):
+    """Fail closed for images unable to preserve the retained archive on rollback.
+
+    This is a capability/integrity contract, not a signature/authenticity claim.
+    The marker is emitted by the production STATUS path, so metadata cannot be
+    retrofitted onto an unchanged released AHP1-only application binary.
+    """
+    metadata = manifest.get('history_storage')
+    if metadata != HISTORY_CONTRACT or not isinstance(metadata, dict) or \
+            any(type(metadata.get(key)) is not int for key in ('schema', 'write_version', 'record_bytes')) or \
+            any(type(value) is not int for value in metadata.get('read_versions', [])):
+        raise ValueError('AHP1/AHP2-compatible image metadata is required; unsafe downgrade refused')
+    if (HISTORY_CAPABILITY.encode('ascii') + b'\0') not in application.read_bytes():
+        raise ValueError('Application does not contain the declared archive capability')
+    return manifest['history_storage']
+
+
+def rollback_check(rollback, board, validate):
+    """Require a pinned application AND its complete compatible package manifest."""
+    if not rollback or not rollback.get('manifest'):
+        raise ValueError('Register a verified AHP1/AHP2-compatible rollback package manifest')
+    backup = Path(rollback['path'])
+    if sha(backup) != rollback.get('sha256'):
+        raise ValueError('Rollback image checksum mismatch')
+    path = Path(rollback['manifest'])
+    manifest = validate(path.parent, board)
+    if path.resolve() != (path.parent / 'manifest.json').resolve():
+        raise ValueError('Rollback metadata must be the package manifest.json')
+    if manifest['files'].get('R2500Adapter.ino.bin') != rollback['sha256']:
+        raise ValueError('Rollback package metadata is not bound to the registered application')
+    return manifest

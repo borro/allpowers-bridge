@@ -9,13 +9,14 @@
 #include "HistoryRing.h"
 #include "HistoryWire.h"
 #include "HistorySample.h"
+#include "HistoryExport.h"
 #include "GraphHistory.h"
 
 struct HistoryStats {
   bool ready=false,selfTest=false,clockSynced=false;
   bool graphTest=false;
   uint32_t liveCount=0,liveSamples=0,liveLatest=0;
-  uint32_t count=0,recovered=0,latest=0,oldest=0,writes=0,errors=0,lastWriteMs=0,maxWriteMs=0,session=0;
+  uint32_t count=0,recovered=0,latest=0,oldest=0,generation=0,writes=0,errors=0,lastWriteMs=0,maxWriteMs=0,session=0;
   const char *error="initializing";
 };
 class HistoryPartition:public HistoryFormat::Flash {
@@ -50,7 +51,7 @@ class HistoryStore {
     xSemaphoreTake(dataMutex,portMAX_DELAY);
     if(stats.count<HistoryFormat::kKeep)records[(head+stats.count++)%HistoryFormat::kKeep]=r;
     else {records[head]=r;head=(head+1)%HistoryFormat::kKeep;}
-    stats.latest=r.sequence;stats.oldest=records[head].sequence;xSemaphoreGive(dataMutex);
+    stats.latest=r.sequence;stats.oldest=records[head].sequence;++stats.generation;xSemaphoreGive(dataMutex);
   }
   HistoryFormat::Record makeRecord(const Telemetry &s,bool gap){
     uint64_t uptime=uint64_t(esp_timer_get_time())/1000000;
@@ -156,6 +157,14 @@ public:
     if(!records){xSemaphoreGive(dataMutex);return false;}
     bool found=HistoryFormat::atOrAfter(records,head,stats.count,HistoryFormat::kKeep,sequence,result);
     xSemaphoreGive(dataMutex);return found;
+  }
+  HistoryFormat::ReadState capture(HistoryFormat::FrozenArchive &archive,HistoryFormat::ExportMetadata &metadata){
+    using HistoryFormat::ReadState;
+    if(!dataMutex)return ReadState::Error;
+    if(xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return ReadState::Busy;
+    auto result=!stats.ready||!records?ReadState::Error:
+      archive.freeze(records,head,stats.count,HistoryFormat::kKeep,stats.session,stats.generation,metadata);
+    xSemaphoreGive(dataMutex);return result;
   }
   void setTime(uint32_t epoch){
     if(!dataMutex)return;

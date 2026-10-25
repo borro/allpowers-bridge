@@ -3,12 +3,12 @@
     "mac": "00:00:00:00:00:00",
     "serial": "R2500-000000000000",
     "physical_rom_verified": false,
-    "rollback": {"path": "/private/verified-application.bin", "sha256": "replace-with-verified-sha256"}
+    "rollback": {"path": "/private/compatible-rollback/R2500Adapter.ino.bin", "sha256": "replace-with-verified-sha256", "manifest": "/private/compatible-rollback/manifest.json"}
   },
   "pocket-096": {
     "mac": "00:00:00:00:00:00",
     "serial": "R2500-000000000000",
     "physical_rom_verified": false,
-    "rollback": {"path": "/private/verified-application.bin", "sha256": "replace-with-verified-sha256"}
+    "rollback": {"path": "/private/compatible-rollback/R2500Adapter.ino.bin", "sha256": "replace-with-verified-sha256", "manifest": "/private/compatible-rollback/manifest.json"}
   }
 }

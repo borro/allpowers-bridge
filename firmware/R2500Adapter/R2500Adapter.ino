@@ -16,6 +16,7 @@
 
 #include "BuildVersion.h"
 #include "ProductIdentity.h"
+#include "HistoryCompatibility.h"
 #if ARDUINO_USB_MODE != 0 || ARDUINO_USB_CDC_ON_BOOT
 #error Use TinyUSB OTG with manual CDC; register all HID collections before USB starts.
 #endif
@@ -38,13 +39,37 @@ static USBCDC Console;
 static USBHID hid;
 static Dashboard screen;
 static HistoryStore history;
+static SemaphoreHandle_t consoleOperation=nullptr;
+static std::atomic<bool> historyExportActive{false};
+class FrozenHistorySource:public HistoryFormat::ExportSource {
+  HistoryFormat::Record *memory=nullptr;HistoryFormat::FrozenArchive *archive=nullptr;
+public:
+  HistoryFormat::ReadState open(HistoryFormat::ExportMetadata &metadata)override{
+    if(!memory)memory=static_cast<HistoryFormat::Record*>(ps_malloc(HistoryFormat::kKeep*sizeof(*memory)));
+    if(!memory)return HistoryFormat::ReadState::Error;
+    if(!archive)archive=new(std::nothrow) HistoryFormat::FrozenArchive(memory,HistoryFormat::kKeep);
+    return archive?history.capture(*archive,metadata):HistoryFormat::ReadState::Error;
+  }
+  HistoryFormat::ReadState read(uint32_t ordinal,HistoryFormat::Record &record)override{
+    return archive?archive->read(ordinal,record):HistoryFormat::ReadState::Error;
+  }
+  void close()override{delete archive;archive=nullptr;free(memory);memory=nullptr;}
+} historySource;
+class HistoryConsoleSink:public HistoryFormat::ExportSink {
+  bool owns=false;
+public:
+  size_t write(const char *bytes,size_t length)override{
+    if(consoleOperation&&!owns){if(xSemaphoreTake(consoleOperation,0)!=pdTRUE)return 0;owns=true;}
+    return Console.write(reinterpret_cast<const uint8_t*>(bytes),length);
+  }
+  void release(){if(owns){xSemaphoreGive(consoleOperation);owns=false;}}
+} historySink;
+static HistoryFormat::ExportSession historyExport(historySource,historySink);
 static BootGestures button;
 static uint8_t displayPage=0;
 static bool displayDirty=false;
 static uint32_t buttonPresses=0;
 static bool buttonPassed=false;
-static uint32_t dumpNext=0,dumpRemaining=0;
-static bool dumpCursor=false;
 static StationPicker::Catalog deviceCatalog;
 static StationPicker::Target requestedTarget;
 static uint32_t targetRevision=0,activeRevision=0;
@@ -232,9 +257,10 @@ static void notifyStation(BLERemoteCharacteristic *sender,uint8_t *bytes,size_t 
   if(revision!=activeRevision||revision!=targetRevision||token!=activeConnectionToken||sender!=activeRx){portEXIT_CRITICAL(&dataLock);return;}
   bool valid=decodeStationTelemetry(telemetry,bytes,length,millis(),activeModel);
   portEXIT_CRITICAL(&dataLock);
-  if(usbStarted && length<=256){
+  if(usbStarted && length<=256 && !historyExportActive && consoleOperation && xSemaphoreTake(consoleOperation,0)==pdTRUE){
     char hex[513];for(size_t i=0;i<length;++i)snprintf(hex+i*2,3,"%02x",bytes[i]);hex[length*2]=0;
-    Console.printf("{\"station_notification_hex\":\"%s\",\"valid\":%s}\n",hex,valid?"true":"false");
+    if(!historyExportActive)Console.printf("{\"station_notification_hex\":\"%s\",\"valid\":%s}\n",hex,valid?"true":"false");
+    xSemaphoreGive(consoleOperation);
   }
 }
 class ClientEvents:public BLEClientCallbacks {
@@ -354,6 +380,7 @@ static DiagnosticData diagnosticsSnapshot(){
   d.heapFree=ESP.getFreeHeap();d.heapMin=ESP.getMinFreeHeap();d.psramFree=ESP.getFreePsram();return d;
 }
 static void printDiagnostics(){
+  if(historyExportActive)return;
   auto d=diagnosticsSnapshot();auto view=diagnosticView(d);char body[2400];
   size_t used=snprintf(body,sizeof(body),"{\"diagnostic\":true,\"version\":\"%c\",\"page\":%u,\"heading\":\"%s\",\"footer\":\"%s\",\"rows\":[",ADAPTER_VERSION,displayPage,view.heading,view.footer);
   for(unsigned i=0;i<DiagnosticView::Count&&used<sizeof(body)-3;++i){auto &r=view.rows[i];
@@ -362,6 +389,8 @@ static void printDiagnostics(){
   if(used<sizeof(body)-3){memcpy(body+used,"]}\n",3);Console.write(reinterpret_cast<uint8_t*>(body),used+3);}
 }
 static void printStatus() {
+  if(historyExportActive)return;
+  Console.printf("{\"history_storage_capability\":\"%s\"}\n",HistoryFormat::kStorageCapability);
   auto state=connectionSnapshot();Telemetry s=state.telemetry;auto r=upsSnapshot();
   Console.printf("{\"product_version\":\"%s\",\"product_commit\":\"%s\",\"product_dirty\":%s,\"firmware_protocol_version\":\"%c\",\"board_identity\":\"%s\"}\n",
     AP_PRODUCT_VERSION,AP_PRODUCT_COMMIT,AP_PRODUCT_DIRTY?"true":"false",ADAPTER_VERSION,Board::id);
@@ -385,8 +414,8 @@ static void printStatus() {
   Console.printf("{\"graph_selftest\":%s,\"graph_live_records\":%lu,\"graph_live_samples\":%lu,\"graph_live_latest_s\":%lu,\"graph_refresh_ms\":1000,\"graph_scale\":\"log1p_age\",\"graph_horizon_s\":%lu}\n",
     log.graphTest?"true":"false",(unsigned long)log.liveCount,(unsigned long)log.liveSamples,(unsigned long)log.liveLatest,(unsigned long)GraphHistory::kHorizon);
   Console.printf("{\"button_selftest\":%s}\n",buttonPassed?"true":"false");
-  Console.printf("{\"history_ready\":%s,\"history_selftest\":%s,\"history_records\":%lu,\"history_recovered\":%lu,\"history_latest\":%lu,\"history_oldest\":%lu,\"history_export_version\":2,\"history_writes\":%lu,\"history_errors\":%lu,\"history_error\":\"%s\",\"history_last_write_ms\":%lu,\"history_max_write_ms\":%lu,\"history_session\":%lu,\"history_clock\":%s,\"screen\":%u,\"button_presses\":%lu}\n",
-    log.ready?"true":"false",log.selfTest?"true":"false",(unsigned long)log.count,(unsigned long)log.recovered,(unsigned long)log.latest,(unsigned long)log.oldest,(unsigned long)log.writes,(unsigned long)log.errors,log.error,
+  Console.printf("{\"history_ready\":%s,\"history_selftest\":%s,\"history_records\":%lu,\"history_recovered\":%lu,\"history_latest\":%lu,\"history_oldest\":%lu,\"history_export_version\":3,\"history_generation\":%lu,\"history_writes\":%lu,\"history_errors\":%lu,\"history_error\":\"%s\",\"history_last_write_ms\":%lu,\"history_max_write_ms\":%lu,\"history_session\":%lu,\"history_clock\":%s,\"screen\":%u,\"button_presses\":%lu}\n",
+    log.ready?"true":"false",log.selfTest?"true":"false",(unsigned long)log.count,(unsigned long)log.recovered,(unsigned long)log.latest,(unsigned long)log.oldest,(unsigned long)log.generation,(unsigned long)log.writes,(unsigned long)log.errors,log.error,
     (unsigned long)log.lastWriteMs,(unsigned long)log.maxWriteMs,(unsigned long)log.session,log.clockSynced?"true":"false",displayPage,(unsigned long)buttonPresses);
   Console.printf("{\"board\":\"%s\",\"panel\":\"%s\",\"panel_width\":%d,\"panel_height\":%d,\"rgb_available\":%s}\n",Board::id,Board::panelName,Board::width,Board::height,Board::rgb>=0?"true":"false");
   auto d=diagnosticsSnapshot();
@@ -411,6 +440,7 @@ static void historyTask(void*){
   }
 }
 static void printDevices(){
+  if(historyExportActive)return;
   auto state=connectionSnapshot();StationPicker::Snapshot pages[4];
   portENTER_CRITICAL(&dataLock);for(int i=0;i<4;++i)pages[i]=deviceCatalog.snapshot(i*6);portEXIT_CRITICAL(&dataLock);
   Console.printf("{\"device_count\":%u,\"picker_open\":%s,\"scanning\":%s}\n",pages[0].total,pickerOpen?"true":"false",state.scanning?"true":"false");
@@ -421,15 +451,14 @@ static void printDevices(){
   Console.println("{\"devices_done\":true}");
 }
 static void streamHistory(){
-  if(!dumpRemaining)return;HistoryFormat::Record r;
-  bool found=dumpCursor?history.readAtOrAfter(dumpNext,r):history.readSequence(dumpNext,r);
-  if(found&&dumpCursor)dumpNext=HistoryFormat::next(r.sequence);
-  else dumpNext=HistoryFormat::next(dumpNext);
-  dumpRemaining--;
-  if(!found&&dumpCursor)dumpRemaining=0;
-  if(found){char row[512];int n=HistoryFormat::serialize(r,row,sizeof(row));
-    if(n>0&&size_t(n)<sizeof(row))Console.write(reinterpret_cast<const uint8_t*>(row),size_t(n));}
-  if(!dumpRemaining)Console.println("{\"history_dump_done\":true}");
+  if(!historyExport.active())return;
+  historyExport.pump(millis());
+  if(!historyExport.active()){historySink.release();historyExportActive=false;}
+}
+static void beginHistoryExport(uint32_t request,uint32_t first=0,uint32_t span=0){
+  if(historyExport.active())return; // Never cut an in-flight partial JSON line.
+  historyExport.cancel();historySink.release();historyExportActive=true;
+  historyExport.start(request,millis(),first,span);
 }
 static void startUsb(bool withUps) {
   // Prime the retained report before USB can request it. If BLE disappeared
@@ -445,6 +474,7 @@ static void startUsb(bool withUps) {
   hid.begin();USB.begin();usbStarted=true;
 }
 void setup() {
+  consoleOperation=xSemaphoreCreateMutex();
   buttonPassed=BootGestures::selfTest();pickerPassed=StationPicker::selfTest()&&AllpowersModels::selfTest();
   loadLastTarget();pinMode(Board::boot,INPUT_PULLUP);button.begin(digitalRead(Board::boot)==LOW,millis());
   led(0,0,12); // Optional board-specific RGB; absent on Pocket.
@@ -479,15 +509,14 @@ void loop() {
         displayPage=command[7]-'0';displayDirty=true;printStatus();
       }else if(!strncmp(command,"TIME ",5)){
         char *end=nullptr;unsigned long epoch=strtoul(command+5,&end,10);
-        if(end&&!*end&&epoch>=1577836800UL&&epoch<=4102444800UL){history.setTime(epoch);Console.println("{\"time_set\":true}");}
+        if(end&&!*end&&epoch>=1577836800UL&&epoch<=4102444800UL){history.setTime(epoch);if(!historyExportActive)Console.println("{\"time_set\":true}");}
       }else if(!strncmp(command,"HISTORY-READ ",13)){
         unsigned long first=0,count=0;if(sscanf(command+13,"%lu %lu",&first,&count)==2&&first&&count&&count<=HistoryFormat::kKeep){
-          dumpNext=uint32_t(first);dumpRemaining=uint32_t(count);dumpCursor=false;
+          beginHistoryExport(0,uint32_t(first),uint32_t(count));
         }
       }else if(!strncmp(command,"HISTORY-EXPORT ",15)){
-        unsigned long first=0,count=0;if(sscanf(command+15,"%lu %lu",&first,&count)==2&&first&&count&&count<=HistoryFormat::kKeep){
-          dumpNext=uint32_t(first);dumpRemaining=uint32_t(count);dumpCursor=true;
-        }
+        unsigned long request=0;char tail=0;
+        if(sscanf(command+15,"%lu %c",&request,&tail)==1&&request)beginHistoryExport(uint32_t(request));
       }
       used=0;
     }else if(c!='\r'){if(used<sizeof(command)-1)command[used++]=c;else used=0;}

@@ -237,7 +237,8 @@ void UsbTransport::fail(QString error) {
     return;
   if (channel)
     channel->close();
-  opened_ = verified_ = pending = importing = false;
+  opened_ = verified_ = pending = false;
+  if(importing)finishImport("error","Соединение USB прервано во время чтения архива");
   buffer.clear();
   last.fresh = 0;
   error_ = std::move(error);
@@ -263,18 +264,13 @@ void UsbTransport::tick() {
       connectPort();
     return;
   }
-  if ((statusAt < 0 && now - openedAt > 5000) || (statusAt >= 0 && now - statusAt > 6000)) {
+  if (!importing && ((statusAt < 0 && now - openedAt > 5000) || (statusAt >= 0 && now - statusAt > 6000))) {
     fail("Нет корректного ответа прошивки по USB");
     return;
   }
   if (verified_) {
-    if (importing && now >= importDeadline) {
-      importing = false;
-      importPoints.clear();
-      details_["usb_history_error"] = "Время ожидания архива истекло; можно повторить чтение";
-      emit logReceived(details_["usb_history_error"].toString());
-      emit stateChanged();
-    }
+    if (importing && now >= importDeadline)
+      finishImport("error", "Время ожидания архива истекло; данные могут быть неполными");
     auto copy = last;
     const auto age = frameAt < 0 ? 15000 : qMin<qint64>(UINT32_MAX, now - frameAt);
     copy.main_age_ms = copy.settings_age_ms = quint32(age);
@@ -294,6 +290,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
     return;
   if (bytes.size() > 65536 || buffer.size() + bytes.size() > 65536) {
     badLines++;
+    if(importing)importCompromised=true;
     buffer.clear();
     return;
   }
@@ -305,12 +302,14 @@ void UsbTransport::receive(const QByteArray &bytes) {
       continue;
     if (line.size() > 8192) {
       badLines++;
+      if(importing)importCompromised=true;
       continue;
     }
     QJsonParseError error;
     auto doc = QJsonDocument::fromJson(line, &error);
     if (error.error != QJsonParseError::NoError || !doc.isObject()) {
       badLines++;
+      if(importing)importCompromised=true;
       continue;
     }
     row(doc.object());
@@ -318,6 +317,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
   if (buffer.size() > 8192) {
     buffer.clear();
     badLines++;
+    if(importing)importCompromised=true;
   }
 }
 void UsbTransport::row(const QJsonObject &o) {
@@ -359,6 +359,7 @@ void UsbTransport::row(const QJsonObject &o) {
     }
     auto id = address.toString();
     if (id != station_) {
+      if(importing)finishImport("partial","Станция изменилась во время чтения USB-архива");
       station_ = id;
       historyAttempted = false;
       importing = false;
@@ -405,12 +406,43 @@ void UsbTransport::row(const QJsonObject &o) {
         boardDiagnostics[label] = item["value"].toString().left(256);
     }
     emit stateChanged();
+  } else if (o["history_export_begin"].toBool() && importing) {
+    quint32 version,request,session,generation,count,oldest,latest;
+    if(importVersion!=3||importBegun||!number(o,"history_export_version",version,3)||version!=3||
+       !number(o,"request",request)||request!=importRequest||!number(o,"export_session",session)||!session||session!=importSession||
+       !number(o,"generation",generation)||!number(o,"count",count,2880)||
+       !number(o,"oldest",oldest)||!number(o,"latest",latest)||
+       (count?(!oldest||!latest):(oldest||latest))){
+      finishImport("error","Некорректное начало USB-архива");return;
+    }
+    importBegun=true;importGeneration=generation;importExpected=count;importOldest=oldest;importLatest=latest;
+    details_["usb_history_frozen"]=true;
   } else if (o.contains("history_ready")) {
-    quint32 session, count, latest;
-    if (!number(o, "history_session", session) || !number(o, "history_records", count, 2880) ||
-        !number(o, "history_latest", latest)) {
+    quint32 session=0,count=0,latest=0,oldestInventory=0;
+    const bool ready=o["history_ready"].toBool();
+    if (!o["history_ready"].isBool() || !number(o, "history_session", session) || !number(o, "history_records", count, 2880) ||
+        !number(o, "history_latest", latest) ||
+        (ready&&(!session||((count==0)!=(latest==0)))) ||
+        (ready&&o.contains("history_oldest")&&
+         (!number(o,"history_oldest",oldestInventory)||((count==0)!=(oldestInventory==0))))) {
       badLines++;
+      details_["history_ready"]=false;
+      const QString reason="Некорректное состояние USB-архива";
+      if(importing)finishImport("error",reason);
+      else {
+        details_["usb_history_result"]="error";details_["usb_history_complete"]=false;
+        details_["usb_history_error"]=reason;emit stateChanged();
+      }
       return;
+    }
+    if(importing && !o["history_ready"].toBool())
+      finishImport("error","Архив платы недоступен во время чтения");
+    else if(importing && (session!=importSession ||
+       (importVersion!=3 && (count!=importExpected||latest!=importLatest))))
+      finishImport("partial","Архив изменился во время чтения; повторите импорт");
+    else if(importing && legacyVerification){
+      finishImport(importCompromised?"partial":"complete",
+                   importCompromised?"Некоторые строки USB-архива повреждены":QString{});
     }
     if (currentSession && session != currentSession) {
       historyAttempted = false;
@@ -421,14 +453,16 @@ void UsbTransport::row(const QJsonObject &o) {
     details_["history_records"] = int(count);
     details_["history_latest"] = double(latest);
     quint32 oldest, exportVersion;
-    if (number(o,"history_oldest",oldest) && number(o,"history_export_version",exportVersion,2) && exportVersion==2) {
+    if (number(o,"history_oldest",oldest) && number(o,"history_export_version",exportVersion,3) && exportVersion>=2) {
       details_["history_oldest"] = double(oldest);
       details_["history_export_version"] = int(exportVersion);
+      quint32 generation;if(number(o,"history_generation",generation))details_["history_generation"]=double(generation);
     } else {
       details_.remove("history_oldest"); details_.remove("history_export_version");
     }
     details_["history_session"] = double(session);
     details_["board_history_clock"] = o["history_clock"];
+    if(o["history_error"].isString())details_["board_history_error"]=o["history_error"].toString().left(128);
   } else if (o.contains("graph_live_latest_s")) {
     quint32 tick;
     if (number(o, "graph_live_latest_s", tick)) {
@@ -436,16 +470,36 @@ void UsbTransport::row(const QJsonObject &o) {
       anchorWall = QDateTime::currentSecsSinceEpoch();
     }
   } else if (o["history_record"].toBool() && importing) {
-    if (importPoints.size() >= 2880) {
-      historyBad++;
-      return;
-    }
     HistoryPoint p;
     quint32 session, epoch;
     if (!historyRecord(o, p, session, epoch)) {
       historyBad++;
+      importCompromised=true;
       return;
     }
+    quint32 sequence=0,crc=0;number(o,"sequence",sequence);number(o,"crc",crc);
+    if(importVersion==3){
+      quint32 version,request,exportSession,generation,ordinal;
+      if(!importBegun||!number(o,"history_export_version",version,3)||version!=3||
+         !number(o,"request",request)||request!=importRequest||!number(o,"export_session",exportSession)||exportSession!=importSession||
+         !number(o,"generation",generation)||generation!=importGeneration||!number(o,"ordinal",ordinal,2879)||ordinal>=importExpected){
+        historyBad++;importCompromised=true;return;
+      }
+      if(ordinal!=quint32(importSequences.size()))importCompromised=true;
+      if((importCursor&&!HistoryFormat::newer(sequence,importCursor))||
+         HistoryFormat::newer(sequence,importLatest)){
+        historyBad++;importCompromised=true;return;
+      }
+      if(!importCursor&&sequence!=importOldest)importCompromised=true;
+    } else if(importVersion==0 && HistoryFormat::sequenceDistance(legacyFirst,sequence)>=legacySpan){
+      historyBad++;importCompromised=true;return;
+    }
+    if(importSequences.contains(sequence))return;
+    if(importSequences.size()>=2880){historyBad++;importCompromised=true;return;}
+    importSequences.insert(sequence);importCursor=sequence;
+    if(importVersion==0)++legacyReceivedPage;
+    HistoryFormat::Record digestRow{};digestRow.sequence=sequence;digestRow.crc=crc;
+    importDigest=HistoryFormat::digestRecord(importDigest,digestRow);
     // The existing flash record has no station identity. Keep its archive
     // separate from MAC-keyed station history rather than guessing its owner.
     p.address = "usb-board:" + serial_;
@@ -464,15 +518,35 @@ void UsbTransport::row(const QJsonObject &o) {
     }
     importPoints.append(p);
   } else if (o["history_dump_done"].toBool() && importing) {
-    importing = false;
-    details_["usb_history_imported"] = importPoints.size();
-    emit historyImported(importPoints);
-    importPoints.clear();
-    emit stateChanged();
-    emit logReceived(QString("История USB: %1 точек; без даты %2; повреждённых %3")
-                         .arg(details_["usb_history_imported"].toInt())
-                         .arg(historyUndated)
-                         .arg(historyBad));
+    if(importVersion!=3 && o.contains("history_legacy_status")){
+      quint32 sent=0;
+      if(o["history_legacy_status"]!="complete"){
+        finishImport(o["history_legacy_status"]=="error"?"error":"partial","Прошивка не завершила чтение страницы архива");return;
+      }
+      if(importVersion==0 && (!number(o,"history_sent",sent,2880)||sent!=legacyReceivedPage))importCompromised=true;
+    }
+    if(importVersion==3){
+      quint32 version,request,session,generation,count,sent,cursor,digest,oldest,latest;
+      const bool valid=importBegun&&number(o,"history_export_version",version,3)&&version==3&&
+        number(o,"request",request)&&request==importRequest&&number(o,"export_session",session)&&session==importSession&&
+        number(o,"generation",generation)&&generation==importGeneration&&number(o,"count",count,2880)&&count==importExpected&&
+        number(o,"sent",sent,2880)&&sent==quint32(importSequences.size())&&number(o,"cursor",cursor)&&cursor==importCursor&&
+        number(o,"digest",digest)&&digest==importDigest&&number(o,"oldest",oldest)&&oldest==importOldest&&
+        number(o,"latest",latest)&&latest==importLatest;
+      if(o["status"]=="error")finishImport("error","Прошивка не смогла завершить чтение архива");
+      else if(!valid||importCompromised||o["status"]!="complete"||quint32(importSequences.size())!=importExpected||
+              (importExpected&&importCursor!=importLatest))
+        finishImport("partial","Целостность или полнота USB-архива не подтверждена");
+      else finishImport("complete");
+    }else if(importVersion==2){
+      finishImport("partial","Старая версия экспорта не подтверждает полноту архива");
+    }else if(quint32(importSequences.size())>importExpected){
+      finishImport("partial","Число записей старого архива изменилось во время чтения");
+    }else if(quint32(importSequences.size())==importExpected&&importSequences.contains(importLatest)){
+      // The legacy completion has no session, count or checksum. Verify the
+      // advertised inventory again before calling the import complete.
+      legacyVerification=true;command("STATUS\n");
+    }else nextLegacyPage();
   } else {
     for (auto it = o.begin(); it != o.end(); ++it)
       if ((it.key().startsWith("hid_") || it.key().startsWith("ble_") ||
@@ -533,29 +607,58 @@ void UsbTransport::publish() {
   emit snapshot(last);
   emit stateChanged();
 }
+void UsbTransport::finishImport(const QString &result,const QString &reason) {
+  importing=false;legacyVerification=false;
+  details_["usb_history_result"]=result;
+  details_["usb_history_complete"]=result=="complete";
+  details_["usb_history_imported"]=importPoints.size();
+  details_["usb_history_received"]=importSequences.size();
+  details_["usb_history_pages"]=int(legacyPages);
+  if(reason.isEmpty())details_.remove("usb_history_error");
+  else details_["usb_history_error"]=reason;
+  emit historyImported(importPoints);importPoints.clear();
+  emit stateChanged();
+  emit logReceived(QString("История USB: %1 точек; %2; без даты %3; повреждённых %4")
+    .arg(details_["usb_history_imported"].toInt()).arg(result).arg(historyUndated).arg(historyBad));
+  command("STATUS\n");
+}
+void UsbTransport::nextLegacyPage() {
+  // Legacy boot recovery scans kKeep sequence positions. The first append may
+  // skip at most one 128-slot erase sector, then successful appends are
+  // contiguous; a failed append disables recording until reboot. A recovered
+  // RAM record can survive <kKeep more appends: 2*kKeep+128 is conservative.
+  constexpr quint32 maxSpan=2*2880+128;
+  if(legacyScanned>=maxSpan){finishImport("partial","Полнота старого USB-архива не подтверждена в допустимом диапазоне");return;}
+  if(legacyPages)legacyFirst=HistoryFormat::previous(legacyFirst);
+  else legacyFirst=importLatest;
+  legacySpan=qMin<quint32>(2880,maxSpan-legacyScanned);legacyScanned+=legacySpan;
+  legacyReceivedPage=0;
+  for(quint32 i=1;i<legacySpan;++i)legacyFirst=HistoryFormat::previous(legacyFirst);
+  ++legacyPages;details_["usb_history_pages"]=int(legacyPages);
+  command("HISTORY-READ "+QByteArray::number(legacyFirst)+" "+QByteArray::number(legacySpan)+"\n");
+}
 void UsbTransport::requestHistory() {
-  if (!opened_ || !verified_ || importing || !details_["history_ready"].toBool())
-    return;
-  historyAttempted = true;
-  historyBad = historyUndated = 0;
-  importPoints.clear();
-  quint32 count = details_["history_records"].toInt(),
-          latest = quint32(details_["history_latest"].toDouble());
-  if (!count || !latest)
-    return;
-  quint32 first = latest;
-  const bool cursor=details_["history_export_version"].toInt()==2;
-  if (cursor) first=quint32(details_["history_oldest"].toDouble());
-  else {
-    // Older firmware counts records, not occupied sequence numbers. Scan its
-    // entire retained sequence window so torn-write holes cannot hide records.
-    count=2880;
-    for (quint32 i = 1; i < count; ++i) first = first == 1 ? UINT32_MAX : first - 1;
+  if (!opened_ || !verified_ || importing || !details_["history_ready"].toBool())return;
+  historyAttempted=true;historyBad=historyUndated=0;
+  importPoints.clear();importSequences.clear();importBegun=importCompromised=legacyVerification=false;
+  importCursor=0;importDigest=HistoryFormat::kDigestSeed;legacyPages=legacyScanned=legacySpan=0;
+  importExpected=details_["history_records"].toInt();
+  importLatest=quint32(details_["history_latest"].toDouble());
+  importOldest=quint32(details_["history_oldest"].toDouble());
+  importSession=quint32(details_["history_session"].toDouble());
+  importGeneration=quint32(details_["history_generation"].toDouble());
+  importVersion=details_["history_export_version"].toInt();
+  importRequest=++requestCounter;if(!importRequest)importRequest=++requestCounter;
+  importing=true;importDeadline=elapsedMs()+(importVersion==3?70000:120000);
+  details_["usb_history_result"]="reading";details_["usb_history_complete"]=false;
+  details_["usb_history_frozen"]=false;details_.remove("usb_history_error");
+  if(importVersion==3)command("HISTORY-EXPORT "+QByteArray::number(importRequest)+"\n");
+  else if(!importExpected){
+    if(importVersion==2)finishImport("partial","Старая версия экспорта не подтверждает пустой архив");
+    else {importVersion=0;legacyVerification=true;command("STATUS\n");}
   }
-  if (!first) return;
-  importing = true;
-  importDeadline = elapsedMs() + 60000;
-  details_.remove("usb_history_error");
-  command(QByteArray(cursor?"HISTORY-EXPORT ":"HISTORY-READ ") + QByteArray::number(first) + " " + QByteArray::number(count) + "\n");
+  else if(importVersion==2&&importOldest)
+    command("HISTORY-EXPORT "+QByteArray::number(importOldest)+" "+QByteArray::number(importExpected)+"\n");
+  else {importVersion=0;nextLegacyPage();}
   emit stateChanged();
 }

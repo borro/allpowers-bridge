@@ -2,6 +2,36 @@
 #include "HistoryRing.h"
 #include <stdio.h>
 namespace HistoryFormat {
+inline Record legacyProjection(const Record &record){
+  Record r=record;
+  if(version2(r.magic)){
+    const uint32_t fields=known(r.magic);
+    if(!(fields&1))r.soc=255;
+    if(!(fields&2))r.chargeWatts=0xffff;
+    if(!(fields&4))r.outputWatts=0xffff;
+    if(!(fields&8))r.runtimeMinutes=0xffff;
+    if(!(fields&512))r.flags&=uint8_t(~(Mains|Battery));
+    // The old wire format cannot express unknown individual output flags.
+    if((fields&0x71)!=0x71)r.flags&=uint8_t(~Fresh);
+  }
+  r.magic=kMagic;r.crc=crc32(&r,offsetof(Record,crc));return r;
+}
+inline int serializeLegacy(const Record &record,char *out,size_t capacity){
+  const auto r=legacyProjection(record);
+  return snprintf(out,capacity,"{\"history_record\":true,\"sequence\":%lu,\"session\":%lu,\"uptime_s\":%lu,\"epoch\":%lu,\"soc\":%u,\"charge_w\":%u,\"output_w\":%u,\"runtime_minutes\":%u,\"flags\":%u,\"crc\":%lu}\n",
+    (unsigned long)r.sequence,(unsigned long)r.session,(unsigned long)r.uptimeSeconds,
+    (unsigned long)r.epochSeconds,r.soc,r.chargeWatts,r.outputWatts,r.runtimeMinutes,r.flags,(unsigned long)r.crc);
+}
+inline uint32_t digestRecord(uint32_t digest,const Record &r){
+  for(uint32_t value:{r.sequence,r.crc})for(unsigned shift=0;shift<32;shift+=8)
+    digest=(digest^uint8_t(value>>shift))*16777619u;
+  return digest;
+}
+constexpr uint32_t kDigestSeed=2166136261u;
+inline uint32_t sequenceDistance(uint32_t first,uint32_t sequence){
+  return sequence>=first?sequence-first:UINT32_MAX-first+sequence;
+}
+inline uint32_t previous(uint32_t sequence){return sequence==1?UINT32_MAX:sequence-1;}
 // Used by the actual CDC writer and desktop round-trip tests.
 inline int serialize(const Record &r,char *out,size_t capacity){
   return snprintf(out,capacity,"{\"history_record\":true,\"record_version\":%u,\"known\":%lu,\"protocol\":%u,\"sequence\":%lu,\"session\":%lu,\"uptime_s\":%lu,\"epoch\":%lu,\"soc\":%u,\"charge_w\":%u,\"output_w\":%u,\"runtime_minutes\":%u,\"flags\":%u,\"crc\":%lu}\n",

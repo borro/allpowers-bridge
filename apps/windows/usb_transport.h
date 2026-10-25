@@ -3,6 +3,7 @@
 #include "usb_serial.h"
 #include <QElapsedTimer>
 #include <QTimer>
+#include <QSet>
 #include <functional>
 class UsbTransport : public TelemetryTransport {
   Q_OBJECT
@@ -58,6 +59,12 @@ private:
   quint32 lastFrames = 0, anchorTick = 0, currentSession = 0;
   int badLines = 0, historyBad = 0, historyUndated = 0;
   HistoryPoints importPoints;
+  QSet<quint32> importSequences;
+  quint32 importRequest=0,requestCounter=0,importSession=0,importGeneration=0,
+          importExpected=0,importOldest=0,importLatest=0,importCursor=0,importDigest=2166136261u,
+          legacyFirst=0,legacyPages=0,legacySpan=0,legacyScanned=0,legacyReceivedPage=0;
+  int importVersion=0;
+  bool importBegun=false,importCompromised=false,legacyVerification=false;
   void connectPort();
   void receive(const QByteArray &);
   void row(const QJsonObject &);
@@ -65,4 +72,6 @@ private:
   void tick();
   void fail(QString);
   void command(const QByteArray &);
+  void finishImport(const QString &result,const QString &reason={});
+  void nextLegacyPage();
 };

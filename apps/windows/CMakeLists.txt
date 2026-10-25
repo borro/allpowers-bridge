@@ -128,20 +128,22 @@ if(BUILD_TESTING)
     target_compile_options(archive_transport_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
   add_test(NAME archive-transport COMMAND archive_transport_tests
-    -o archive-transport-tests.txt,txt)
+    -v1 -o -,txt -o archive-transport-tests.xml,junitxml)
   qt_add_executable(widget_tests ../../tests/desktop/widget_test.cpp)
   target_sources(widget_tests PRIVATE widget.manifest)
   target_link_libraries(widget_tests PRIVATE widget_lib Qt6::Test)
   if(MSVC)
     target_compile_options(widget_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
-  add_test(NAME widget COMMAND widget_tests -platform offscreen -o widget-tests.txt,txt)
+  add_test(NAME widget COMMAND widget_tests -platform offscreen
+    -v1 -o -,txt -o widget-tests.xml,junitxml)
   add_test(NAME widget-native COMMAND widget_tests nativeHostRecovery nativeCardPaintAndDrag -platform windows)
 
   if(MSVC)
     target_compile_options(monitor_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
-  add_test(NAME desktop COMMAND monitor_tests -platform offscreen -o desktop-tests.txt,txt)
+  add_test(NAME desktop COMMAND monitor_tests -platform offscreen
+    -v1 -o -,txt -o desktop-tests.xml,junitxml)
   add_test(NAME dropdown-native COMMAND monitor_tests dropdownFitsVisibleRows:2-0 dropdownFitsVisibleRows:2-1
     -platform windows -o dropdown-native-tests.txt,txt)
   set_tests_properties(dropdown-native PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5")
@@ -155,10 +157,15 @@ if(BUILD_TESTING)
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/widget-single-exe-check" -DWIDGET=ON
     -P "${ALLPOWERS_ROOT}/cmake/CheckSingleExe.cmake")
 
+  # These offline suites normally finish in seconds. A deadlock or modal UI
+  # must fail with diagnostics instead of hiding inside the parent CTest job.
+  set_tests_properties(archive-transport PROPERTIES TIMEOUT 60)
+  set_tests_properties(widget widget-native desktop dropdown-native single-exe widget-single-exe
+    PROPERTIES TIMEOUT 120)
 endif()
 set(plugin_targets AllpowersMonitor AllpowersWidget)
 if(BUILD_TESTING)
-  list(APPEND plugin_targets monitor_tests widget_tests)
+  list(APPEND plugin_targets monitor_tests widget_tests archive_transport_tests)
 endif()
 foreach(target ${plugin_targets})
   qt_import_plugins(${target} NO_DEFAULT INCLUDE

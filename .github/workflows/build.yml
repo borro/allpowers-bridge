@@ -163,7 +163,7 @@ jobs:
       - name: Build products
         run: cmake --build --preset ${{ matrix.products }} --parallel 2
       - name: Run tests
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ${{ matrix.preset }} --verbose --stop-on-failure
       - name: Package Windows release and verify source rebuild
         if: runner.os == 'Windows' && !startsWith(github.ref, 'refs/tags/v')
         run: cmake --build --preset release
@@ -187,15 +187,16 @@ jobs:
             dist/AllpowersMonitor-*.zip
             dist/AllpowersMonitor-*.zip.sha256
       - name: Save test diagnostics on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-diagnostics-${{ runner.os }}
           retention-days: 7
           path: |
             build/**/Testing/Temporary/LastTest.log
-            build/**/desktop-tests.txt
-            build/**/widget-tests.txt
+            build/**/desktop-tests.*
+            build/**/widget-tests.*
+            build/**/archive-transport-tests.*
             build/**/qt-relink/*.log
             build/**/source-kit-check/*.log
             build/**/compliance/relink/relink.log

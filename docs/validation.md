@@ -63,6 +63,29 @@ for `archive-transport`; portable `OutputTests::selfTest` runs in both normal
 and fatal sanitizer `firmware-host` jobs. The earlier hosted runs below are
 historical evidence for their named commits, not executions of these new tests.
 
+### Hosted Qt hang and diagnostic bounds
+
+[Run 40216333239](https://github.com/borro/allpowers-bridge/actions/runs/40216333239)
+for `ba7cffd7321863b77dffb01ca2f4dc097c293b56` reached an
+`archive-transport` timeout after 1500 seconds inside `windows-unit`; the other
+six nested Qt/EXE tests passed. The run was then cancelled. It is not successful
+CI evidence. Its text-file-only Qt logger did not reveal the stalled method.
+
+The new test target had missed the existing explicit static-plugin policy and
+automatically imported the Windows NLM, Schannel and ODBC plugins. It now uses
+the same `NO_DEFAULT` allowlist as the other Qt targets. The generated link edge
+was checked to contain only the four selected platform/image/SQLite plugin
+initializers, and the archive suite passed locally again with all 14 cases.
+The old log does not prove which plugin or method caused the timeout.
+
+CI now streams verbose outer/nested CTest output. The archive suite additionally
+flushes stderr markers before QCoreApplication and at every case boundary;
+JUnit reports are retained on failure or cancellation. Its timeout is 60 seconds,
+the other six app suites have 120-second limits, and the parent has a 900-second
+limit. Fail-fast returns failure immediately instead of spending time on later
+integration rebuilds. No dataset or assertion was removed or relaxed. The seven
+app suites passed locally again in 34.86 seconds with these bounds.
+
 ## Follow-up review: R1–R8 — 2026-10-25
 
 Baseline: `b989bd1bc970ce9e5af39d5838413a204b20f64d`, including fixes in

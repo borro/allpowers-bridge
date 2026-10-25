@@ -12,6 +12,7 @@
 #include <QJsonArray>
 #include <QSignalSpy>
 #include <algorithm>
+#include <cstdio>
 #include <memory>
 #include <utility>
 
@@ -211,7 +212,32 @@ struct AcceptedStatuses {
 
 class ArchiveTransportTests : public QObject {
   Q_OBJECT
+public:
+  static void initMain() {
+    std::fprintf(stderr,"archive-transport: initMain (before QCoreApplication)\n");
+    std::fflush(stderr);
+  }
 private slots:
+  void initTestCase() {
+    std::fprintf(stderr,"archive-transport: initTestCase\n");
+    std::fflush(stderr);
+  }
+  void init() {
+    const char *function=QTest::currentTestFunction();
+    const char *data=QTest::currentDataTag();
+    std::fprintf(stderr,"archive-transport: begin %s [%s]\n",function?function:"",data?data:"");
+    std::fflush(stderr);
+  }
+  void cleanup() {
+    const char *function=QTest::currentTestFunction();
+    const char *data=QTest::currentDataTag();
+    std::fprintf(stderr,"archive-transport: end %s [%s]\n",function?function:"",data?data:"");
+    std::fflush(stderr);
+  }
+  void cleanupTestCase() {
+    std::fprintf(stderr,"archive-transport: cleanupTestCase\n");
+    std::fflush(stderr);
+  }
   void releasedTransportReceivesFullMixedArchiveWithWatchdog_data() {
     QTest::addColumn<bool>("shortWrites");
     QTest::newRow("full-writes")<<false;

@@ -44,7 +44,8 @@ ExternalProject_Add_Step(windows-monitor prepare-notices
 add_custom_target(windows ALL)
 add_dependencies(windows windows-monitor)
 if(BUILD_TESTING)
-  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure)
+  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure)
+  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900)
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
     "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
     "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"

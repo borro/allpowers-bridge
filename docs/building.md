@@ -123,7 +123,11 @@ on both platforms; Windows-specific scripts and the release job use PowerShell.
 The audit job checks the index and working tree, rejects unexpected public files,
 scans reachable history, and runs checksum-pinned Gitleaks. The build matrix uses
 Windows Server 2025 (Visual Studio 2026, MSVC 14.51 x64, SDK 10.0.26100.0) and
-Ubuntu 24.04. CI validates the selected toolset before configuring Qt; it must
+Ubuntu 24.04. `cmake/SetupMsvc.ps1` locates Visual Studio with Microsoft's installed
+`vswhere`, initializes `vcvarsall.bat` with the toolset/SDK pins from
+`Dependencies.cmake`, and exports the verified environment through `GITHUB_ENV`.
+This setup runs in PowerShell and has no JavaScript action runtime dependency.
+CI validates the selected toolset before configuring Qt; it must
 not silently switch to a newer Visual Studio installed on the hosted image. Both compile
 the core and both firmware profiles, and run CTest. Windows bootstraps static Qt,
 builds the driver/monitor/widget and verifies the CPack source-kit rebuild.

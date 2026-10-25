@@ -55,11 +55,8 @@ jobs:
           cmake-version: '4.4.4'
       - name: Set up MSVC and Windows SDK
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # MSVC environment
-        with:
-          arch: x64
-          toolset: '14.51'
-          sdk: '10.0.26100.0'
+        shell: pwsh
+        run: ./cmake/SetupMsvc.ps1
       - name: Verify pinned MSVC toolset
         if: runner.os == 'Windows'
         run: cmake -P cmake/CheckMsvcToolchain.cmake

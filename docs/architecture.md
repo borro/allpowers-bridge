@@ -1,5 +1,13 @@
 # Architecture
 
+The purpose is to make a station's energy reserve visible to the computer it
+powers. The firmware path exposes the supported battery state as USB HID UPS,
+independently of the desktop viewer. Monitor and Widget add live readings and
+history through direct BLE or the board's USB telemetry channel. The optional
+native Windows service/driver provides another UPS path, with its separate
+experimental validation boundary. OS power policy determines battery actions;
+the station determines electrical backup and transfer behavior.
+
 ```text
 ALLPOWERS BLE GATT
     ├── ESP32 BLE transport ── portable C++ core ── USB HID UPS + display/history

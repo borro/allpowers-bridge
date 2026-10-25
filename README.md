@@ -3,6 +3,30 @@
 ALLPOWERS BLE telemetry: one portable C++23 core, two USB UPS boards and a
 native Windows monitor. [Русская версия](README.ru.md).
 
+## The problem this solves
+
+A power station can supply backup power to a computer, but its power cable does
+not tell the computer the battery charge, a switch to battery power, or the
+remaining runtime. Those readings help estimate the reserve and configure a
+shutdown before the station runs out. ALLPOWERS brings its BLE telemetry to the
+computer.
+
+There are two main ways to use it:
+
+- **USB UPS through a board.** Waveshare or Pocket connects to the station over
+  BLE and reports battery state through standard USB HID UPS. This path works
+  without leaving the monitor open; the OS handles battery policy and actions
+  according to its power settings. The Windows apps can also read detailed
+  telemetry and history from that board over USB.
+- **Windows Monitor or Widget.** The app reads the station directly over
+  Bluetooth or through a USB board, displaying charge, power, remaining runtime
+  and graphs. Standalone viewing works without installing a service or driver.
+  The board-free Windows UPS path using a service and driver remains experimental.
+
+The project provides station-state data. Backup-power capability and transfer
+time depend on the station itself. The confirmed HID UPS implementation covers
+R2500 V2; see the model support limits below.
+
 | Product | Connection | Features |
 | --- | --- | --- |
 | Waveshare ESP32-S3-LCD-1.47 | BLE Central → USB Device | HID UPS, display, history, diagnostics, RGB |

@@ -29,6 +29,22 @@ folder with a system-only PATH. Embedded LGPL notices and SQLite/UI startup are
 also checked. CPack release builds additionally extract their source archive and
 rebuild/test the portable core without .git or Python, checking its saved version.
 
+## Tag-driven release publication — 2026-10-25
+
+Windows and Ubuntu checks cover exact lightweight/annotated tags, multiple tags
+on one commit, the triggering Git object, invalid versions, dirty/staged/untracked
+sources and attempts to publish a source archive as a Git checkout. Windows tests
+compile the actual VERSIONINFO template, then reject wrong/missing EXE versions,
+stale source/firmware versions and tampered package files. SemVer build metadata
+is preserved inside EXEs and encoded safely in uploaded filenames.
+
+The publisher is exercised with a mock CLI only: successful draft publication,
+draft resume, interrupted/partial uploads, wrong server hashes, a moved remote
+tag, a forbidden lookup, foreign/old drafts and matching/mismatching published
+releases. Failure cases never publish or replace a published release.
+Local Windows CTest, Linux portable checks, Actionlint and the source-kit rebuild
+pass. A live GitHub Release from a new tag has not been created by these tests.
+
 ## Toolchain upgrade — 2026-10-25
 
 Qt is pinned to 6.12.0, MSVC CI to toolset 14.51, CMake to 4.4.4 and Ninja to

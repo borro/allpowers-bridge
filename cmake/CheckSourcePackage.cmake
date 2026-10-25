@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
+include("${CMAKE_CURRENT_LIST_DIR}/BuildParallelism.cmake")
 if(NOT BUILD_ROOT)
   message(FATAL_ERROR "Set BUILD_ROOT to the configured binary directory")
 endif()
@@ -40,11 +41,12 @@ if(NOT rebuilt_version STREQUAL VERSION)
   message(FATAL_ERROR "Source archive lost its Git-tag-derived version")
 endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${work_path}/build" --target core native-tests
+  --parallel "${ALLPOWERS_BUILD_JOBS}"
   OUTPUT_FILE "${work_path}/build.log" ERROR_FILE "${work_path}/build.log" RESULT_VARIABLE result)
 if(result)
   message(FATAL_ERROR "Source-kit native build failed; see ${work_path}/build.log")
 endif()
-execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${work_path}/build" --output-on-failure
+execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${work_path}/build" --output-on-failure --parallel 4
   COMMAND_ERROR_IS_FATAL ANY)
 if(CMAKE_HOST_WIN32)
   if(NOT QT_ROOT)
@@ -55,10 +57,11 @@ if(CMAKE_HOST_WIN32)
     -DCMAKE_TRY_COMPILE_CONFIGURATION=Release -DBUILD_TESTING=ON
     "-DCMAKE_PREFIX_PATH=${QT_ROOT}" "-DALLPOWERS_QT_SOURCE_CACHE=${work_path}/qt-source"
     COMMAND_ERROR_IS_FATAL ANY)
-  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${work_path}/windows" --parallel 4
+  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${work_path}/windows" --parallel "${ALLPOWERS_BUILD_JOBS}"
     OUTPUT_FILE "${work_path}/windows-build.log" ERROR_FILE "${work_path}/windows-build.log"
     COMMAND_ERROR_IS_FATAL ANY)
   execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${work_path}/windows"
-    -R "^(desktop|widget|archive-transport|history-operation-process|single-exe|widget-single-exe)$" --output-on-failure COMMAND_ERROR_IS_FATAL ANY)
+    -R "^(desktop|widget|archive-transport|history-operation-process|single-exe|widget-single-exe)$"
+    --parallel 2 --output-on-failure COMMAND_ERROR_IS_FATAL ANY)
 endif()
 message(STATUS "Source package rebuilt and passed core and supported desktop checks without .git or Python")

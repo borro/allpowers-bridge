@@ -1,4 +1,5 @@
 #include "monitor_application.h"
+#include "product-version.h"
 #include "battery_probe.h"
 #include "connection_lease.h"
 #include "integration.h"

@@ -6,7 +6,7 @@ set(windows_test_options)
 if(BUILD_TESTING)
   list(APPEND windows_test_options TEST_AFTER_INSTALL TRUE TEST_EXCLUDE_FROM_MAIN TRUE
     STEP_TARGETS test LOG_TEST ON
-    TEST_COMMAND "${CMAKE_CTEST_COMMAND}" --output-on-failure)
+    TEST_COMMAND "${CMAKE_CTEST_COMMAND}" --output-on-failure --parallel 2)
 endif()
 ExternalProject_Add(windows-monitor
   SOURCE_DIR "${PROJECT_SOURCE_DIR}/apps/windows"
@@ -24,6 +24,7 @@ ExternalProject_Add(windows-monitor
     "-DCMAKE_INSTALL_PREFIX=${windows_output}"
     "-DALLPOWERS_DRIVER_PACKAGE_DIR=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     "-DBUILD_TESTING=${BUILD_TESTING}"
+  BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_BUILD_JOBS}"
   BUILD_ALWAYS TRUE
   INSTALL_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe" "${windows_output}/AllpowersWidget.exe"
   ${windows_test_options}
@@ -44,8 +45,8 @@ ExternalProject_Add_Step(windows-monitor prepare-notices
 add_custom_target(windows ALL)
 add_dependencies(windows windows-monitor)
 if(BUILD_TESTING)
-  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure)
-  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900)
+  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure --parallel 2)
+  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900 PROCESSORS 2)
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
     "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
     "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
@@ -59,8 +60,9 @@ if(BUILD_TESTING)
     "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DWORK=${PROJECT_BINARY_DIR}/windows-identity-graph" "-DQT_ROOT=${ALLPOWERS_QT_ROOT}"
     "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}" "-DDEPS_DIR=${ALLPOWERS_DEPS_DIR}"
-    "-DCXX=${CMAKE_CXX_COMPILER}" -P "${PROJECT_SOURCE_DIR}/tests/cmake/windows_identity_graph_test.cmake")
-  set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS integration)
+    "-DCXX=${CMAKE_CXX_COMPILER}" "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/windows_identity_graph_test.cmake")
+  set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS integration PROCESSORS 4)
 endif()
 install(PROGRAMS "${windows_output}/AllpowersMonitor.exe" DESTINATION .)
 install(PROGRAMS "${windows_output}/AllpowersWidget.exe" DESTINATION .)
@@ -98,11 +100,6 @@ add_custom_target(source-package-check
     "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DARCHIVE=${ALLPOWERS_RELEASE_DIR}/AllpowersMonitor-${ALLPOWERS_VERSION}-sources.zip"
     "-DQT_ROOT=${ALLPOWERS_QT_ROOT}"
+    "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}"
     "-DVERSION=${ALLPOWERS_VERSION}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckSourcePackage.cmake"
   DEPENDS source-package USES_TERMINAL VERBATIM)
-add_custom_target(qt-relink-check
-  COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_BINARY_DIR}/source-kit-check/allpowers"
-    "-DWORK=${PROJECT_BINARY_DIR}/qt-relink" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
-    "-DSOURCE_CACHE=${PROJECT_BINARY_DIR}/source-kit-check/qt-source"
-    "-DJOBS=${ALLPOWERS_QT_JOBS}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckQtRelinking.cmake"
-  DEPENDS source-package-check USES_TERMINAL VERBATIM)

@@ -1,4 +1,5 @@
 #include "notices.h"
+#include "product-version.h"
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>

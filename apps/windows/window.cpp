@@ -1,4 +1,5 @@
 #include "window.h"
+#include "product-version.h"
 #include "AllpowersModels.h"
 #include "integration.h"
 #include "notices.h"

@@ -1,4 +1,5 @@
 #include "connection_lease.h"
+#include "product-version.h"
 #include "notices.h"
 #include "widget.h"
 #include <QApplication>

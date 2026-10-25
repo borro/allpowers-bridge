@@ -51,12 +51,12 @@ target_include_directories(protocol PUBLIC ../../core/src ../../core/native)
 target_link_libraries(monitor_backend PUBLIC protocol)
 target_compile_features(monitor_backend PUBLIC cxx_std_23)
 target_compile_features(protocol PUBLIC cxx_std_23)
-add_dependencies(monitor_backend product-identity)
-if(MSVC)
-  target_compile_options(monitor_backend PUBLIC "/FI${ALLPOWERS_IDENTITY_HEADER}")
-else()
-  target_compile_options(monitor_backend PUBLIC -include "${ALLPOWERS_IDENTITY_HEADER}")
-endif()
+# Only version consumers include the generated header; do not force it into
+# every backend, UI and test translation unit through PUBLIC compile options.
+foreach(target monitor_backend monitor_lib)
+  add_dependencies(${target} product-identity)
+  target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/identity")
+endforeach()
 if(MSVC)
   target_compile_options(monitor_lib PRIVATE /utf-8 /W4)
   target_compile_options(monitor_backend PRIVATE /utf-8 /W4)
@@ -92,6 +92,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 qt_add_resources(notice_sources "${CMAKE_CURRENT_BINARY_DIR}/notices.qrc")
 target_sources(AllpowersMonitor PRIVATE ${notice_sources})
 qt_add_executable(AllpowersWidget WIN32 widget_main.cpp)
+target_include_directories(AllpowersWidget PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/identity")
+add_dependencies(AllpowersWidget product-identity)
 target_sources(AllpowersWidget PRIVATE widget.manifest)
 target_sources(AllpowersWidget PRIVATE ${notice_sources})
 target_link_libraries(AllpowersWidget PRIVATE widget_lib)
@@ -161,6 +163,7 @@ if(BUILD_TESTING)
   add_test(NAME dropdown-native COMMAND monitor_tests dropdownFitsVisibleRows:2-0 dropdownFitsVisibleRows:2-1
     -platform windows -o dropdown-native-tests.txt,txt)
   set_tests_properties(dropdown-native PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5")
+  set_tests_properties(widget-native dropdown-native PROPERTIES RESOURCE_LOCK windows-desktop)
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersMonitor>"
     "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/single-exe-check"

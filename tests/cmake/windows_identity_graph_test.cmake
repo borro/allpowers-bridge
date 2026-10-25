@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 4.4)
 find_package(Git REQUIRED)
 find_program(powershell NAMES pwsh powershell REQUIRED)
+include("${ROOT}/cmake/BuildParallelism.cmake")
 foreach(required WORK BUILD_ROOT QT_ROOT SOURCE_CACHE DEPS_DIR CXX)
   if(NOT ${required})
     message(FATAL_ERROR "Set ${required} for the real Windows identity graph regression")
@@ -14,6 +15,17 @@ if(NOT inside OR scratch STREQUAL build_root)
   message(FATAL_ERROR "Windows identity test needs a dedicated binary subdirectory")
 endif()
 file(REMOVE_RECURSE "${scratch}")
+function(timed_step label)
+  string(TIMESTAMP started "%s")
+  execute_process(${ARGN} RESULT_VARIABLE result)
+  string(TIMESTAMP finished "%s")
+  math(EXPR seconds "${finished}-${started}")
+  message(STATUS "Windows identity ${label}: ${seconds}s (result ${result})")
+  file(APPEND "${scratch}/timings.log" "${label}: ${seconds}s (result ${result})\n")
+  if(NOT result STREQUAL "0")
+    message(FATAL_ERROR "Windows identity ${label} failed; see ${scratch}/${label}.log")
+  endif()
+endfunction()
 set(source "${scratch}/source")
 file(MAKE_DIRECTORY "${source}")
 if(SNAPSHOT_REF)
@@ -43,23 +55,24 @@ git(commit -qm fixture)
 git(tag v1.2.3)
 set(common -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
   "-DCMAKE_CXX_COMPILER=${CXX}" -DBUILD_TESTING=ON)
-execute_process(COMMAND "${CMAKE_COMMAND}" -S "${source}" -B "${source}/build/root" ${common}
-  -DALLPOWERS_BUILD_WINDOWS=ON "-DALLPOWERS_QT_ROOT=${QT_ROOT}"
+timed_step(root-configure COMMAND "${CMAKE_COMMAND}" -S "${source}" -B "${source}/build/root" ${common}
+  -DALLPOWERS_BUILD_WINDOWS=ON "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}" "-DALLPOWERS_QT_ROOT=${QT_ROOT}"
   "-DALLPOWERS_QT_SOURCE_CACHE=${SOURCE_CACHE}" "-DALLPOWERS_DEPS_DIR=${DEPS_DIR}"
-  OUTPUT_FILE "${scratch}/root-configure.log" ERROR_FILE "${scratch}/root-configure.log" COMMAND_ERROR_IS_FATAL ANY)
-execute_process(COMMAND "${CMAKE_COMMAND}" -S "${source}/apps/windows" -B "${source}/build/standalone" ${common}
+  OUTPUT_FILE "${scratch}/root-configure.log" ERROR_FILE "${scratch}/root-configure.log")
+timed_step(standalone-configure COMMAND "${CMAKE_COMMAND}" -S "${source}/apps/windows" -B "${source}/build/standalone" ${common}
   "-DCMAKE_PREFIX_PATH=${QT_ROOT}" "-DALLPOWERS_QT_SOURCE_CACHE=${SOURCE_CACHE}"
-  OUTPUT_FILE "${scratch}/standalone-configure.log" ERROR_FILE "${scratch}/standalone-configure.log" COMMAND_ERROR_IS_FATAL ANY)
+  OUTPUT_FILE "${scratch}/standalone-configure.log" ERROR_FILE "${scratch}/standalone-configure.log")
 function(build phase)
-  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${source}/build/root" --target windows --parallel 4
-    OUTPUT_FILE "${scratch}/${phase}-root-build.log" ERROR_FILE "${scratch}/${phase}-root-build.log"
-    COMMAND_ERROR_IS_FATAL ANY)
-  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${source}/build/standalone" --parallel 4
-    OUTPUT_FILE "${scratch}/${phase}-standalone-build.log" ERROR_FILE "${scratch}/${phase}-standalone-build.log"
-    COMMAND_ERROR_IS_FATAL ANY)
+  timed_step("${phase}-root-build" COMMAND "${CMAKE_COMMAND}" --build "${source}/build/root"
+    --target windows --parallel "${ALLPOWERS_BUILD_JOBS}"
+    OUTPUT_FILE "${scratch}/${phase}-root-build.log" ERROR_FILE "${scratch}/${phase}-root-build.log")
+  timed_step("${phase}-standalone-build" COMMAND "${CMAKE_COMMAND}" --build "${source}/build/standalone"
+    --parallel "${ALLPOWERS_BUILD_JOBS}"
+    OUTPUT_FILE "${scratch}/${phase}-standalone-build.log" ERROR_FILE "${scratch}/${phase}-standalone-build.log")
 endfunction()
 function(check expected phase)
   foreach(layout root standalone)
+    string(TIMESTAMP started "%s")
     if(layout STREQUAL root)
       set(folder "${source}/build/root/dist/windows/AllpowersMonitor")
     else()
@@ -81,15 +94,45 @@ function(check expected phase)
     if(result)
       message(FATAL_ERROR "${phase} ${layout} CTest rejected current CLI/PE identity: ${tests}\n${error}")
     endif()
+    string(TIMESTAMP finished "%s")
+    math(EXPR seconds "${finished}-${started}")
+    message(STATUS "Windows identity ${phase}-${layout}-checks: ${seconds}s")
+    file(APPEND "${scratch}/timings.log" "${phase}-${layout}-checks: ${seconds}s\n")
+  endforeach()
+endfunction()
+function(unchanged_objects mode)
+  foreach(layout root standalone)
+    set(binary "${source}/build/${layout}")
+    if(layout STREQUAL root)
+      string(APPEND binary /windows-monitor)
+    endif()
+    foreach(object monitor_backend.dir/session.cpp.obj widget_lib.dir/widget.cpp.obj)
+      set(path "${binary}/CMakeFiles/${object}")
+      if(NOT EXISTS "${path}")
+        message(FATAL_ERROR "Missing dependency regression object: ${path}")
+      endif()
+      string(MAKE_C_IDENTIFIER "${layout}_${object}" key)
+      file(TIMESTAMP "${path}" timestamp "%s")
+      if(mode STREQUAL record)
+        set_property(GLOBAL PROPERTY "unchanged_${key}" "${timestamp}")
+      else()
+        get_property(previous GLOBAL PROPERTY "unchanged_${key}")
+        if(NOT timestamp STREQUAL previous)
+          message(FATAL_ERROR "Version-only identity change recompiled ${layout}/${object}")
+        endif()
+      endif()
+    endforeach()
   endforeach()
 endfunction()
 build(clean)
 check(1.2.3 clean)
+unchanged_objects(record)
 # An ordinary source-only edit must not require manual configure and must update
 # Monitor and Widget CLI, PE resources, and expected values in both CTest graphs.
 file(APPEND "${source}/apps/windows/main.cpp" "\n// source-only identity regression\n")
 build(dirty)
 check(1.2.3-dirty dirty)
+unchanged_objects(check)
 execute_process(COMMAND "${CMAKE_COMMAND}" -P "${source}/build/root/check-package-identity.cmake"
   RESULT_VARIABLE packaged OUTPUT_QUIET ERROR_QUIET)
 if(packaged EQUAL 0)
@@ -98,6 +141,7 @@ endif()
 git(checkout -- apps/windows/main.cpp)
 build(reverted)
 check(1.2.3 reverted)
+unchanged_objects(check)
 execute_process(COMMAND "${CMAKE_COMMAND}" -P "${source}/build/root/check-package-identity.cmake"
   OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
 # A caller supplying a wrong identity must still reject a valid executable.

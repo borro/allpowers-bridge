@@ -20,7 +20,7 @@
     {"name": "release", "configurePreset": "windows", "targets": ["release"]}
   ],
   "testPresets": [
-    {"name": "native", "configurePreset": "native", "output": {"outputOnFailure": true}},
-    {"name": "windows", "configurePreset": "windows", "output": {"outputOnFailure": true}}
+    {"name": "native", "configurePreset": "native", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}},
+    {"name": "windows", "configurePreset": "windows", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}}
   ]
 }

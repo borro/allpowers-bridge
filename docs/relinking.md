@@ -35,19 +35,14 @@ source kit available alongside any binary distribution.
 5. Replace the old EXE with the rebuilt EXE and run normally. No signing key,
    activation, device unlock or permission from the author is required.
 
-## Verify a modified library
+## Source-kit validation
 
-`cmake --build build/windows --target qt-relink-check` first creates and checks
-the source kit, then extracts its Qt archives into a separate build directory.
-It modifies Qt's actual `qVersion()` implementation, builds and installs that
-static Qt, recompiles both applications from the source kit, and runs their
-offline tests. Both diagnostic reports must report
-`6.12.0-allpowers-relink-proof`. A successful link or an unchanged application's
-version string is not sufficient. Production SDKs and devices are not modified.
-The Qt build uses `qt-relink/` directly under the top-level build directory rather
-than nesting inside the extracted source kit, to stay within MSVC's path limits.
-Tagged-release CI runs this check; ordinary source-kit validation also recompiles
-and tests both Windows applications, in addition to the portable core.
+The `release` target rebuilds and tests the portable core and both Windows
+applications from the source kit using the matching static Qt SDK. It verifies
+the source archives and their correspondence to the distributed SDK libraries.
+Tagged and ordinary CI builds use the same packaging checks. They do not build
+another Qt SDK with a modified library. The manual replacement procedure above
+remains available for rebuilding with a modified Qt.
 
 The source archive's generated VERSION file retains the release identity without
 the original `.git` directory. Git is still required by the publication regression

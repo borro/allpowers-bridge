@@ -1,6 +1,13 @@
 set(ARDUINO_CLI "$ENV{ARDUINO_CLI}" CACHE FILEPATH "Arduino CLI 1.5.1 executable")
 set(ARDUINO_DATA_DIR "$ENV{ARDUINO_DATA_DIR}" CACHE PATH "Arduino package data")
-set(ALLPOWERS_ARDUINO_JOBS 4 CACHE STRING "Compiler jobs per Arduino build")
+set(ALLPOWERS_ARDUINO_JOBS 2 CACHE STRING "Compiler jobs per Arduino build")
+set(ALLPOWERS_FIRMWARE_PARALLEL_BOARDS 2 CACHE STRING "Concurrent firmware builds")
+foreach(variable ALLPOWERS_ARDUINO_JOBS ALLPOWERS_FIRMWARE_PARALLEL_BOARDS)
+  if(NOT ${variable} MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "${variable} must be a positive integer")
+  endif()
+endforeach()
+set_property(GLOBAL APPEND PROPERTY JOB_POOLS "firmware=${ALLPOWERS_FIRMWARE_PARALLEL_BOARDS}")
 if(CMAKE_HOST_WIN32)
   set(host_platform win32)
   set(cli_suffix .exe)
@@ -103,7 +110,7 @@ foreach(board waveshare-147 pocket-096)
       "${PROJECT_SOURCE_DIR}/cmake/PrepareFirmwareKit.cmake" "${PROJECT_SOURCE_DIR}/cmake/RelinkFirmware.cmake"
       "${PROJECT_SOURCE_DIR}/docs/firmware-licenses.md"
       "${PROJECT_SOURCE_DIR}/docs/licenses/LGPL-3.0.md" "${PROJECT_SOURCE_DIR}/docs/licenses/GPL-3.0.md"
-    USES_TERMINAL VERBATIM)
+    JOB_POOL firmware VERBATIM)
   add_custom_target(${board} DEPENDS "${output}/manifest.json")
   add_dependencies(${board} product-identity)
 endforeach()

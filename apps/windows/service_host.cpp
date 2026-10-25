@@ -1,4 +1,5 @@
 #include "service_host.h"
+#include "product-version.h"
 #include "../../drivers/windows/bridge.h"
 #include "bluetooth.h"
 #include "history.h"

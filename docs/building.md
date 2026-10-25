@@ -49,6 +49,21 @@ Ordinary builds compile and stage binaries; tests run through CTest. The `releas
 target additionally requests the external project's test step when testing is
 enabled, and always rebuilds/tests the corresponding-source archive before CPack.
 
+Both CTest presets run the complete suite with four parallel jobs. Override with
+`ctest --preset windows --parallel 1` (or `native`) for a sequential run; no tests
+are filtered out. The nested Windows CTest uses two jobs and reserves two parent
+slots. The Windows identity graph reserves four slots; native Windows UI tests share
+a desktop resource lock. Source-kit validation uses four portable test jobs and
+two desktop test jobs as well.
+
+`ALLPOWERS_BUILD_JOBS` bounds each nested application/driver compilation (default
+4, CI 2), independently of the outer `cmake --build --parallel N` setting. Qt keeps
+its separate two-job default. The generated Windows version header is included
+only by its actual consumers, so version changes do not recompile unrelated
+backend, widget and test sources. The identity regression retains root and
+standalone clean/dirty/revert coverage, verifies unchanged objects, and reports
+configure/build/check durations with detailed logs on CI failure.
+
 ## Static Qt dependency
 
 The windows target uses ExternalProject for Qt Base and Qt Connectivity 6.12.0,
@@ -90,8 +105,13 @@ cmake --build build/windows --target waveshare-147 pocket-096
 
 Use build/native on Linux. Setup downloads a checksum-verified Arduino CLI 1.5.1
 and installs ESP32 Core 3.3.11. ARDUINO_CLI and ARDUINO_DATA_DIR are cache paths;
-ALLPOWERS_ARDUINO_JOBS controls compiler jobs per board (default 4). Each board
-owns its sketch copy and compiler directory. Build outputs include a manifest of
+ALLPOWERS_ARDUINO_JOBS controls compiler jobs per board (default 2).
+ALLPOWERS_FIRMWARE_PARALLEL_BOARDS bounds concurrent board builds through a Ninja
+pool (default 2 locally, 1 in CI; CI also uses two compiler jobs per board).
+These limits are independent of application/Qt compilation. Each board owns its
+sketch copy and compiler directory. Staging copies only changed contents, removes
+deleted inputs and retains timestamps of unchanged inputs and generated identity;
+it never clears the compiler cache. Build outputs include a manifest of
 source/artifact hashes. USB descriptors, partitions and updater are build gates.
 No setup/build/test target opens a USB device or connects BLE.
 

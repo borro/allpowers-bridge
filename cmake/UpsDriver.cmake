@@ -1,4 +1,5 @@
 include(ExternalProject)
+include("${CMAKE_CURRENT_LIST_DIR}/BuildParallelism.cmake")
 ExternalProject_Add(ups-driver-project
   SOURCE_DIR "${PROJECT_SOURCE_DIR}/drivers/windows"
   BINARY_DIR "${PROJECT_BINARY_DIR}/ups-driver"
@@ -10,6 +11,7 @@ ExternalProject_Add(ups-driver-project
     "-DALLPOWERS_RELEASE_TAG=${ALLPOWERS_RELEASE_TAG}"
     "-DALLPOWERS_RELEASE_COMMIT=${ALLPOWERS_RELEASE_COMMIT}"
     "-DALLPOWERS_PARENT_IDENTITY=${ALLPOWERS_IDENTITY_FILE}"
+  BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_BUILD_JOBS}"
   BUILD_ALWAYS TRUE INSTALL_COMMAND "" EXCLUDE_FROM_ALL TRUE
   LOG_CONFIGURE ON LOG_BUILD ON LOG_OUTPUT_ON_FAILURE ON)
 add_dependencies(ups-driver-project product-identity)

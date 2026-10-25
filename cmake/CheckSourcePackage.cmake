@@ -59,6 +59,6 @@ if(CMAKE_HOST_WIN32)
     OUTPUT_FILE "${work_path}/windows-build.log" ERROR_FILE "${work_path}/windows-build.log"
     COMMAND_ERROR_IS_FATAL ANY)
   execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${work_path}/windows"
-    -R "^(desktop|widget|archive-transport|single-exe|widget-single-exe)$" --output-on-failure COMMAND_ERROR_IS_FATAL ANY)
+    -R "^(desktop|widget|archive-transport|history-operation-process|single-exe|widget-single-exe)$" --output-on-failure COMMAND_ERROR_IS_FATAL ANY)
 endif()
 message(STATUS "Source package rebuilt and passed core and supported desktop checks without .git or Python")

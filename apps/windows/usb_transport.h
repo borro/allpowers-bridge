@@ -1,6 +1,7 @@
 #pragma once
 #include "transport.h"
 #include "usb_serial.h"
+#include "history_operation_id.h"
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QSet>
@@ -11,7 +12,8 @@ public:
   using Ports = std::function<QList<UsbPort>()>;
   using Now = std::function<qint64()>;
   explicit UsbTransport(QObject *parent = nullptr, bool offline = false,
-                        UsbChannel *channel = nullptr, Ports ports = {}, Now now = {});
+                        UsbChannel *channel = nullptr, Ports ports = {}, Now now = {},
+                        HistoryOperationIds::Entropy entropy = {});
   ~UsbTransport() override;
   bool active() const override {
     return active_;
@@ -47,6 +49,7 @@ private:
   UsbChannel *channel = nullptr;
   Ports ports;
   Now elapsedMs;
+  HistoryOperationIds::Entropy operationEntropy;
   QTimer timer;
   QElapsedTimer clock;
   QByteArray buffer;
@@ -67,6 +70,8 @@ private:
           legacyFirst=0,legacyPages=0,legacySpan=0,legacyScanned=0,legacyReceivedPage=0;
   int importVersion=0;
   bool importBegun=false,importCompromised=false,legacyVerification=false;
+  bool importNonceRequired=false;
+  QByteArray importNonce;
   void connectPort();
   void receive(const QByteArray &);
   void row(const QJsonObject &);

@@ -1,5 +1,6 @@
 #pragma once
 #include "HistoryWire.h"
+#include "HistoryOperation.h"
 namespace HistoryFormat {
 enum class ReadState { Record, End, Busy, Error };
 struct ExportMetadata { uint32_t session=0,generation=0,count=0,oldest=0,latest=0; };
@@ -37,6 +38,7 @@ class ExportSession {
   ExportSource &source;ExportSink &sink;ExportMetadata metadata{};
   enum class Line { None,Begin,Record,Done } line=Line::None;
   char bytes[768]{};size_t length=0,offset=0;
+  char operationNonce[kHistoryNonceHexLength+1]{},operationField[56]{};
   uint32_t request=0,started=0,ordinal=0,sent=0,cursor=0,digest=kDigestSeed;
   uint32_t first=0,span=0;bool running=false,opened=false,legacy=false,expired=false,needsResync=false;
   Record pending{};
@@ -54,8 +56,8 @@ class ExportSession {
     if(legacy)queue(Line::Done,snprintf(bytes,sizeof(bytes),
       "{\"history_dump_done\":true,\"history_legacy_status\":\"%s\",\"history_sent\":%lu}\n",status,(unsigned long)sent));
     else queue(Line::Done,snprintf(bytes,sizeof(bytes),
-      "{\"history_dump_done\":true,\"history_export_version\":3,\"request\":%lu,\"export_session\":%lu,\"generation\":%lu,\"oldest\":%lu,\"latest\":%lu,\"count\":%lu,\"sent\":%lu,\"cursor\":%lu,\"digest\":%lu,\"status\":\"%s\"}\n",
-      (unsigned long)request,(unsigned long)metadata.session,(unsigned long)metadata.generation,
+      "{\"history_dump_done\":true,\"history_export_version\":3,\"request\":%lu,%s\"export_session\":%lu,\"generation\":%lu,\"oldest\":%lu,\"latest\":%lu,\"count\":%lu,\"sent\":%lu,\"cursor\":%lu,\"digest\":%lu,\"status\":\"%s\"}\n",
+      (unsigned long)request,operationField,(unsigned long)metadata.session,(unsigned long)metadata.generation,
       (unsigned long)metadata.oldest,(unsigned long)metadata.latest,(unsigned long)metadata.count,
       (unsigned long)sent,(unsigned long)cursor,(unsigned long)digest,status));
   }
@@ -73,8 +75,18 @@ public:
     return !needsResync;
   }
   void cancel(){stop();}
-  void start(uint32_t id,uint32_t now,uint32_t legacyFirst=0,uint32_t legacySpan=0){
+  void start(uint32_t id,uint32_t now,uint32_t legacyFirst=0,uint32_t legacySpan=0,const char *nonce=nullptr){
+    size_t nonceLength=0;
+    if(nonce){
+      while(nonceLength<=kHistoryNonceHexLength&&nonce[nonceLength])++nonceLength;
+      if(legacyFirst||!validOperationNonce(nonce,nonceLength))return;
+    }
     stop();metadata={};request=id;started=now;ordinal=sent=cursor=0;digest=kDigestSeed;
+    operationNonce[0]=operationField[0]=0;
+    if(nonce){
+      memcpy(operationNonce,nonce,kHistoryNonceHexLength);operationNonce[kHistoryNonceHexLength]=0;
+      snprintf(operationField,sizeof(operationField),"\"operation_nonce\":\"%s\",",operationNonce);
+    }
     first=legacyFirst;span=legacySpan;legacy=legacyFirst!=0;opened=false;expired=false;running=true;
   }
   void pump(uint32_t now){
@@ -110,8 +122,8 @@ public:
          (metadata.count&&(!metadata.oldest||!metadata.latest))){done("error");return;}
       opened=true;
       if(!legacy)queue(Line::Begin,snprintf(bytes,sizeof(bytes),
-        "{\"history_export_begin\":true,\"history_export_version\":3,\"request\":%lu,\"export_session\":%lu,\"generation\":%lu,\"count\":%lu,\"oldest\":%lu,\"latest\":%lu}\n",
-        (unsigned long)request,(unsigned long)metadata.session,(unsigned long)metadata.generation,
+        "{\"history_export_begin\":true,\"history_export_version\":3,\"request\":%lu,%s\"export_session\":%lu,\"generation\":%lu,\"count\":%lu,\"oldest\":%lu,\"latest\":%lu}\n",
+        (unsigned long)request,operationField,(unsigned long)metadata.session,(unsigned long)metadata.generation,
         (unsigned long)metadata.count,(unsigned long)metadata.oldest,(unsigned long)metadata.latest));
       return;
     }
@@ -126,8 +138,8 @@ public:
       queue(Line::Record,serializeLegacy(pending,bytes,sizeof(bytes)));return;
     }
     const int prefix=snprintf(bytes,sizeof(bytes),
-      "{\"history_export_version\":3,\"request\":%lu,\"export_session\":%lu,\"generation\":%lu,\"ordinal\":%lu,",
-      (unsigned long)request,(unsigned long)metadata.session,(unsigned long)metadata.generation,(unsigned long)ordinal);
+      "{\"history_export_version\":3,\"request\":%lu,%s\"export_session\":%lu,\"generation\":%lu,\"ordinal\":%lu,",
+      (unsigned long)request,operationField,(unsigned long)metadata.session,(unsigned long)metadata.generation,(unsigned long)ordinal);
     char record[512];const int size=serialize(pending,record,sizeof(record));
     if(prefix<=0||size<=1||size_t(size)>=sizeof(record)||size_t(prefix+size)>=sizeof(bytes)){done("error");return;}
     memcpy(bytes+prefix,record+1,size_t(size));queue(Line::Record,prefix+size-1);

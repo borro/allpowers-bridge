@@ -72,21 +72,30 @@ public:
     memcpy(optional,bytes,size);optionalSize=size;optionalPosition=0;return true;
   }
   bool command(const char *line,uint32_t now){
+    const auto commandSize=historyCommandLength(line);
+    if(commandSize>=kHistoryCommandCapacity)return false;
+    const char *end=line+commandSize;
     if(!strcmp(line,"STATUS")||!strcmp(line,"HISTORY")){
       if(paused_){paused_=false;boundaryTracking=false;}
       statusPending=statusUrgent=true;return true;
     }
     uint32_t first=0,count=0,request=0;const char *p=line;
+    char nonce[kHistoryNonceHexLength+1]{};
     if(!strncmp(p,"HISTORY-READ ",13)){
       p+=13;if(!decimal(p,first)||*p++!=' '||!decimal(p,count)||*p||!first||!count||count>kKeep)return false;
     }else if(!strncmp(p,"HISTORY-EXPORT ",15)){
-      p+=15;if(!decimal(p,request)||*p||!request)return false;
+      p+=15;if(!decimal(p,request)||!request)return false;
+      if(*p==' '){
+        ++p;if(!validOperationNonce(p,size_t(end-p)))return false;
+        memcpy(nonce,p,kHistoryNonceHexLength);p=end;
+      }
+      if(*p)return false;
     }else return false;
     if(paused_){paused_=false;boundaryTracking=false;}
     // Latest command wins immediately: close the old frozen snapshot even if
     // STATUS owns a partial line. That line retains its owner until drained or
     // bounded abort; archive.start preserves any abandoned archive delimiter.
-    archive.start(request,now,first,count);exportStarted=now;failed_=false;
+    archive.start(request,now,first,count,nonce[0]?nonce:nullptr);exportStarted=now;failed_=false;
     yieldArchive=false;return true;
   }
   void pump(uint32_t now){

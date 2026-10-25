@@ -497,11 +497,11 @@ void setup() {
   if(history.begin())historyTaskStarted=xTaskCreatePinnedToCore(historyTask,"history_log",6144,nullptr,1,nullptr,1)==pdPASS;
 }
 void loop() {
-  static char command[40];static size_t used=0;static uint32_t lastReport=0,bootDeadline=0;
+  static HistoryFormat::HistoryCommandLine commandInput;
+  static uint32_t lastReport=0,bootDeadline=0;
   if(buttonPassed)menuGesture(button.update(digitalRead(Board::boot)==LOW,millis()));
   while(Console.available()){
-    char c=Console.read();if(c=='\n'){
-      command[used]=0;
+    if(const char *command=commandInput.feed(char(Console.read()))){
       if(serialOutput.command(command,millis())){}
       else if(!strcmp(command,"BOOT-R2500!!"))requestBoot=true;
       else if(!strcmp(command,"RETRY-USB"))requestRestart=true;
@@ -517,8 +517,7 @@ void loop() {
         char *end=nullptr;unsigned long epoch=strtoul(command+5,&end,10);
         if(end&&!*end&&epoch>=1577836800UL&&epoch<=4102444800UL){history.setTime(epoch);serialOutput.queueOptional("{\"time_set\":true}\n",18);}
       }
-      used=0;
-    }else if(c!='\r'){if(used<sizeof(command)-1)command[used++]=c;else used=0;}
+    }
   }
   if(requestBoot||requestRestart){
     history.requestPause();

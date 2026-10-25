@@ -4,6 +4,7 @@
 #include "StationPicker.h"
 #include "HistoryStatus.h"
 #include "HistoryCompatibility.h"
+#include "HistoryOperation.h"
 #include "GraphHistory.h"
 #include <stdio.h>
 namespace HistoryFormat {
@@ -69,8 +70,8 @@ inline int serializeStatus(const StatusSnapshot &frame,uint8_t index,char *out,s
   case 2:return snprintf(out,capacity,"{\"picker_selftest\":%s,\"picker_open\":%s,\"picker_scanning\":%s,\"picker_highlight\":\"%s\",\"picker_back\":%s,\"target_saved\":%s,\"target_loaded\":%s,\"target_address\":\"%s\",\"connection_state\":\"%s\",\"protocol\":%u,\"telemetry_known\":%lu,\"ups_source_known\":%s}\n",
     pickerPassed?"true":"false",pickerOpen?"true":"false",state.scanning?"true":"false",nearby.selectedMAC,state.pickerBack?"true":"false",state.targetSaved?"true":"false",targetLoaded?"true":"false",target.identity.address,state.phase,s.protocol,(unsigned long)s.known,upsTelemetryFresh(s,frame.nowMs)?"true":"false");
   case 3:return snprintf(out,capacity,"{\"board\":\"%s\",\"panel\":\"%s\",\"panel_width\":%d,\"panel_height\":%d,\"rgb_available\":%s}\n",frame.boardId,frame.panelName,frame.panelWidth,frame.panelHeight,frame.rgbAvailable?"true":"false");
-  case 5:return snprintf(out,capacity,"{\"history_ready\":%s,\"history_selftest\":%s,\"history_records\":%lu,\"history_recovered\":%lu,\"history_latest\":%lu,\"history_oldest\":%lu,\"history_export_version\":3,\"history_generation\":%lu,\"history_writes\":%lu,\"history_errors\":%lu,\"history_error\":\"%s\",\"history_last_write_ms\":%lu,\"history_max_write_ms\":%lu,\"history_session\":%lu,\"history_clock\":%s,\"screen\":%u,\"button_presses\":%lu}\n",
-    log.ready?"true":"false",log.selfTest?"true":"false",(unsigned long)log.count,(unsigned long)log.recovered,(unsigned long)log.latest,(unsigned long)log.oldest,(unsigned long)log.generation,(unsigned long)log.writes,(unsigned long)log.errors,log.error,
+  case 5:return snprintf(out,capacity,"{\"history_ready\":%s,\"history_selftest\":%s,\"history_records\":%lu,\"history_recovered\":%lu,\"history_latest\":%lu,\"history_oldest\":%lu,\"history_export_version\":3,\"history_nonce_bits\":%lu,\"history_generation\":%lu,\"history_writes\":%lu,\"history_errors\":%lu,\"history_error\":\"%s\",\"history_last_write_ms\":%lu,\"history_max_write_ms\":%lu,\"history_session\":%lu,\"history_clock\":%s,\"screen\":%u,\"button_presses\":%lu}\n",
+    log.ready?"true":"false",log.selfTest?"true":"false",(unsigned long)log.count,(unsigned long)log.recovered,(unsigned long)log.latest,(unsigned long)log.oldest,(unsigned long)kHistoryNonceBits,(unsigned long)log.generation,(unsigned long)log.writes,(unsigned long)log.errors,log.error,
     (unsigned long)log.lastWriteMs,(unsigned long)log.maxWriteMs,(unsigned long)log.session,log.clockSynced?"true":"false",displayPage,(unsigned long)buttonPresses);
   case 6:return snprintf(out,capacity,"{\"history_storage_capability\":\"%s\"}\n",HistoryFormat::kStorageCapability);
   case 7:return snprintf(out,capacity,"{\"product_version\":\"%s\",\"product_commit\":\"%s\",\"product_dirty\":%s,\"firmware_protocol_version\":\"%c\",\"board_identity\":\"%s\"}\n",

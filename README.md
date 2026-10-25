@@ -50,6 +50,9 @@ semantics require the current versioned export. Firmware rollback requires an
 AHP1/AHP2-compatible package with matching metadata; see [recovery](docs/recovery.md).
 Long archive reads continue to send live USB status. After an import error, a
 retry safely replaces any export still active on the board.
+Updated desktop and firmware also use a fresh per-read operation token across
+application restarts; [USB compatibility limits](docs/usb-monitor.md#operation-identity-across-client-restarts)
+describe the weaker correlation available with older firmware.
 
 ## Start here
 

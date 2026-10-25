@@ -1,6 +1,7 @@
 #include "usb_transport.h"
 #include "AllpowersModels.h"
 #include "../../firmware/R2500Adapter/HistoryWire.h"
+#include "../../firmware/R2500Adapter/HistoryOperation.h"
 #include <QBluetoothAddress>
 #include <QDateTime>
 #include <QJsonArray>
@@ -94,14 +95,16 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
   return true;
 }
 } // namespace
-UsbTransport::UsbTransport(QObject *parent, bool offline, UsbChannel *io, Ports enumerate, Now time)
+UsbTransport::UsbTransport(QObject *parent, bool offline, UsbChannel *io, Ports enumerate, Now time,
+                           HistoryOperationIds::Entropy entropy)
     : TelemetryTransport(parent), channel(io), ports(std::move(enumerate)),
-      elapsedMs(std::move(time)), offline_(offline) {
+      elapsedMs(std::move(time)), operationEntropy(std::move(entropy)), offline_(offline) {
   clock.start();
   qRegisterMetaType<ap_snapshot>();
   qRegisterMetaType<HistoryPoints>();
   if (!elapsedMs)
     elapsedMs = [this] { return clock.elapsed(); };
+  if(!operationEntropy)operationEntropy=HistoryOperationIds::random128;
   last.abi_version = 1;
   if (!ports)
     ports = allpowersUsbPorts;
@@ -252,7 +255,7 @@ void UsbTransport::command(const QByteArray &data) {
   if (!channel || !opened_)
     return;
   if (data == "STATUS\n" || data == "DIAG\n" ||
-      (importing && (data.startsWith("HISTORY-READ ") || data.startsWith("HISTORY-EXPORT ")) && data.size() < 40))
+      (importing && (data.startsWith("HISTORY-READ ") || data.startsWith("HISTORY-EXPORT ")) && data.size() < HistoryFormat::kHistoryCommandCapacity))
     channel->write(data);
 }
 void UsbTransport::tick() {
@@ -321,16 +324,25 @@ void UsbTransport::receive(const QByteArray &bytes) {
   }
 }
 void UsbTransport::row(const QJsonObject &o) {
+  const bool operationFrame=o.contains("history_export_begin")||o.contains("history_record")||o.contains("history_dump_done");
+  if(importing&&importVersion==3&&importNonceRequired&&operationFrame){
+    const auto nonce=o["operation_nonce"].toString().toLatin1();
+    // Correlate the operation before interpreting any metadata or errors.
+    // STATUS updates cannot change this requirement while an import is active.
+    if(!o["operation_nonce"].isString()||!HistoryFormat::validOperationNonce(nonce.constData(),size_t(nonce.size()))||nonce!=importNonce)return;
+  }
   // Versioned frames identify their operation independently of record contents.
   // Delayed complete frames from another request (or a previous boot after our
   // authoritative begin) must not finish or damage the current transaction.
-  if(importing&&importVersion==3&&(o["history_export_begin"].toBool()||
+  if(importing&&importVersion==3&&!importNonceRequired&&(o["history_export_begin"].toBool()||
       o["history_record"].toBool()||o["history_dump_done"].toBool())){
     quint32 version,request,session,generation;
     if(number(o,"history_export_version",version,3)&&version==3&&
+       number(o,"request",request)&&request&&request!=importRequest)return;
+    if(number(o,"history_export_version",version,3)&&version==3&&
        number(o,"request",request)&&request&&number(o,"export_session",session)&&session&&
        number(o,"generation",generation)&&
-       (request!=importRequest||(importBegun&&session!=importSession)))return;
+       importBegun&&session!=importSession)return;
   }
   if (o.contains("product_version")) {
     for (const char *key : {"product_version","product_commit","firmware_protocol_version","board_identity"})
@@ -421,7 +433,7 @@ void UsbTransport::row(const QJsonObject &o) {
     quint32 version,request,session,generation,count,oldest,latest;
     // Before our authoritative begin, complete frames from a timed-out prior
     // request are channel residue rather than records of the new transaction.
-    if(importVersion==3&&!importBegun&&(!number(o,"request",request)||request!=importRequest))return;
+    if(importVersion==3&&!importNonceRequired&&!importBegun&&(!number(o,"request",request)||request!=importRequest))return;
     if(importVersion!=3||importBegun||!number(o,"history_export_version",version,3)||version!=3||
        !number(o,"request",request)||request!=importRequest||!number(o,"export_session",session)||!session||session!=importSession||
        !number(o,"generation",generation)||!number(o,"count",count,2880)||
@@ -476,6 +488,8 @@ void UsbTransport::row(const QJsonObject &o) {
       details_.remove("history_oldest"); details_.remove("history_export_version");
     }
     details_["history_session"] = double(session);
+    if(o.contains("history_nonce_bits"))details_["history_nonce_bits"]=o["history_nonce_bits"];
+    else details_.remove("history_nonce_bits");
     details_["board_history_clock"] = o["history_clock"];
     if(o["history_error"].isString())details_["board_history_error"]=o["history_error"].toString().left(128);
   } else if (o.contains("graph_live_latest_s")) {
@@ -534,7 +548,7 @@ void UsbTransport::row(const QJsonObject &o) {
     }
     importPoints.append(p);
   } else if (o["history_dump_done"].toBool() && importing) {
-    if(importVersion==3&&!importBegun){
+    if(importVersion==3&&!importNonceRequired&&!importBegun){
       quint32 previousRequest;
       if(number(o,"request",previousRequest)&&previousRequest!=importRequest)return;
     }
@@ -672,7 +686,26 @@ void UsbTransport::requestHistory() {
   importing=true;importDeadline=elapsedMs()+(importVersion==3?70000:120000);
   details_["usb_history_result"]="reading";details_["usb_history_complete"]=false;
   details_["usb_history_frozen"]=false;details_.remove("usb_history_error");
-  if(importVersion==3)command("HISTORY-EXPORT "+QByteArray::number(importRequest)+"\n");
+  importNonceRequired=false;importNonce.clear();
+  details_["usb_history_nonce_bits"]=0;details_.remove("usb_history_operation_nonce");
+  if(importVersion==3){
+    quint32 bits=0;
+    if(details_.contains("history_nonce_bits")){
+      if(!number(details_,"history_nonce_bits",bits)||bits!=HistoryFormat::kHistoryNonceBits){
+        finishImport("error","Неподдерживаемая защита идентификатора USB-архива");return;
+      }
+      importNonceRequired=true;
+    }
+    const auto raw=operationEntropy();
+    if(raw.size()!=16||(!importNonceRequired&&!HistoryOperationIds::fallbackRequest(raw))){
+      finishImport("error","Не удалось создать идентификатор USB-архива");return;
+    }
+    if(importNonceRequired)importNonce=raw.toHex();
+    else importRequest=HistoryOperationIds::fallbackRequest(raw);
+    details_["usb_history_nonce_bits"]=importNonceRequired?int(HistoryFormat::kHistoryNonceBits):0;
+    details_["usb_history_operation_nonce"]=QString::fromLatin1(importNonce);
+    command("HISTORY-EXPORT "+QByteArray::number(importRequest)+(importNonceRequired?" "+importNonce:QByteArray{})+"\n");
+  }
   else if(!importExpected){
     if(importVersion==2)finishImport("partial","Старая версия экспорта не подтверждает пустой архив");
     else {importVersion=0;legacyVerification=true;command("STATUS\n");}

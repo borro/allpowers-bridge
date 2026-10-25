@@ -87,6 +87,55 @@ Wire compatibility does not make an AHP1-only firmware writer a safe rollback;
 the separate [maintenance gate](recovery.md#ahp1ahp2-storage-and-supported-rollback)
 checks that case.
 
+### Operation identity across client restarts
+
+Nonce-capable firmware advertises `history_export_version:3` together with
+`history_nonce_bits:128`. The extended read command is
+`HISTORY-EXPORT <nonzero-request> <32-lowercase-hex-operation-nonce>`.
+The firmware validates the whole command before replacing an export and echoes
+`operation_nonce` in every begin, record and done/error frame. The command line
+is bounded to 80 bytes; overflow and embedded NUL discard the entire line through
+the next newline. Numeric-only v3 commands retain their previous response format.
+
+The updated desktop obtains 16 fresh bytes from Windows CNG for each v3 operation,
+including the first read in a new process. It does not reconstruct identity from
+an application counter, PID, time or saved settings. A CNG failure or invalid
+injected entropy produces an error before any export command is sent, without
+an insecure fallback. See the [BCryptGenRandom contract](https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/nf-bcrypt-bcryptgenrandom).
+
+For a negotiated nonce operation, the desktop checks the exact nonce before
+interpreting any begin, record, completion or error. Frames with an absent or
+different nonce do not change the import, even if request, board boot and archive
+generation coincide. The selected mode and nonce stay fixed until that operation
+finishes; later STATUS messages cannot silently downgrade it. Only then are the
+current operation's version, request/session/generation, ordinal, CRC, count,
+cursor and digest checked. A matching-nonce duplicate or malformed begin remains
+an error; real missing/corrupt current records still prevent complete.
+
+This handles independent queues in both directions: an old begin can already be
+buffered before the new command reaches the board. The desktop knows its new
+nonce before sending that command, so it rejects the queued old operation before
+the board's replacement begin arrives. The same rule rejects an old complete or
+error footer without ending the new import.
+
+| Desktop / firmware | Correlation and compatibility |
+| --- | --- |
+| Updated desktop / nonce-capable v3 | Fresh 128-bit nonce plus existing metadata and completeness checks |
+| Older desktop / nonce-capable firmware | Original numeric v3 or HISTORY-READ; extra STATUS capability is ignored. An old v3 desktop still has its original request-reuse limitation |
+| Updated desktop / original v3 without capability | Fresh nonzero random 32-bit request from the same CNG output; structural checks remain, but correlation is weaker |
+| Updated desktop / v2 or legacy firmware | Existing bounded compatibility paths; unverified v2 remains partial |
+| Unsupported advertised nonce width | Explicit error; no silent numeric downgrade |
+
+Random uniqueness is probabilistic. Assuming independent uniform CNG output, a
+new nonce matches any one distinct stale nonce with probability `1/2^128`; with
+`m` stale values the bound is `m/2^128`. The numeric fallback chooses the first
+nonzero 32-bit word from the 16 bytes, giving conditional collision probability
+`m/(2^32-1)`; all-zero output fails instead of retrying indefinitely. A complete
+identity collision cannot be distinguished from the old operation and can admit
+stale data or cause a duplicate-begin error. These are not absolute uniqueness or
+authentication guarantees. Use matching updated desktop/firmware for nonce128
+correlation; numeric-only compatibility cannot provide that same bound.
+
 For v3, firmware captures a bounded immutable copy under the storage mutex and
 then transmits outside that lock. Busy, end and storage error are distinct; short
 writes retain their offset and acknowledge a cursor only after the whole line.
@@ -115,11 +164,12 @@ after a desktop metadata error starts without waiting for the old dump to end.
 An explicit STATUS request can also obtain a fresh handshake while an old
 export is active, allowing a reopened client to verify the board.
 
-The desktop treats its own matching begin as the transaction boundary. Prior
-framing residue is ignored before it. Identifiable v3 frames belonging to
-another request/session are ignored; malformed or inconsistent frames of the
-current transaction still prevent complete. An initial begin with wrong metadata
-for the current request is an error, so the user can immediately retry
+The desktop treats its own nonce-matching begin as the transaction boundary in
+nonce mode. Prior framing residue is ignored before it. Other operation nonces
+are ignored both before and after it. Numeric-only compatibility correlates by
+its random request/session as described above. Malformed or inconsistent frames
+of the current transaction still prevent complete. An initial begin with wrong
+metadata for the current operation is an error, so the user can immediately retry
 **Считать с платы**.
 
 Archive deadlines remain 60 seconds plus a 2-second drain limit, including time

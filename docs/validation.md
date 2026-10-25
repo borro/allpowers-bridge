@@ -1,5 +1,74 @@
 # Validation
 
+## Client-restart operation collision follow-up: R3 — 2026-10-25
+
+Baseline and fetched remote branch: `17794dc4eff416e162152fcb3020c93a55be2424`,
+`codex/review-followup`. Earlier R1/dispatcher fixes remain in place. The missing
+case was independent delivery in the two serial directions: a fresh client
+reused request 1 while an old begin/complete from the same board boot and archive
+generation was still queued. Old begin followed by new begin caused an error;
+an old complete footer could instead falsely complete the old snapshot.
+
+Before the production change, `restartedClientDoesNotAcceptBufferedPreviousOperation`
+compiled and failed functionally in all six initial FIFO traces. They included
+both the wrong-begin error and stale `complete`, not a compiler/API failure. The
+other 14 archive tests still passed. The source records had valid magic/CRC and
+the board session/generation deliberately stayed unchanged.
+
+The fix adds `history_nonce_bits:128` to v3 capability negotiation and echoes a
+per-operation `operation_nonce` in every archive frame. The desktop compares it
+before interpreting metadata or errors. Windows CNG supplies 16 fresh bytes per
+operation, including after an executable restart; errors fail before sending an
+export. Numeric-only v3 compatibility uses a fresh random nonzero 32-bit request.
+The exact probability assumptions, weaker fallback and collision behavior are
+documented in [USB operation identity](usb-monitor.md#operation-identity-across-client-restarts).
+No AHP1/AHP2 storage, partition, rollback or physical maintenance format changed.
+
+| Regression / production path | Local observation |
+| --- | --- |
+| `restartedClientDoesNotAcceptBufferedPreviousOperation` | 13 deterministic queue traces: new real UsbTransport, 500 ms closed channel, fresh actual STATUS, old bytes admitted before dispatching the new command, numeric request 1 in both client instances; strong tokens A/B are deliberately injected, not lucky random IDs |
+| Same test, changed snapshot and identical-archive controls | FIFO host→device and device→host queues advance independently; old begin/records/complete or abandoned prefix are delivered before the new operation. Exact new tick/SOC set and no completion before the new snapshot closes prevent a false pass on equal counts/data |
+| Pre-update numeric-v3 and empty-archive rows | Actual numeric commands and extended commands use OutputController::command and the production exporter/serializer; no fabricated JSON, direct writer.start, reordered bytes or already-delivered frame replay in these traces |
+| `rapidRestartsReleaseEveryReplacedSnapshot` | Multiple restarts/replacements retain at most one snapshot and release every replaced/final snapshot |
+| `realOpenFailureFooterIsCorrelatedBeforeMetadata` | Real exporter open-error footers with zero session/generation: foreign strong/numeric errors do not abort the current operation; own errors remain errors |
+| `strongNonceRequirementSurvivesStatusChanges` | Removed/unsupported capability in later STATUS cannot downgrade an active nonce operation |
+| `matchingNonceCorruptionRemainsStrict` | Matching-operation wrong begin metadata, record CRC and footer count/digest/error retain strict failure results |
+| `history-operation-process` | Separate QtCore+bcrypt-only executables invoke the same production CNG helper; 32-hex shape, distinct first values and fallback little-endian/nonzero contracts pass. This tests real process restarts without claiming mathematical uniqueness |
+| Native `HistoryOperationTests` in `firmware-host` | Shared real CDC collector discards overflow/NUL through newline; malformed tokens cannot cancel an active snapshot; numeric response bytes remain unchanged; extended begin/record/error/footer echo and buffer bounds pass |
+
+The updated archive suite passed 40/40 and monitor suite 61/61 locally. These are
+host/fake-clock/channel results. The single-writer firmware cannot physically
+emit an old operation after a replacement begin: bytes accepted before replacement
+precede it in FIFO order and replacement closes the old snapshot. Retained
+post-begin stale-frame parser tests therefore remain explicitly adversarial
+replay tests, separate from the new physically ordered restart regressions.
+
+Two process-probe outputs being different does not prove all future values
+unique. With healthy uniform CNG, the per-stale-value bound is `1/2^128` in nonce
+mode and `1/(2^32-1)` in numeric fallback. Exact full-identity collisions remain
+indistinguishable; no absolute guarantee or authentication is claimed.
+
+The working tree based on `17794dc`, built as `0.5.2-9-g17794dc-dirty`, passed:
+
+| Environment / offline gate | Actual result |
+| --- | --- |
+| Windows 11, MSVC 19.51.36260, static Qt 6.12, /MT, WinRT | Products build; root CTest 20/20 in 337.61 s; nested app CTest 8/8 in 38.26 s, including 40 archive cases and 61 monitor cases |
+| Windows identity graph | Root and standalone CLI, PE VERSIONINFO and isolated EXEs pass clean → source-only dirty → clean revert without manual configure; wrong expected identity rejected |
+| Ubuntu WSL, GCC 13.3 | Full native CTest 14/14 in 6.78 s |
+| Ubuntu WSL, fatal ASan/UBSan | Full CTest 15/15 in 7.30 s, including sanitizer-policy and firmware-host; ASAN/UBSAN/LSAN option variables unset |
+| Standard-library maintenance | 11/11; no device discovery or USB backend dependencies |
+| Both firmware targets, Windows and Linux | Actual compilation and offline relink passed; Linux strict image validation, artifact hashes and all 36 current firmware/core source hashes matched |
+| Windows packaging | Driver/INF/catalog build checks; CPack runtime/source ZIP and SHA256; extracted source kit without .git rebuilt and passed native 16/16 and supported desktop 6/6, including archive-transport and history-operation-process |
+| Publication checks | Staged index, worktree and reachable-history audits, gitleaks, actionlint and local documentation link targets passed |
+
+The ordinary Windows CTest and extracted-source-kit check both run the new
+regression. CI uses these same gates; portable firmware-host covers the command
+collector and extended serializer in normal and fatal-sanitizer jobs.
+
+No image activation, live BLE/USB exchange, service/driver installation or kernel
+runtime experiment was performed for this follow-up. Prior hardware evidence and
+hosted runs below retain their historical scope.
+
 ## Serial output lifecycle follow-up: R1/R3 — 2026-10-25
 
 Baseline: `9e043226d5c2f7694e20665e49c2211390506b6e` on

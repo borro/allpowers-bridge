@@ -1,10 +1,22 @@
 #include "bluetooth.h"
 #include <QBluetoothUuid>
 
-BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots)
-    : TelemetryTransport(parent), offline_(offline) {
+BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
+                           BleChannel *channel, std::function<qint64()> clock)
+    : TelemetryTransport(parent), channel_(channel), clock_(std::move(clock)), offline_(offline) {
   elapsed.start();
-  if (!offline) {
+  if (channel_) {
+    channel_->setParent(this);
+    connect(channel_, &BleChannel::found, this, &TelemetryTransport::found);
+    connect(channel_, &BleChannel::ready, this, &BleTransport::acceptReady);
+    connect(channel_, &BleChannel::received, this, [this](quint64 generation, QByteArray value) {
+      acceptPacket(generation, session.generation(), value);
+    });
+    connect(channel_, &BleChannel::failed, this, [this](quint64 generation, QString reason) {
+      if (active_ && generation == epoch) fail(reason);
+    });
+  }
+  if (!offline && !channel_) {
     scanner = new QBluetoothDeviceDiscoveryAgent(this);
     scanner->setLowEnergyDiscoveryTimeout(7000);
     auto device = [this](const QBluetoothDeviceInfo &info) {
@@ -33,19 +45,8 @@ BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots)
     });
   }
   tick.setInterval(500);
-  connect(&tick, &QTimer::timeout, this, [this] {
-    auto s = session.snapshot(quint32(elapsed.elapsed()));
-    if (!connected_)
-      s.fresh = 0;
-    emit snapshot(s);
-    if (connected_) {
-      const auto now = quint32(elapsed.elapsed());
-      recovery.observe(now, s.fresh);
-      if (recovery.reconnectDue(now))
-        fail("Полная телеметрия не поступает");
-    }
-  });
-  if (snapshots)
+  connect(&tick, &QTimer::timeout, this, &BleTransport::refresh);
+  if (snapshots && !clock_)
     tick.start();
   poll.setInterval(int(ap_poll_interval_ms()));
   connect(&poll, &QTimer::timeout, this, &BleTransport::sendPoll);
@@ -62,6 +63,12 @@ void BleTransport::setPhase(const QString &phase) {
   emit stateChanged();
 }
 void BleTransport::scan() {
+  if (channel_ && !offline_) {
+    ++discoveries;
+    channel_->scan();
+    emit stateChanged();
+    return;
+  }
   if (!scanner) {
     error_ = "Автономный тест: Bluetooth не используется";
     emit stateChanged();
@@ -81,6 +88,8 @@ void BleTransport::scan() {
 void BleTransport::destroyConnection() {
   deadline.stop();
   poll.stop();
+  deadlineAt_ = pollAt_ = -1;
+  if (channel_) channel_->close();
   connected_ = false;
   if (service) {
     service->disconnect(this);
@@ -97,13 +106,13 @@ void BleTransport::destroyConnection() {
 }
 void BleTransport::start(const QString &address, int model) {
   stop();
-  if (!devices.contains(address)) {
+  if (!channel_ && !devices.contains(address)) {
     error_ = "Сначала найдите станцию";
     emit stateChanged();
     return;
   }
   address_ = address;
-  name_ = devices[address].name();
+  name_ = channel_ ? QString() : devices[address].name();
   profile = model;
   active_ = true;
   retrySeconds = 2;
@@ -124,7 +133,8 @@ void BleTransport::resume(const QString &address, const QString &name, int model
 void BleTransport::discoveryEnded() {
   if (active_ && !controller && !retry.isActive()) {
     setPhase(QString("Станция пока недоступна · поиск через %1 с").arg(retrySeconds));
-    retry.start(retrySeconds * 1000);
+    retryAt_ = nowMs() + retrySeconds * 1000;
+    if (!clock_) retry.start(retrySeconds * 1000);
     retrySeconds = qMin(20, retrySeconds * 2);
   } else {
     emit stateChanged();
@@ -134,12 +144,13 @@ void BleTransport::stop() {
   active_ = false;
   ++epoch;
   retry.stop();
+  retryAt_ = -1;
   if (scanner && scanner->isActive())
     scanner->stop();
   destroyConnection();
   session.reset(profile);
   setPhase("Отключено");
-  emit snapshot(session.snapshot(quint32(elapsed.elapsed())));
+  emit snapshot(session.snapshot(quint32(nowMs())));
 }
 void BleTransport::fail(const QString &message) {
   if (!active_)
@@ -149,7 +160,8 @@ void BleTransport::fail(const QString &message) {
   ++epoch;
   destroyConnection();
   setPhase(message + QString(" · повтор через %1 с").arg(retrySeconds));
-  retry.start(retrySeconds * 1000);
+  retryAt_ = nowMs() + retrySeconds * 1000;
+  if (!clock_) retry.start(retrySeconds * 1000);
   retrySeconds = qMin(20, retrySeconds * 2);
 }
 void BleTransport::connectDevice() {
@@ -161,6 +173,18 @@ void BleTransport::connectDevice() {
     setPhase("Автономный тест: Bluetooth не используется");
     return;
   }
+  if (channel_) {
+    retry.stop();retryAt_=-1;
+    destroyConnection();
+    ++epoch;
+    session.reset(profile ? profile : int(ap_model_hint(name_.toUtf8().constData())));
+    emit newSession();
+    deadlineAt_=nowMs()+30000;
+    ++attempts;
+    setPhase("Подключение…");
+    channel_->connectToDevice(address_,epoch);
+    return;
+  }
   const auto info = devices.value(address_);
   if (!info.isValid()) {
     setPhase("Поиск последней станции…");
@@ -168,6 +192,7 @@ void BleTransport::connectDevice() {
     return;
   }
   retry.stop();
+  retryAt_ = -1;
   destroyConnection();
   ++epoch;
   const auto generation = epoch;
@@ -217,7 +242,8 @@ void BleTransport::connectDevice() {
     s->discoverDetails(QLowEnergyService::FullDiscovery);
   });
   setPhase("Подключение…");
-  deadline.start(30000);
+  deadlineAt_ = nowMs() + 30000;
+  if (!clock_) deadline.start(30000);
   ++attempts;
   c->connectToDevice();
 }
@@ -249,26 +275,14 @@ void BleTransport::readyService(quint64 generation) {
           [this, s, rx, generation, token](const auto &characteristic, const QByteArray &value) {
             if (!active_ || epoch != generation || service != s || characteristic != rx)
               return;
-            bool valid = session.receive(token, value, quint32(elapsed.elapsed()));
-            packets++;
-            emit packet(QString::fromLatin1(value.toHex()), valid);
+            acceptPacket(generation, token, value);
           });
   connect(s, &QLowEnergyService::descriptorWritten, this,
           [this, s, cccd, generation](const auto &descriptor, const QByteArray &value) {
             if (!active_ || service != s || epoch != generation || descriptor != cccd ||
                 value == QLowEnergyCharacteristic::CCCDDisable)
               return;
-            if (connected_)
-              return;
-            deadline.stop();
-            connected_ = true;
-            connects++;
-            retrySeconds = 2;
-            recovery.begin(quint32(elapsed.elapsed()));
-            error_.clear();
-            setPhase("Подключено · получение данных");
-            poll.start();
-            sendPoll();
+            acceptReady(generation);
           });
   s->writeDescriptor(cccd, flags & QLowEnergyCharacteristic::Notify
                                ? QLowEnergyCharacteristic::CCCDEnableNotification
@@ -276,8 +290,14 @@ void BleTransport::readyService(quint64 generation) {
 }
 void BleTransport::sendPoll() {
   auto data = session.poll();
-  if (!connected_ || !service || data.isEmpty())
+  if (!connected_ || (!service && !channel_) || data.isEmpty())
     return;
+  if (channel_) {
+    channel_->write(data);
+    ++polls;
+    pollAt_=nowMs()+ap_poll_interval_ms();
+    return;
+  }
   if (!(tx.properties() &
         (QLowEnergyCharacteristic::Write | QLowEnergyCharacteristic::WriteNoResponse))) {
     fail("Нет канала запроса");
@@ -288,6 +308,42 @@ void BleTransport::sendPoll() {
                                    ? QLowEnergyService::WriteWithResponse
                                    : QLowEnergyService::WriteWithoutResponse);
   polls++;
+  pollAt_=nowMs()+ap_poll_interval_ms();
+}
+
+void BleTransport::refresh() {
+  const auto now=nowMs();
+  // Native QTimers remain the scheduler for the native clock. An externally
+  // supplied clock is advanced by its owner and drives those same callbacks.
+  // Do not run both schedulers: a late native timer could otherwise double-poll.
+  if (clock_) {
+    if (active_ && retryAt_>=0 && now>=retryAt_) connectDevice();
+    if (active_ && deadlineAt_>=0 && now>=deadlineAt_) fail("Превышено время ожидания BLE");
+    if (connected_ && pollAt_>=0 && now>=pollAt_) sendPoll();
+  }
+  auto s=session.snapshot(quint32(now));
+  if (!connected_) s.fresh=0;
+  emit snapshot(s);
+  if (connected_) {
+    recovery.observe(quint32(now),s.fresh);
+    if (recovery.reconnectDue(quint32(now))) fail("Полная телеметрия не поступает");
+  }
+}
+void BleTransport::acceptPacket(quint64 generation, quint64 token, const QByteArray &value) {
+  if (!active_ || generation!=epoch) return;
+  const bool valid=session.receive(token,value,quint32(nowMs()));
+  ++packets;
+  emit packet(QString::fromLatin1(value.toHex()),valid);
+}
+void BleTransport::acceptReady(quint64 generation) {
+  if (!active_ || generation!=epoch || connected_) return;
+  deadline.stop();deadlineAt_=-1;
+  connected_=true;++connects;retrySeconds=2;
+  recovery.begin(quint32(nowMs()));
+  error_.clear();
+  setPhase("Подключено · получение данных");
+  if (!clock_) poll.start();
+  sendPoll();
 }
 QJsonObject BleTransport::diagnostics() const {
   return {{"transport", "Qt Bluetooth / Windows WinRT"},
@@ -303,6 +359,8 @@ QJsonObject BleTransport::diagnostics() const {
           {"bluetooth_used", discoveries > 0 || attempts > 0},
           {"connections", qint64(connects)},
           {"drops", qint64(drops)},
+          {"retry_at_ms", retryAt_},
+          {"gatt_deadline_ms", deadlineAt_},
           {"polls", qint64(polls)},
           {"packets", qint64(packets)},
           {"mtu", controller ? controller->mtu() : 0},

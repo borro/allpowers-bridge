@@ -1,0 +1,242 @@
+#include "monitor_application.h"
+#include "battery_probe.h"
+#include "connection_lease.h"
+#include "integration.h"
+#include "notices.h"
+#include "usb_transport.h"
+#include "window.h"
+#include <QApplication>
+#include <QCommandLineParser>
+#include <QDir>
+#include <QFile>
+#include <QFontDatabase>
+#include <QIcon>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QTemporaryDir>
+#include <QTimer>
+#include <memory>
+
+int runMonitorApplication(QApplication &app,const QStringList &arguments,
+                          const MonitorRuntime &runtime) {
+  app.setApplicationName("AllpowersMonitor");
+  app.setApplicationVersion(APP_VERSION);
+  app.setStyle("Fusion");
+  app.setWindowIcon(QIcon(":/assets/allpowers.ico"));
+  // The offscreen Qt platform does not discover Windows fonts automatically.
+  if (QGuiApplication::platformName() == "offscreen") {
+    auto fonts = QDir(qEnvironmentVariable("SystemRoot") + "/Fonts");
+    for (const QString &name : {QString("segoeui.ttf"), QString("segoeuib.ttf")})
+      QFontDatabase::addApplicationFont(fonts.filePath(name));
+  }
+  QCommandLineParser parser;
+  parser.addHelpOption();
+  parser.addVersionOption();
+  parser.addOptions(
+      {{"self-test", "Run an offline core/UI smoke test"},
+       {"demo", "Show synthetic data without Bluetooth"},
+       {"report", "Write diagnostic JSON", "path"},
+       {"screenshot", "Save a UI screenshot", "path"},
+       {"export-licenses", "Extract embedded notices and license texts", "directory"},
+       {"verify-station", "Verify saved station telemetry, then disconnect", "seconds"},
+       {"test-seconds", "Close automatically", "seconds"},
+       {"scan-seconds", "Scan BLE without making a connection", "seconds"},
+       {"scan-usb", "List supported USB boards without opening ports"},
+       {"verify-usb", "Read telemetry from an explicitly selected USB board", "seconds"},
+       {"usb-device", "Exact USB serial for the manual USB verification", "serial"},
+       {"usb-board", "Expected board profile for manual verification", "board"},
+       {"battery-probe", "Read native battery IOCTLs/power events without BLE or mutations",
+        "seconds"}});
+  parser.process(arguments);
+  if (parser.isSet("scan-usb")) {
+    if (!parser.isSet("report"))
+      return 2;
+    QJsonArray rows;
+    for (const auto &p : allpowersUsbPorts())
+      rows.append(
+          QJsonObject{{"serial", p.serial}, {"port", p.port}, {"description", p.description}});
+    QFile out(parser.value("report"));
+    if (!out.open(QIODevice::WriteOnly))
+      return 3;
+    out.write(QJsonDocument(QJsonObject{{"boards", rows}, {"bluetooth_used", false}}).toJson());
+    return 0;
+  }
+  if (parser.isSet("verify-usb")) {
+    const int seconds = parser.value("verify-usb").toInt();
+    const auto serial = parser.value("usb-device"), board = parser.value("usb-board");
+    if (seconds < 5 || seconds > 120 || serial.isEmpty() || !parser.isSet("report") ||
+        (board != "waveshare-147" && board != "pocket-096"))
+      return 2;
+    UsbTransport usb(&app);
+    ap_snapshot last{};
+    int samples = 0;
+    HistoryPoints archive;
+    QObject::connect(&usb, &TelemetryTransport::snapshot, &app, [&](ap_snapshot s) {
+      last = s;
+      if (s.fresh)
+        samples++;
+    });
+    QObject::connect(&usb, &TelemetryTransport::historyImported, &app,
+                     [&](HistoryPoints p) { archive = p; });
+    usb.resume(serial, {}, 0);
+    QTimer::singleShot(seconds * 1000, &app, [&] {
+      auto report = usb.diagnostics();
+      const bool ok = usb.connected() && last.fresh && samples >= 2 && report["usb_board"] == board;
+      report["status"] = ok ? "PASS" : "FAIL";
+      report["soc"] = int(last.soc);
+      report["input_w"] = int(last.input_w);
+      report["output_w"] = int(last.output_w);
+      report["source"] = int(last.source);
+      report["fresh"] = bool(last.fresh);
+      report["samples"] = samples;
+      report["archive_points"] = archive.size();
+      report["bluetooth_used"] = false;
+      usb.stop();
+      report["port_closed_after_test"] = !usb.active();
+      QFile file(parser.value("report"));
+      const auto bytes = QJsonDocument(report).toJson();
+      const bool saved = file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+      app.exit(ok && saved ? 0 : 5);
+    });
+    return app.exec();
+  }
+  if (parser.isSet("battery-probe"))
+    return runBatteryProbe(parser.value("report"), parser.value("battery-probe").toInt());
+  if (parser.isSet("export-licenses"))
+    return exportEmbeddedLicenses(parser.value("export-licenses")) ? 0 : 4;
+  if (parser.isSet("verify-station")) {
+    const int seconds = parser.value("verify-station").toInt();
+    QFile settingsFile(QDir(monitorDataDirectory()).filePath("settings.json"));
+    if (seconds < 10 || seconds > 120 || !parser.isSet("report") ||
+        !settingsFile.open(QIODevice::ReadOnly))
+      return 2;
+    const auto settings = QJsonDocument::fromJson(settingsFile.readAll()).object();
+    const auto address = settings["address"].toString();
+    if (address.isEmpty())
+      return 2;
+    ConnectionLease lease(runtime.leaseKey);
+    const bool installed=runtime.serviceInstalled ? runtime.serviceInstalled() : integrationInstalled();
+    if (installed || !lease.acquire()) {
+      QFile file(parser.value("report"));
+      if (file.open(QIODevice::WriteOnly))
+        file.write(QJsonDocument(QJsonObject{{"status", "BUSY"},
+          {"error", "Direct verification unavailable: installed service or another direct owner"},
+          {"bluetooth_used", false}}).toJson());
+      return 5;
+    }
+    std::unique_ptr<TelemetryTransport> transport(runtime.makeTransport
+        ? runtime.makeTransport(&app,false) : new BleTransport(&app));
+    ap_snapshot latest{};
+    QElapsedTimer clock;
+    clock.start();
+    qint64 firstFresh = -1;
+    bool started = false, finished = false;
+    auto finish = [&] {
+      if (finished)
+        return;
+      finished = true;
+      const bool ok = transport->connected() && latest.fresh && latest.valid_frames >= 3 &&
+                      firstFresh >= 0 && clock.elapsed() - firstFresh >= 5000;
+      auto report = transport->diagnostics();
+      report["status"] = ok ? "PASS" : "FAIL";
+      report["fresh"] = bool(latest.fresh);
+      report["valid_frames"] = int(latest.valid_frames);
+      report["invalid_frames"] = int(latest.invalid_frames);
+      report["soc"] = int(latest.soc);
+      report["input_w"] = int(latest.input_w);
+      report["output_w"] = int(latest.output_w);
+      report["runtime_s"] = int(latest.runtime_s);
+      report["source"] = int(latest.source);
+      report["source_raw"] = int(latest.source_raw);
+      report["duration_ms"] = double(clock.elapsed());
+      transport->stop();
+      report["disconnected_after_test"] = !transport->active();
+      QFile file(parser.value("report"));
+      const bool written =
+          file.open(QIODevice::WriteOnly) && file.write(QJsonDocument(report).toJson()) > 0;
+      app.exit(ok && written ? 0 : 5);
+    };
+    QObject::connect(transport.get(), &TelemetryTransport::found, &app,
+                     [&](QString found, QString, int, int hint) {
+                       if (!started && found.compare(address, Qt::CaseInsensitive) == 0) {
+                         started = true;
+                         const int model = settings["profile"].toInt();
+                         transport->start(found, model ? model : hint);
+                       }
+                     });
+    QObject::connect(transport.get(), &TelemetryTransport::snapshot, &app, [&](ap_snapshot data) {
+      latest = data;
+      if (data.fresh && firstFresh < 0)
+        firstFresh = clock.elapsed();
+      if (firstFresh >= 0 && clock.elapsed() - firstFresh >= 5000 && data.fresh)
+        finish();
+    });
+    QTimer::singleShot(seconds * 1000, &app, finish);
+    transport->scan();
+    return app.exec();
+  }
+  if (parser.isSet("scan-seconds")) {
+    int seconds = parser.value("scan-seconds").toInt();
+    if (seconds < 1 || seconds > 30 || !parser.isSet("report"))
+      return 2;
+    BleTransport transport(&app);
+    QJsonArray devices;
+    QObject::connect(&transport, &BleTransport::found, &app,
+                     [&](QString address, QString name, int rssi, int model) {
+                       devices.append(QJsonObject{
+                           {"address", address}, {"name", name}, {"rssi", rssi}, {"model", model}});
+                     });
+    transport.scan();
+    QTimer::singleShot(seconds * 1000, &app, [&] {
+      auto report = transport.diagnostics();
+      report["devices"] = devices;
+      report["connection_attempted"] = false;
+      transport.stop();
+      QFile file(parser.value("report"));
+      if (file.open(QIODevice::WriteOnly))
+        file.write(QJsonDocument(report).toJson(QJsonDocument::Indented));
+      app.exit(0);
+    });
+    return app.exec();
+  }
+  bool selfTest = parser.isSet("self-test"), demo = parser.isSet("demo");
+  QTemporaryDir temporary;
+  if ((selfTest || demo) && !temporary.isValid()) {
+    qCritical("Cannot create an isolated data directory for demo/self-test");
+    return 3;
+  }
+  if (selfTest || demo)
+    qputenv("ALLPOWERS_DATA_DIR", temporary.path().toUtf8());
+  if (!ap_self_test())
+    return 2;
+  MonitorWindow window(selfTest || demo,nullptr,runtime.makeTransport
+      ? runtime.makeTransport(nullptr,selfTest || demo) : nullptr);
+  window.show();
+  if (demo || selfTest)
+    window.loadDemo();
+  auto finish = [&] {
+    if (parser.isSet("screenshot"))
+      window.grab().save(parser.value("screenshot"));
+    auto info = window.diagnostics();
+    const bool lgplNotice = embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
+    bool ok = info["history_error"].toString().isEmpty() &&
+              info["history"].toObject().contains("live") && lgplNotice;
+    if (parser.isSet("report")) {
+      QFile out(parser.value("report"));
+      if (out.open(QIODevice::WriteOnly)) {
+        info["status"] = ok ? "PASS" : "FAIL";
+        info["embedded_notices"] = embeddedLicenseFiles().size();
+        info["lgpl_notice"] = lgplNotice;
+        info["qt_runtime"] = qVersion();
+        info["requested_mode"] = selfTest ? "self-test" : demo ? "demo" : "normal";
+        out.write(QJsonDocument(info).toJson(QJsonDocument::Indented));
+      } else
+        ok = false;
+    }
+    app.exit(ok ? 0 : 3);
+  };
+  if (selfTest || parser.isSet("test-seconds"))
+    QTimer::singleShot(selfTest ? 1500 : qMax(1, parser.value("test-seconds").toInt()) * 1000, &app,
+                       finish);
+  return app.exec();
+}

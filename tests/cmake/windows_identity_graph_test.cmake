@@ -1,0 +1,112 @@
+cmake_minimum_required(VERSION 4.4)
+find_package(Git REQUIRED)
+find_program(powershell NAMES pwsh powershell REQUIRED)
+foreach(required WORK BUILD_ROOT QT_ROOT SOURCE_CACHE DEPS_DIR CXX)
+  if(NOT ${required})
+    message(FATAL_ERROR "Set ${required} for the real Windows identity graph regression")
+  endif()
+endforeach()
+file(MAKE_DIRECTORY "${WORK}")
+file(REAL_PATH "${WORK}" scratch)
+file(REAL_PATH "${BUILD_ROOT}" build_root)
+cmake_path(IS_PREFIX build_root "${scratch}" NORMALIZE inside)
+if(NOT inside OR scratch STREQUAL build_root)
+  message(FATAL_ERROR "Windows identity test needs a dedicated binary subdirectory")
+endif()
+file(REMOVE_RECURSE "${scratch}")
+set(source "${scratch}/source")
+file(MAKE_DIRECTORY "${source}")
+if(SNAPSHOT_REF)
+  # Used to retain evidence that the same regression fails before the fix.
+  execute_process(COMMAND "${GIT_EXECUTABLE}" archive --format=tar "--output=${scratch}/snapshot.tar" "${SNAPSHOT_REF}"
+    WORKING_DIRECTORY "${ROOT}" COMMAND_ERROR_IS_FATAL ANY)
+  file(ARCHIVE_EXTRACT INPUT "${scratch}/snapshot.tar" DESTINATION "${source}")
+else()
+  include("${ROOT}/cmake/PublicSources.cmake")
+  ap_public_sources(files "${ROOT}")
+  foreach(name IN LISTS files)
+    get_filename_component(parent "${name}" DIRECTORY)
+    file(MAKE_DIRECTORY "${source}/${parent}")
+    file(COPY_FILE "${ROOT}/${name}" "${source}/${name}")
+  endforeach()
+endif()
+function(git)
+  execute_process(COMMAND "${GIT_EXECUTABLE}" ${ARGN} WORKING_DIRECTORY "${source}"
+    OUTPUT_QUIET ERROR_QUIET COMMAND_ERROR_IS_FATAL ANY)
+endfunction()
+git(init -q)
+git(config user.name "Windows Identity Graph Test")
+git(config user.email "identity@example.invalid")
+git(config commit.gpgsign false)
+git(add .)
+git(commit -qm fixture)
+git(tag v1.2.3)
+set(common -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
+  "-DCMAKE_CXX_COMPILER=${CXX}" -DBUILD_TESTING=ON)
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${source}" -B "${source}/build/root" ${common}
+  -DALLPOWERS_BUILD_WINDOWS=ON "-DALLPOWERS_QT_ROOT=${QT_ROOT}"
+  "-DALLPOWERS_QT_SOURCE_CACHE=${SOURCE_CACHE}" "-DALLPOWERS_DEPS_DIR=${DEPS_DIR}"
+  OUTPUT_FILE "${scratch}/root-configure.log" ERROR_FILE "${scratch}/root-configure.log" COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${source}/apps/windows" -B "${source}/build/standalone" ${common}
+  "-DCMAKE_PREFIX_PATH=${QT_ROOT}" "-DALLPOWERS_QT_SOURCE_CACHE=${SOURCE_CACHE}"
+  OUTPUT_FILE "${scratch}/standalone-configure.log" ERROR_FILE "${scratch}/standalone-configure.log" COMMAND_ERROR_IS_FATAL ANY)
+function(build phase)
+  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${source}/build/root" --target windows --parallel 4
+    OUTPUT_FILE "${scratch}/${phase}-root-build.log" ERROR_FILE "${scratch}/${phase}-root-build.log"
+    COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${source}/build/standalone" --parallel 4
+    OUTPUT_FILE "${scratch}/${phase}-standalone-build.log" ERROR_FILE "${scratch}/${phase}-standalone-build.log"
+    COMMAND_ERROR_IS_FATAL ANY)
+endfunction()
+function(check expected phase)
+  foreach(layout root standalone)
+    if(layout STREQUAL root)
+      set(folder "${source}/build/root/dist/windows/AllpowersMonitor")
+    else()
+      set(folder "${source}/build/standalone")
+    endif()
+    foreach(app AllpowersMonitor AllpowersWidget)
+      execute_process(COMMAND "${folder}/${app}.exe" --version -platform offscreen
+        OUTPUT_VARIABLE actual OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_VARIABLE error COMMAND_ERROR_IS_FATAL ANY)
+      if(NOT actual STREQUAL "${app} ${expected}")
+        message(FATAL_ERROR "${layout}/${app} CLI version '${actual}' != '${expected}': ${error}")
+      endif()
+      execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/cmake/CheckExeVersion.ps1"
+        -Path "${folder}/${app}.exe" -ExpectedVersion "${expected}" OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
+    endforeach()
+    execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${source}/build/${layout}"
+      -R "^(single-exe|widget-single-exe)$" --output-on-failure
+      OUTPUT_VARIABLE tests ERROR_VARIABLE error RESULT_VARIABLE result)
+    file(WRITE "${scratch}/${phase}-${layout}-ctest.log" "${tests}\n${error}")
+    if(result)
+      message(FATAL_ERROR "${phase} ${layout} CTest rejected current CLI/PE identity: ${tests}\n${error}")
+    endif()
+  endforeach()
+endfunction()
+build(clean)
+check(1.2.3 clean)
+# An ordinary source-only edit must not require manual configure and must update
+# Monitor and Widget CLI, PE resources, and expected values in both CTest graphs.
+file(APPEND "${source}/apps/windows/main.cpp" "\n// source-only identity regression\n")
+build(dirty)
+check(1.2.3-dirty dirty)
+execute_process(COMMAND "${CMAKE_COMMAND}" -P "${source}/build/root/check-package-identity.cmake"
+  RESULT_VARIABLE packaged OUTPUT_QUIET ERROR_QUIET)
+if(packaged EQUAL 0)
+  message(FATAL_ERROR "Dirty incremental build bypassed the configured clean package identity")
+endif()
+git(checkout -- apps/windows/main.cpp)
+build(reverted)
+check(1.2.3 reverted)
+execute_process(COMMAND "${CMAKE_COMMAND}" -P "${source}/build/root/check-package-identity.cmake"
+  OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
+# A caller supplying a wrong identity must still reject a valid executable.
+file(WRITE "${scratch}/wrong-identity.cmake" "set(ALLPOWERS_VERSION \"9.8.7\")\n")
+execute_process(COMMAND "${CMAKE_COMMAND}"
+  "-DEXE=${source}/build/standalone/AllpowersWidget.exe" "-DIDENTITY_FILE=${scratch}/wrong-identity.cmake"
+  "-DWORK=${scratch}/wrong-exe" -DWIDGET=ON -P "${ROOT}/cmake/CheckSingleExe.cmake"
+  RESULT_VARIABLE accepted OUTPUT_QUIET ERROR_QUIET)
+if(accepted EQUAL 0)
+  message(FATAL_ERROR "A wrong generated expected identity accepted the executable")
+endif()
+message(STATUS "Root and standalone Monitor/Widget CLI, PE and CTest pass clean/source-only-dirty/reverted identity without manual configure")

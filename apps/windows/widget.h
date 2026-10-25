@@ -10,6 +10,11 @@
 class QSettings;
 class QDialog;
 class QPainter;
+struct WidgetRuntime {
+  std::function<HistoryWorker *()> makeHistoryWorker;
+  std::function<qint64()> wallClock;
+  std::function<qint64()> elapsedClock;
+};
 bool setWidgetStartup(QSettings &store, bool enabled, const QString &executable);
 
 class WidgetCard : public DesktopSurface {
@@ -73,6 +78,9 @@ class WidgetController : public QObject {
   QString historyAddress, historyError, usbEndpoint;
   HistoryPoints stored, remotePoints, usbPoints, plotted;
   HistorySampleQueue sampleQueue;
+  WidgetRuntime runtime_;
+  qint64 wallNow() const;
+  qint64 elapsedNow() const;
   bool offline_, locked = false;
   QPointer<QDialog> settingsDialog;
   void save();
@@ -85,7 +93,7 @@ class WidgetController : public QObject {
 
 public:
   explicit WidgetController(QString directory, bool offline = false, bool desktop = true,
-                            TransportRouter::Factory factory = {});
+                            TransportRouter::Factory factory = {}, WidgetRuntime runtime = {});
   ~WidgetController() override;
   WidgetCard *card() {
     return &card_;

@@ -47,9 +47,19 @@ if(BUILD_TESTING)
   add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure)
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
     "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
-    "-DVERSION=${ALLPOWERS_VERSION}"
+    "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
     "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
+  add_test(NAME widget-single-exe COMMAND "${CMAKE_COMMAND}"
+    "-DEXE=${windows_output}/AllpowersWidget.exe" "-DWORK=${PROJECT_BINARY_DIR}/widget-single-exe-check"
+    "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}" -DWIDGET=ON
+    -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
+  add_test(NAME windows-identity-graph COMMAND "${CMAKE_COMMAND}"
+    "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
+    "-DWORK=${PROJECT_BINARY_DIR}/windows-identity-graph" "-DQT_ROOT=${ALLPOWERS_QT_ROOT}"
+    "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}" "-DDEPS_DIR=${ALLPOWERS_DEPS_DIR}"
+    "-DCXX=${CMAKE_CXX_COMPILER}" -P "${PROJECT_SOURCE_DIR}/tests/cmake/windows_identity_graph_test.cmake")
+  set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS integration)
 endif()
 install(PROGRAMS "${windows_output}/AllpowersMonitor.exe" DESTINATION .)
 install(PROGRAMS "${windows_output}/AllpowersWidget.exe" DESTINATION .)

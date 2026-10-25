@@ -15,6 +15,57 @@
 #include <QUuid>
 #include <QWindow>
 #include <windows.h>
+#include <QSemaphore>
+#include <QMutexLocker>
+#include <QDateTime>
+#include <memory>
+#include <thread>
+
+struct DelayedHistoryState {
+  QSemaphore entered, permits;
+  QMutex mutex;
+  HistoryPoints attempted;
+};
+class DelayedHistoryWorker : public HistoryWorker {
+  std::shared_ptr<DelayedHistoryState> state;
+  bool badDatabase;
+public:
+  DelayedHistoryWorker(std::shared_ptr<DelayedHistoryState> value,bool bad=false)
+      : state(std::move(value)),badDatabase(bad) {}
+  void open(const QString &path) override {
+    HistoryWorker::open(badDatabase ? QFileInfo(path).absolutePath() : path);
+  }
+  void sample(QString address,ap_snapshot snapshot,qint64 wall,qint64 tick) override {
+    HistoryPoint point;point.address=address;point.data=snapshot;point.wall=wall;point.tick=tick;
+    { QMutexLocker lock(&state->mutex);state->attempted.append(point); }
+    state->entered.release();
+    // A finite failure bound keeps an assertion failure from hanging teardown.
+    if(!state->permits.tryAcquire(1,10000)) {
+      emit problem("Controlled worker was not released");emit sampleFinished();return;
+    }
+    HistoryWorker::sample(address,snapshot,wall,tick);
+  }
+};
+class WidgetHistoryTransport : public TelemetryTransport {
+  QString id;
+  bool running=false;
+public:
+  using TelemetryTransport::TelemetryTransport;
+  bool active() const override { return running; }
+  bool connected() const override { return running; }
+  bool scanning() const override { return false; }
+  QString address() const override { return id; }
+  QString phase() const override { return "synthetic"; }
+  QJsonObject diagnostics() const override { return {{"bluetooth_used",false}}; }
+  void scan() override {}
+  void start(const QString &address,int) override {id=address;running=true;emit newSession();}
+  void resume(const QString &address,const QString &,int model) override {start(address,model);}
+  void stop() override {running=false;}
+  void feed(quint32 soc) {
+    ap_snapshot value{};value.abi_version=1;value.main_seen=value.fresh=1;value.known=1;value.soc=soc;
+    emit snapshot(value);
+  }
+};
 
 static COLORREF composedPixel(HWND window, QPoint logical, qreal scale) {
   POINT point{qRound(logical.x() * scale), qRound(logical.y() * scale)};
@@ -129,6 +180,91 @@ static QByteArray widgetUsbStatus(const QString &board, int frames, int output =
 class WidgetTests : public QObject {
   Q_OBJECT
 private slots:
+  void realControllerCoalescesSlowWorkerAcrossStationAndSession() {
+    QTemporaryDir dir;
+    const auto base=QDateTime::currentSecsSinceEpoch();qint64 now=base;
+    auto state=std::make_shared<DelayedHistoryState>();
+    WidgetHistoryTransport *transport=nullptr;
+    WidgetRuntime runtime;
+    runtime.makeHistoryWorker=[&]{return new DelayedHistoryWorker(state);};
+    runtime.wallClock=[&]{return now;};runtime.elapsedClock=[&]{return (now-base)*1000;};
+    auto widget=std::make_unique<WidgetController>(dir.path(),false,false,
+      [&](const QString &,QObject *parent){return transport=new WidgetHistoryTransport(parent);},runtime);
+    auto unblock=qScopeGuard([&]{state->permits.release(100);});
+    QSignalSpy dispatched(widget.get(),&WidgetController::sample);
+    transport->resume("station-A",{},3);transport->feed(10);
+    QVERIFY(state->entered.tryAcquire(1,5000));
+    for(int i=0;i<1000;++i){++now;transport->feed(quint32(i%100));}
+    QCOMPARE(dispatched.size(),1);
+    QVERIFY(widget->diagnostics()["history_worker_busy"].toBool());
+    QVERIFY(widget->diagnostics()["history_sample_pending"].toBool());
+    transport->resume("station-B",{},3);++now;transport->feed(77);
+    QCOMPARE(dispatched.size(),1);
+    state->permits.release();
+    QTRY_COMPARE(dispatched.size(),2);
+    QVERIFY(state->entered.tryAcquire(1,5000));
+    QCOMPARE(dispatched.last()[0].toString(),QString("station-B"));
+    QCOMPARE(qvariant_cast<ap_snapshot>(dispatched.last()[1]).soc,77u);
+    ++now;transport->feed(80);
+    QVERIFY(widget->diagnostics()["history_sample_pending"].toBool());
+    emit transport->newSession();
+    QVERIFY(!widget->diagnostics()["history_sample_pending"].toBool());
+    state->permits.release();
+    QTRY_VERIFY(!widget->diagnostics()["history_worker_busy"].toBool());
+    QCOMPARE(dispatched.size(),2); // Old-session pending sample was cancelled.
+    // A new session on the same station must retain its own SQLite provenance.
+    ++now;transport->feed(88);
+    QTRY_COMPARE(dispatched.size(),3);
+    QVERIFY(state->entered.tryAcquire(1,5000));state->permits.release();
+    QTRY_VERIFY(!widget->diagnostics()["history_worker_busy"].toBool());
+    widget.reset();
+    HistoryStore stored(dir.filePath("history.sqlite3"));QVERIFY(stored.valid());
+    const auto a=stored.points("station-A",now), b=stored.points("station-B",now);
+    QCOMPARE(a.size(),1);QCOMPARE(a.first().data.soc,10u);
+    QCOMPARE(b.size(),2);QCOMPARE(b.first().data.soc,77u);QCOMPARE(b.last().data.soc,88u);
+    QVERIFY(b.first().session!=b.last().session);
+  }
+  void realControllerCompletesInvalidDatabaseJobs() {
+    QTemporaryDir dir;qint64 now=QDateTime::currentSecsSinceEpoch();
+    auto state=std::make_shared<DelayedHistoryState>();state->permits.release(100);
+    WidgetHistoryTransport *transport=nullptr;
+    WidgetRuntime runtime;
+    runtime.makeHistoryWorker=[&]{return new DelayedHistoryWorker(state,true);};
+    runtime.wallClock=[&]{return now;};
+    WidgetController widget(dir.path(),false,false,
+      [&](const QString &,QObject *parent){return transport=new WidgetHistoryTransport(parent);},runtime);
+    QSignalSpy dispatched(&widget,&WidgetController::sample);
+    transport->resume("station-A",{},3);transport->feed(10);
+    QTRY_VERIFY(!widget.diagnostics()["history_worker_busy"].toBool());
+    QVERIFY(!widget.diagnostics()["history_error"].toString().isEmpty());
+    ++now;transport->feed(20);
+    QTRY_COMPARE(dispatched.size(),2);
+    QTRY_VERIFY(!widget.diagnostics()["history_worker_busy"].toBool());
+  }
+  void realControllerShutdownDrainsLatestWithControlledWorker() {
+    QTemporaryDir dir;qint64 now=QDateTime::currentSecsSinceEpoch();
+    auto state=std::make_shared<DelayedHistoryState>();
+    WidgetHistoryTransport *transport=nullptr;
+    WidgetRuntime runtime;
+    runtime.makeHistoryWorker=[&]{return new DelayedHistoryWorker(state);};runtime.wallClock=[&]{return now;};
+    auto widget=std::make_unique<WidgetController>(dir.path(),false,false,
+      [&](const QString &,QObject *parent){return transport=new WidgetHistoryTransport(parent);},runtime);
+    auto unblock=qScopeGuard([&]{state->permits.release(100);});
+    QSignalSpy dispatched(widget.get(),&WidgetController::sample);
+    transport->resume("station-A",{},3);transport->feed(10);
+    QVERIFY(state->entered.tryAcquire(1,5000));
+    for(int i=0;i<1000;++i){++now;transport->feed(quint32(i%100));}
+    QCOMPARE(dispatched.size(),1);
+    QSemaphore start;
+    std::thread release([&]{start.acquire();state->permits.release(2);});
+    QElapsedTimer shutdown;shutdown.start();start.release();widget.reset();release.join();
+    QVERIFY(shutdown.elapsed()<5000);
+    {QMutexLocker lock(&state->mutex);QCOMPARE(state->attempted.size(),2);
+      QCOMPARE(state->attempted.last().data.soc,99u);}
+    HistoryStore stored(dir.filePath("history.sqlite3"));QVERIFY(stored.valid());
+    const auto points=stored.points("station-A",now);
+    QCOMPARE(points.size(),2);QCOMPARE(points.last().data.soc,99u);
+  }
   void activitySurvivesStopAndTransportSwitch() {
     TransportRouter router(nullptr,false,false,"bluetooth",
       [](const QString &,QObject *parent){return new CountingTransport(parent);},

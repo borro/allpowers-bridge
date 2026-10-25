@@ -38,7 +38,7 @@ target_include_directories(monitor_backend PUBLIC . ../../core/native ../../core
 target_compile_definitions(monitor_backend PUBLIC NOMINMAX)
 target_link_libraries(monitor_backend PUBLIC Qt6::Core Qt6::Bluetooth Qt6::Sql Qt6::Network
   advapi32 setupapi cfgmgr32 newdev shell32 wintrust crypt32 ole32 user32)
-add_library(monitor_lib STATIC chart.cpp controls.cpp window.cpp notices.cpp)
+add_library(monitor_lib STATIC chart.cpp controls.cpp window.cpp notices.cpp monitor_application.cpp)
 target_include_directories(monitor_lib PUBLIC . ../../core/native)
 target_link_libraries(monitor_lib PUBLIC Qt6::Widgets monitor_backend)
 add_library(widget_lib STATIC desktop_surface.cpp widget.cpp)
@@ -113,6 +113,7 @@ endif()
 target_link_libraries(AllpowersMonitor PRIVATE monitor_lib)
 if(BUILD_TESTING)
   qt_add_executable(monitor_tests ../../tests/desktop/monitor_test.cpp)
+  target_sources(monitor_tests PRIVATE ${notice_sources})
   target_link_libraries(monitor_tests PRIVATE monitor_lib Qt6::Test)
   target_compile_definitions(monitor_tests PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures")
   target_link_libraries(monitor_tests PRIVATE widget_lib)
@@ -133,12 +134,12 @@ if(BUILD_TESTING)
     -platform windows -o dropdown-native-tests.txt,txt)
   set_tests_properties(dropdown-native PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5")
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersMonitor>"
-    "-DVERSION=${ALLPOWERS_VERSION}"
+    "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/single-exe-check"
     "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     -P "${ALLPOWERS_ROOT}/cmake/CheckSingleExe.cmake")
   add_test(NAME widget-single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersWidget>"
-    "-DVERSION=${ALLPOWERS_VERSION}"
+    "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/widget-single-exe-check" -DWIDGET=ON
     -P "${ALLPOWERS_ROOT}/cmake/CheckSingleExe.cmake")
 

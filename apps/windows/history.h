@@ -5,6 +5,8 @@
 #include <QSqlDatabase>
 #include <QThread>
 #include <optional>
+#include <functional>
+#include <memory>
 
 struct HistoryPoint {
   QString address, session;
@@ -45,6 +47,18 @@ HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &serv
 HistoryPoints mergeUsbHistory(const HistoryPoints &station, const HistoryPoints &board,
                               const QString &currentBoardSession = {});
 bool exportHistoryCsv(const HistoryPoints &, const QString &path);
+// Transaction boundary used for alternate storage and deterministic I/O faults.
+// A failed write/commit must leave the previous destination untouched.
+class HistoryCsvTransaction {
+public:
+  virtual ~HistoryCsvTransaction() = default;
+  virtual bool open(const QString &path) = 0;
+  virtual QIODevice &device() = 0;
+  virtual bool commit() = 0;
+  virtual void cancel() = 0;
+};
+bool exportHistoryCsv(const HistoryPoints &, const QString &path,
+                      std::unique_ptr<HistoryCsvTransaction> transaction);
 bool writeHistoryCsv(const HistoryPoints &, QIODevice &device);
 
 class HistoryStore {
@@ -80,9 +94,9 @@ public:
 public slots:
   void exportPoints(HistoryPoints points, QString path);
   void importPoints(HistoryPoints points, qint64 now);
-  void open(const QString &path);
+  virtual void open(const QString &path);
   void newSession();
-  void sample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick);
+  virtual void sample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick);
   void load(QString address, qint64 now);
   void exportFile(QString address, qint64 now, QString path);
   void log(QString message);

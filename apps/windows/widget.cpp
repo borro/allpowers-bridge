@@ -247,12 +247,18 @@ bool WidgetCard::event(QEvent *event) {
   return DesktopSurface::event(event);
 }
 
+qint64 WidgetController::wallNow() const {
+  return runtime_.wallClock ? runtime_.wallClock() : QDateTime::currentSecsSinceEpoch();
+}
+qint64 WidgetController::elapsedNow() const {
+  return runtime_.elapsedClock ? runtime_.elapsedClock() : clock.elapsed();
+}
 WidgetController::WidgetController(QString path, bool offline, bool desktop,
-                                   TransportRouter::Factory factory)
+                                   TransportRouter::Factory factory, WidgetRuntime runtime)
     : directory(std::move(path)), card_(desktop),
       transport(this, offline, !offline && !factory && integrationInstalled(), "bluetooth",
                 factory),
-      tray(QIcon(":/assets/allpowers.ico"), this), offline_(offline) {
+      tray(QIcon(":/assets/allpowers.ico"), this), runtime_(std::move(runtime)), offline_(offline) {
   qRegisterMetaType<ap_snapshot>();
   qRegisterMetaType<HistoryPoints>();
   clock.start();
@@ -263,7 +269,7 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   transport.setMode(settings["transport"].toString());
   locked = settings["locked"].toBool();
   card_.setLocked(locked);
-  history = new HistoryWorker;
+  history = runtime_.makeHistoryWorker ? runtime_.makeHistoryWorker() : new HistoryWorker;
   history->moveToThread(&historyThread);
   connect(&historyThread, &QThread::finished, history, &QObject::deleteLater);
   connect(this, &WidgetController::openHistory, history, &HistoryWorker::open);
@@ -304,7 +310,7 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
     refreshHistory();
   });
   connect(&transport, &TelemetryTransport::historyImported, this, [this](HistoryPoints points) {
-    emit importHistory(points, QDateTime::currentSecsSinceEpoch());
+    emit importHistory(points, wallNow());
   });
   menu.addAction(QStringLiteral("Настройки…"), this, &WidgetController::configure);
   menu.addAction(QStringLiteral("Подключить"), this, &WidgetController::connectStation);
@@ -334,7 +340,7 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   });
   timer.setInterval(1000);
   connect(&timer, &QTimer::timeout, this, [this] {
-    if (!offline_ && receivedAt >= 0 && clock.elapsed() - receivedAt > 5000)
+    if (!offline_ && receivedAt >= 0 && elapsedNow() - receivedAt > 5000)
       latest.fresh = false;
     refresh();
   });
@@ -395,7 +401,7 @@ void WidgetController::receive(ap_snapshot value) {
   if (offline_)
     return;
   latest = value;
-  receivedAt = clock.elapsed();
+  receivedAt = elapsedNow();
   const QString address = transport.address();
   if (address != historyAddress) {
     historyAddress = address;
@@ -404,14 +410,14 @@ void WidgetController::receive(ap_snapshot value) {
     sampleAt = -1;
     sampleQueue.clearPending();
     emit newSession();
-    emit loadHistory(address, QDateTime::currentSecsSinceEpoch());
+    emit loadHistory(address, wallNow());
   }
-  const qint64 now = QDateTime::currentSecsSinceEpoch();
+  const qint64 now = wallNow();
   if (!offline_ && !transport.remote() && transport.active() && value.main_seen &&
       !address.isEmpty() && now != sampleAt) {
     sampleAt = now;
     HistoryPoint point;
-    point.address=address;point.data=value;point.wall=now;point.tick=clock.elapsed()/1000;
+    point.address=address;point.data=value;point.wall=now;point.tick=elapsedNow()/1000;
     if (auto next=sampleQueue.submit(std::move(point)))
       emit sample(next->address,next->data,next->wall,next->tick);
   }
@@ -423,7 +429,7 @@ void WidgetController::refresh() {
     usbEndpoint = endpoint;
     usbPoints.clear();
     if (!endpoint.isEmpty())
-      emit loadHistory("usb-board:" + endpoint, QDateTime::currentSecsSinceEpoch());
+      emit loadHistory("usb-board:" + endpoint, wallNow());
   }
   QString phase = historyError.isEmpty() ? transport.phase() : historyError;
   if (!card_.attachmentError().isEmpty())
@@ -446,7 +452,7 @@ void WidgetController::refreshHistory() {
     plotted = mergeUsbHistory(plotted, usbPoints,
                               transport.connected() ? QString("usb-%1").arg(boot) : QString{});
   }
-  card_.setHistory(plotted, QDateTime::currentSecsSinceEpoch());
+  card_.setHistory(plotted, wallNow());
 }
 void WidgetController::configure() {
   if (settingsDialog) {
@@ -547,7 +553,7 @@ void WidgetController::configure() {
   refresh();
 }
 void WidgetController::loadDemo() {
-  const auto now = QDateTime::currentSecsSinceEpoch();
+  const auto now = wallNow();
   stored.clear();
   for (int i = 0; i <= 3600; ++i) {
     ap_snapshot value{};
@@ -579,9 +585,9 @@ QJsonObject WidgetController::diagnostics() const {
       {"desktop_error", card_.attachmentError()},
       {"points", plotted.size()},
       {"usb_history_points", usbPoints.size()},
-      {"input_segments", WidgetCard::graphSegments(plotted, 2, QDateTime::currentSecsSinceEpoch())},
+      {"input_segments", WidgetCard::graphSegments(plotted, 2, wallNow())},
       {"output_segments",
-       WidgetCard::graphSegments(plotted, 4, QDateTime::currentSecsSinceEpoch())},
+       WidgetCard::graphSegments(plotted, 4, wallNow())},
       {"bluetooth_used", transport.diagnostics()["bluetooth_used"].toBool()}};
   for (auto it = values.begin(); it != values.end(); ++it)
     result[it.key()] = it.value();

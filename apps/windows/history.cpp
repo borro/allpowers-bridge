@@ -285,15 +285,33 @@ bool HistoryStore::exportCsv(const QString &address, qint64 now, const QString &
   return exportHistoryCsv(points(address, now), path);
 }
 bool exportHistoryCsv(const HistoryPoints &points, const QString &path) {
-  QSaveFile file(path);
-  file.setDirectWriteFallback(false);
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+  class SaveFileTransaction final : public HistoryCsvTransaction {
+    QSaveFile file;
+  public:
+    bool open(const QString &path) override {
+      file.setFileName(path);
+      file.setDirectWriteFallback(false);
+      return file.open(QIODevice::WriteOnly | QIODevice::Text);
+    }
+    QIODevice &device() override { return file; }
+    bool commit() override { return file.commit(); }
+    void cancel() override { file.cancelWriting(); }
+  };
+  return exportHistoryCsv(points,path,std::make_unique<SaveFileTransaction>());
+}
+bool exportHistoryCsv(const HistoryPoints &points, const QString &path,
+                      std::unique_ptr<HistoryCsvTransaction> transaction) {
+  if (!transaction || !transaction->open(path))
     return false;
-  if (!writeHistoryCsv(points,file)) {
-    file.cancelWriting();
+  if (!writeHistoryCsv(points,transaction->device())) {
+    transaction->cancel();
     return false;
   }
-  return file.commit();
+  if (!transaction->commit()) {
+    transaction->cancel();
+    return false;
+  }
+  return true;
 }
 bool writeHistoryCsv(const HistoryPoints &points, QIODevice &device) {
   QTextStream out(&device);

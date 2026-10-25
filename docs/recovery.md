@@ -28,6 +28,11 @@ python tools/manage_board.py identity --board waveshare-147
 python tools/manage_board.py flash --board waveshare-147 --confirm-write
 ```
 
+If the RAM flasher's USB transfer is unreliable, add `--rom-only` to `identity`,
+`flash`, `verify` or `reset`. This uses ROM commands without uploading the stub;
+the same board identity, image, partition and rollback checks still apply.
+ROM reading is slower. A failed or partial flash read is not a verified backup.
+
 Python is optional and used only by these explicit USB tools. CMake/CTest/CPack
 do not invoke them. Replace the board name for Pocket. `boot` sends the existing HID feature command
 `BOOT-R2500!!`; it does not erase flash. Physical ROM entry is independent of the

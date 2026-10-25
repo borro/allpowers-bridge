@@ -123,9 +123,15 @@ gate checks the index, working tree and reachable history, including a pinned
 Gitleaks secret scan. Windows Server 2025 builds the static monitor/widget and
 driver; Ubuntu 24.04 builds the portable core. Both jobs compile both board
 profiles and run CTest. Windows also rebuilds/tests the source kit and creates
-CPack ZIPs with checksums. Successful jobs retain build artifacts for 14 days;
-they do not create GitHub Releases or install/flash anything. No repository
-secrets are required. The first remote run is still pending publication.
+CPack ZIPs with checksums. Successful jobs retain build artifacts for 14 days.
+Pushing a version tag such as `v1.2.3` or `v1.2.3-alpha.1` additionally publishes
+a [GitHub Release](https://github.com/borro/allpowers-bridge/releases) after both
+platforms pass. It includes standalone Monitor/Widget EXEs, the Windows ZIP, both
+board firmware ZIPs, complete application/Qt sources and SHA256 checksums.
+The application and Windows EXE properties use the tag version without `v`.
+Prerelease tags produce GitHub prereleases. Ordinary branch/PR builds produce
+artifacts. Builds never install or flash anything; no personal tokens are required.
+See [release safeguards and reruns](docs/building.md#tagged-releases).
 
 Before committing, run `audit-worktree`; after reviewing/staging files, run
 `audit`, `audit-history` and `audit-secrets` in the configured build directory.
@@ -136,6 +142,7 @@ See [building and publication](docs/building.md) for the commands.
 ## Versions and layout
 
 Product versions come from Git tags such as `v0.4.0`, using `git describe`.
+Tagged CI selects the triggering tag exactly and verifies its commit.
 Intermediate builds include commit/dirty information. The source kit carries a
 generated `VERSION` file so an extracted archive retains its version without Git.
 There is no hand-maintained product version in CMake or a package manifest.

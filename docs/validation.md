@@ -29,6 +29,22 @@ folder with a system-only PATH. Embedded LGPL notices and SQLite/UI startup are
 also checked. CPack release builds additionally extract their source archive and
 rebuild/test the portable core without .git or Python, checking its saved version.
 
+## Tag-driven release publication — 2026-10-25
+
+Windows and Ubuntu checks cover exact lightweight/annotated tags, multiple tags
+on one commit, the triggering Git object, invalid versions, dirty/staged/untracked
+sources and attempts to publish a source archive as a Git checkout. Windows tests
+compile the actual VERSIONINFO template, then reject wrong/missing EXE versions,
+stale source/firmware versions and tampered package files. SemVer build metadata
+is preserved inside EXEs and encoded safely in uploaded filenames.
+
+The publisher is exercised with a mock CLI only: successful draft publication,
+draft resume, interrupted/partial uploads, wrong server hashes, a moved remote
+tag, a forbidden lookup, foreign/old drafts and matching/mismatching published
+releases. Failure cases never publish or replace a published release.
+Local Windows CTest, Linux portable checks, Actionlint and the source-kit rebuild
+pass. A live GitHub Release from a new tag has not been created by these tests.
+
 ## Toolchain upgrade — 2026-10-25
 
 Qt is pinned to 6.12.0, MSVC CI to toolset 14.51, CMake to 4.4.4 and Ninja to
@@ -42,12 +58,41 @@ the missing private factory-cache header. The new build explicitly requires
 Qt Core C++/WinRT and the Bluetooth WinRT backend and configures Qt with C++23.
 
 - Ubuntu WSL / GCC 13.3: core, both firmware profiles and all six CTest checks pass.
-- Windows / locally installed MSVC 19.44: all six portable CTest checks pass.
-- A clean Qt 6.12.0 bootstrap passed the required C++/WinRT configuration probe;
-  full Windows application tests and the hosted MSVC 19.51 run are pending.
+- Windows / locally installed MSVC 19.44: both firmware profiles and all eight
+  root CTest checks pass, including the six nested Qt/UI/isolated-EXE suites.
+- A clean Qt 6.12.0 static bootstrap passed the required C++/WinRT and Bluetooth
+  WinRT probes. CPack and the source-kit rebuild/test without Git metadata pass.
+  The hosted MSVC 19.51 build, CTest, CPack/source-kit rebuild and publication
+  audits also passed on GitHub Actions (commit `da1415b`).
 - USB descriptor, partition and maintenance contracts pass without changing fixtures.
 
 These results do not replace the driver VM/runtime checks below.
+
+## Waveshare hardware check — 2026-10-25
+
+The user authorized flashing Waveshare 1.47 only. Its registered identity,
+existing external rollback image and prior physical ROM-entry verification were
+checked before writing. An attempted full flash read through the RAM stub failed;
+it is not a new full backup. ROM reads of the initial region and NVS succeeded.
+The existing verified external factory/rollback copies remain the recovery copies.
+
+Two actual writes of the C++23 firmware were completed using `--rom-only`, with
+all four written segments verified. The second write was entered through the
+new firmware's HID maintenance command. NVS and history partitions were not
+erased; the saved target loaded and the historical record count continued rising.
+Real BLE Central/GATT notifications, fresh decoded telemetry, dynamic/static USB
+HID UPS reports and Windows power status agreed on full charge and mains power.
+Display/graph/history self-tests passed, with no HID-send or history errors.
+The user confirmed live screen updates, green RGB and BOOT page switching.
+
+The Qt 6.12 widget was restarted in its saved USB mode and passed a real native
+desktop check: board archive points were imported into the combined graph,
+history opened without error and the computer's BLE transport stayed unused.
+The downloaded CI artifact and its runtime ZIP were checksum-verified. Both
+MSVC 19.51-built EXEs passed a further real USB telemetry/archive check; the
+updated widget was left running.
+Pocket was compiled but not flashed. Mains/battery transitions, physical ROM
+entry and factory rollback were not exercised again in this session.
 
 ## Local checks — 2026-10-24
 

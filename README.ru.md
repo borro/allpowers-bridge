@@ -21,7 +21,20 @@ R2500 V2; другие профили показывают только изве
 график USB. Его записи помечены отдельно: адрес станции в них не хранится.
 [USB-режим](docs/usb-monitor.md).
 
-![Ранний интерфейс монитора Windows с демонстрационными данными](docs/images/windows-monitor.png)
+**Примеры интерфейса**
+
+![Монитор Windows — обзор показаний](docs/images/windows-monitor.png)
+
+| Виджет рабочего стола Windows | Экран Waveshare 1.47″ |
+| --- | --- |
+| <img src="docs/images/windows-widget.png" alt="Виджет с показаниями и часовым графиком мощности" width="300"> | <img src="docs/images/waveshare-display.png" alt="Экран Waveshare — обзор показаний" width="172"> |
+
+<details>
+<summary>История в мониторе</summary>
+
+![Монитор Windows — история показаний](docs/images/windows-history.png)
+
+</details>
 
 В Windows-пакете два самостоятельных приложения: **AllpowersMonitor.exe** и
 **AllpowersWidget.exe**. Каждому достаточно собственного EXE. Qt, SQLite, оконные плагины, общее ядро и

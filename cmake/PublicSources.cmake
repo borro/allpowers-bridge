@@ -31,6 +31,9 @@ set(AP_PUBLIC_SPECIAL_FILES
   apps/windows/assets/allpowers.ico
   apps/windows/assets/logo.png
   docs/images/windows-monitor.png
+  docs/images/windows-history.png
+  docs/images/windows-widget.png
+  docs/images/waveshare-display.png
   tests/fixtures/notifications.json
   tests/fixtures/usb-contract.json)
 

@@ -21,7 +21,20 @@ required. The board archive automatically fills gaps in the main USB history
 chart; its records remain labelled separately because they lack station identity.
 See [USB mode](docs/usb-monitor.md).
 
-![Earlier Windows monitor UI with synthetic data](docs/images/windows-monitor.png)
+**Interface examples**
+
+![Windows Monitor — telemetry overview](docs/images/windows-monitor.png)
+
+| Windows desktop widget | Waveshare 1.47″ display |
+| --- | --- |
+| <img src="docs/images/windows-widget.png" alt="Desktop widget with telemetry and one-hour power history" width="300"> | <img src="docs/images/waveshare-display.png" alt="Waveshare display — telemetry overview" width="172"> |
+
+<details>
+<summary>Monitor history</summary>
+
+![Windows Monitor — telemetry history](docs/images/windows-history.png)
+
+</details>
 
 The Windows package includes **AllpowersMonitor.exe** and **AllpowersWidget.exe**.
 Each application runs from its own EXE: Qt, SQLite, platform plugins, the protocol core

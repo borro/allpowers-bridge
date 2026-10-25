@@ -65,6 +65,21 @@ The ordinary Windows CTest and extracted-source-kit check both run the new
 regression. CI uses these same gates; portable firmware-host covers the command
 collector and extended serializer in normal and fatal-sanitizer jobs.
 
+Implementation and regression commit:
+[`a6beb6bc580d40021e77d6227401a108c126c96a`](https://github.com/borro/allpowers-bridge/commit/a6beb6bc580d40021e77d6227401a108c126c96a).
+[Hosted run 40227626329](https://github.com/borro/allpowers-bridge/actions/runs/40227626329)
+completed successfully on 2026-10-25: audit, maintenance, normal/fatal-sanitizer
+portable tests and both Linux/Windows products all passed. Release publication
+was skipped on this working branch.
+
+The Windows hosted log confirms root CTest 20/20 in 750.13 s, nested app CTest
+8/8 in 36.61 s, archive-transport 40/40 in 0.84 s and the independent-process
+CNG test in 0.07 s. The identity graph took 651.06 s of the root total. Packaging
+also rebuilt the extracted source kit without .git: native 16/16 in 56.98 s and
+supported desktop 6/6 in 32.05 s, including archive-transport and the process
+test again. These are hosted/offline results for that exact implementation
+commit, separate from the local observations above.
+
 No image activation, live BLE/USB exchange, service/driver installation or kernel
 runtime experiment was performed for this follow-up. Prior hardware evidence and
 hosted runs below retain their historical scope.

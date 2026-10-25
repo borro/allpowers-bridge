@@ -76,6 +76,7 @@ jobs:
             build/deps/downloads
             build/deps/arduino
             build/deps/arduino-cli
+            build/deps/firmware-legal
           key: ${{ runner.os }}-${{ runner.arch }}-downloads-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/SetupArduino.cmake') }}
       - name: Identify compatible static Qt SDK
         if: runner.os == 'Windows'
@@ -120,8 +121,11 @@ jobs:
       - name: Run tests
         run: ctest --preset ${{ matrix.preset }}
       - name: Package Windows release and verify source rebuild
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !startsWith(github.ref, 'refs/tags/v')
         run: cmake --build --preset release
+      - name: Package Windows release and prove modified Qt relinking
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        run: cmake --build --preset release --target release qt-relink-check
       - name: Audit tracked publication files
         run: cmake --build build/${{ matrix.preset }} --target audit
       - name: Check for modified source files
@@ -148,6 +152,9 @@ jobs:
             build/**/Testing/Temporary/LastTest.log
             build/**/desktop-tests.txt
             build/**/widget-tests.txt
+            build/**/qt-relink/*.log
+            build/**/source-kit-check/*.log
+            build/**/compliance/relink/relink.log
             build/**/*-err.log
             build/**/*-out.log
   release:

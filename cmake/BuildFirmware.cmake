@@ -49,6 +49,9 @@ foreach(name LICENSE LICENSE.md LICENSE.txt)
     file(COPY_FILE "${sdk}/${name}" "${OUTPUT}/ESP32-Arduino-${name}" ONLY_IF_DIFFERENT)
   endif()
 endforeach()
+execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${ROOT}" "-DWORK=${WORK}"
+  "-DOUTPUT=${OUTPUT}" "-DDATA=${DATA}" "-DCACHE=${LEGAL_CACHE}" "-DVERSION=${VERSION}"
+  -P "${ROOT}/cmake/PrepareFirmwareKit.cmake" COMMAND_ERROR_IS_FATAL ANY)
 set(files "{}")
 file(GLOB artifacts "${OUTPUT}/*")
 foreach(path IN LISTS artifacts)

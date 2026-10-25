@@ -44,6 +44,7 @@ void showNotices(QWidget *parent) {
   auto *layout = new QVBoxLayout(&dialog);
   auto *title = new QLabel(QString("ALLPOWERS Monitor %1 · C++23\n"
                                    "Использует Qt %2, статическая линковка, LGPLv3.\n"
+                                   "Qt © The Qt Company Ltd. and other contributors.\n"
                                    "Исходники и инструкции замены Qt доступны в пакете sources.")
                                .arg(APP_VERSION, qVersion()));
   title->setWordWrap(true);

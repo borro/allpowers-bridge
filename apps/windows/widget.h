@@ -6,6 +6,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <QSystemTrayIcon>
+#include <QVariantAnimation>
 class QSettings;
 class QDialog;
 class QPainter;
@@ -18,6 +19,9 @@ class WidgetCard : public DesktopSurface {
   QString phase_ = QStringLiteral("Нет подключения");
   QString deviceName_ = QStringLiteral("Нет устройства");
   qint64 now_ = 0;
+  QVariantAnimation graphAnimation_;
+  double graphNow_ = 0, graphMaximum_ = 10;
+  double fromNow_ = 0, fromMaximum_ = 10, targetMaximum_ = 10;
   QPoint dragOrigin, savedOffset;
   bool dragging = false, locked_ = false;
   void drawCard(QPainter &painter) const;
@@ -37,6 +41,7 @@ public:
   }
   static QString reading(const ap_snapshot &, quint32 mask, quint32 value, QString suffix);
   static QString remainingTime(const ap_snapshot &);
+  static double graphPosition(double age);
   static int graphSegments(const HistoryPoints &, quint32 mask, qint64 now);
 signals:
   void menuRequested(QPoint position);

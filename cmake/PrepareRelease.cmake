@@ -84,7 +84,8 @@ foreach(board waveshare-147 pocket-096)
     list(APPEND files "${name}")
   endforeach()
   foreach(required R2500Adapter.ino.bin R2500Adapter.ino.bootloader.bin
-      R2500Adapter.ino.partitions.bin boot_app0.bin LICENSE THIRD_PARTY_NOTICES.md)
+      R2500Adapter.ino.partitions.bin boot_app0.bin LICENSE THIRD_PARTY_NOTICES.md
+      ESP32-Arduino-LICENSE.md FIRMWARE-LICENSES.md licenses.zip corresponding-source.zip)
     if(NOT required IN_LIST files)
       message(FATAL_ERROR "Incomplete firmware package: ${board}/${required}")
     endif()

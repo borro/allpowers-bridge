@@ -143,7 +143,7 @@ private slots:
       points.append(point);
     }
     auto blueAt = [&](const QImage &image, int age, int y) {
-      const int x = qRound(14 + logPosition(age, 3600.) * 272);
+      const int x = qRound(14 + WidgetCard::graphPosition(age) * 272);
       for (int dx = -2; dx <= 2; ++dx)
         for (int dy = -2; dy <= 2; ++dy) {
           const auto color = image.pixelColor(x + dx, y + dy);
@@ -156,12 +156,18 @@ private slots:
     const auto before = card.renderedImage();
     QVERIFY(blueAt(before, 2, 127));
     card.setHistory(points, now + 1);
+    QCOMPARE(card.renderedImage(), before); // No one-second position jump on receipt.
+    QTest::qWait(400);
+    const auto moving = card.renderedImage();
+    QVERIFY(moving != before);
+    QTest::qWait(600);
     const auto after = card.renderedImage();
+    QVERIFY(after != moving);
     QVERIFY(blueAt(after, 3, 127));
     QVERIFY(!blueAt(after, 2, 127)); // A visible move each second, not 0.075 px.
     QVERIFY(after.copy(14, 126, 272, 54) != before.copy(14, 126, 272, 54));
     card.setHistory({points.last()}, now);
-    QVERIFY(blueAt(card.renderedImage(), 1, 127)); // Isolated 60 W point uses the 60 W scale.
+    QVERIFY(!blueAt(card.renderedImage(), 1, 127)); // No endpoint dot for an isolated sample.
     card.setHistory({points.last()}, now + 4);
     QVERIFY(!blueAt(card.renderedImage(), 5, 127)); // No fake live marker on stale history.
   }

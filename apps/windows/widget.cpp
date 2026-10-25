@@ -39,6 +39,15 @@ WidgetCard::WidgetCard(bool desktop, std::function<quintptr()> hostFinder)
   setWindowTitle(QStringLiteral("ALLPOWERS Widget"));
   setFixedSize(300, 210);
   setCursor(Qt::SizeAllCursor);
+  graphAnimation_.setDuration(900);
+  connect(&graphAnimation_, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
+    const double progress = value.toDouble();
+    graphNow_ = fromNow_ + (double(now_) - fromNow_) * progress;
+    graphMaximum_ = fromMaximum_ + (targetMaximum_ - fromMaximum_) * progress;
+    update();
+    if (attached())
+      presentImage(renderedImage());
+  });
   connect(this, &DesktopSurface::surfaceChanged, this, [this] { presentImage(renderedImage()); });
 }
 QString WidgetCard::reading(const ap_snapshot &s, quint32 mask, quint32 value, QString suffix) {
@@ -80,10 +89,39 @@ void WidgetCard::setTelemetry(ap_snapshot value, QString phase) {
 }
 void WidgetCard::setHistory(HistoryPoints points, qint64 now) {
   points_ = std::move(points);
+  double maximum = 10;
+  for (const auto &point : points_)
+    if (point.wall >= now - 3600 && point.wall <= now && point.data.fresh) {
+      if (point.data.known & 2)
+        maximum = qMax(maximum, double(point.data.input_w));
+      if (point.data.known & 4)
+        maximum = qMax(maximum, double(point.data.output_w));
+    }
+  maximum = std::ceil(maximum / 10) * 10;
+  const bool changed = now != now_ || maximum != targetMaximum_;
+  const bool initial = !now_ || now < now_ || now - now_ > 3;
   now_ = now;
+  if (changed) {
+    graphAnimation_.stop();
+    fromNow_ = graphNow_;
+    fromMaximum_ = graphMaximum_;
+    targetMaximum_ = maximum;
+    if (initial) {
+      graphNow_ = double(now);
+      graphMaximum_ = maximum;
+    } else {
+      graphAnimation_.setStartValue(0.);
+      graphAnimation_.setEndValue(1.);
+      graphAnimation_.start();
+    }
+  }
   update();
   if (attached())
     presentImage(renderedImage());
+}
+double WidgetCard::graphPosition(double age) {
+  // Compress the latest seconds while retaining the full hour and logarithmic history.
+  return logPosition(age / 4., 3600. / 4.);
 }
 int WidgetCard::graphSegments(const HistoryPoints &points, quint32 mask, qint64 now) {
   int result = 0;
@@ -137,24 +175,18 @@ void WidgetCard::drawCard(QPainter &p) const {
   text({154, 82, 140, 24}, QStringLiteral("Выход  ") + reading(s, 4, s.output_w, " Вт"), 10,
        QColor("#6ab4ff"));
   const QRectF plot(14, 126, 272, 54);
-  double maximum = 1;
-  for (const auto &v : points_)
-    if (v.wall >= now_ - 3600 && v.wall <= now_ && v.data.fresh) {
-      if (v.data.known & 2)
-        maximum = qMax(maximum, double(v.data.input_w));
-      if (v.data.known & 4)
-        maximum = qMax(maximum, double(v.data.output_w));
-    }
-  maximum = qMax(10., std::ceil(maximum / 10) * 10);
+  const double maximum = graphMaximum_;
   text({14, 108, 180, 16}, QString::number(maximum, 'f', 0) + " Вт", 8, QColor("#8ea5c4"));
   p.setPen(QPen(QColor("#2b3b53"), 1));
   p.drawLine(plot.bottomLeft(), plot.bottomRight());
   p.drawLine(plot.topLeft(), plot.topRight());
+  p.save();
+  p.setClipRect(plot.adjusted(-3, -1, 3, 3));
   for (quint32 mask : {2u, 4u}) {
     p.setPen(QPen(QColor(mask == 2 ? "#59d9aa" : "#6ab4ff"), 1.6));
     auto point = [&](const HistoryPoint &v) {
       double watts = mask == 2 ? v.data.input_w : v.data.output_w;
-      return QPointF(plot.left() + logPosition(double(now_ - v.wall), 3600.) * plot.width(),
+      return QPointF(plot.left() + graphPosition(graphNow_ - double(v.wall)) * plot.width(),
                      plot.bottom() - watts * plot.height() / maximum);
     };
     for (qsizetype i = 1; i < points_.size(); ++i) {
@@ -163,19 +195,8 @@ void WidgetCard::drawCard(QPainter &p) const {
           (b.data.known & mask) && joinPoints(a, b))
         p.drawLine(point(a), point(b));
     }
-    // Show the actual latest sample even when no preceding segment is available.
-    // An old archive endpoint must not look like a current live reading.
-    if (!points_.isEmpty()) {
-      const auto &last = points_.last();
-      const auto age = now_ - last.wall;
-      if (last.data.fresh && (last.data.known & mask) && age >= 0 && age <= 3) {
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(mask == 2 ? "#59d9aa" : "#6ab4ff"));
-        p.drawEllipse(point(last), 2.2, 2.2);
-        p.setBrush(Qt::NoBrush);
-      }
-    }
   }
+  p.restore();
   text({14, 184, 180, 16}, QStringLiteral("−1 час · лог. время"), 8, QColor("#8ea5c4"));
   text({240, 184, 50, 16}, QStringLiteral("сейчас"), 8, QColor("#8ea5c4"));
 }

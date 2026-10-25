@@ -119,6 +119,10 @@ Outputs: `build/` for intermediate files, `dist/firmware/<board>/` for images,
 The `release` target uses CPack to create runtime and corresponding-source ZIPs
 with SHA256 files. The source ZIP includes complete Qt archives and relinking
 instructions; keep it with binary distributions.
+Each firmware package also contains its LGPL corresponding sources, license
+notices and a tested object kit for relinking. See [firmware licenses](docs/firmware-licenses.md).
+Windows publishers need a valid Visual Studio license; qualifying personal and
+open-source development can use Community. See [runtime terms](docs/windows-runtime-terms.md).
 
 ## GitHub builds and publication checks
 
@@ -131,6 +135,8 @@ Gitleaks secret scan. Windows Server 2025 builds the static monitor/widget and
 driver; Ubuntu 24.04 builds the portable core. Both jobs compile both board
 profiles and run CTest. Windows also rebuilds/tests the source kit and creates
 CPack ZIPs with checksums. Successful jobs retain build artifacts for 14 days.
+Tagged Windows builds additionally rebuild and run both applications with a
+modified Qt from the published source kit (`qt-relink-check`).
 Pushing a version tag such as `v1.2.3` or `v1.2.3-alpha.1` additionally publishes
 a [GitHub Release](https://github.com/borro/allpowers-bridge/releases) after both
 platforms pass. It includes standalone Monitor/Widget EXEs, the Windows ZIP, both

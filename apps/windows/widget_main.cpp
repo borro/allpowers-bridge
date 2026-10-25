@@ -72,6 +72,7 @@ int main(int argc, char **argv) {
                  !report["native_popup"].toBool() && report["native_frame_published"].toBool();
           report["embedded_notices"] = embeddedLicenseFiles().size();
           report["lgpl_notice"] = notice;
+          report["qt_runtime"] = qVersion();
           report["status"] = ok ? "PASS" : "FAIL";
           if (parser.isSet("report")) {
             QFile file(parser.value("report"));

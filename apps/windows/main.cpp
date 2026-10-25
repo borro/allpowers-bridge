@@ -225,6 +225,7 @@ int main(int argc, char **argv) {
         info["status"] = ok ? "PASS" : "FAIL";
         info["embedded_notices"] = embeddedLicenseFiles().size();
         info["lgpl_notice"] = lgplNotice;
+        info["qt_runtime"] = qVersion();
         info["bluetooth_used"] = false;
         out.write(QJsonDocument(info).toJson(QJsonDocument::Indented));
       } else

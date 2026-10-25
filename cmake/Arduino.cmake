@@ -78,10 +78,13 @@ foreach(board waveshare-147 pocket-096)
     BYPRODUCTS "${output}/R2500Adapter.ino.bin" "${output}/R2500Adapter.ino.bootloader.bin"
       "${output}/R2500Adapter.ino.partitions.bin" "${output}/boot_app0.bin"
       "${output}/LICENSE" "${output}/THIRD_PARTY_NOTICES.md" "${output}/AllpowersModels.LICENSE.txt"
+      "${output}/ESP32-Arduino-LICENSE.md" "${output}/corresponding-source.zip"
+      "${output}/licenses.zip" "${output}/FIRMWARE-LICENSES.md"
     COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}" "-DBOARD=${board}"
       "-DBOARD_NUMBER=${board_number}" "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}"
       "-DCONFIG=${arduino_config}" "-DWORK=${PROJECT_BINARY_DIR}/firmware/${board}"
       "-DJOBS=${ALLPOWERS_ARDUINO_JOBS}"
+      "-DLEGAL_CACHE=${ALLPOWERS_DEPS_DIR}/firmware-legal"
       "-DOUTPUT=${output}" "-DVERSION=${ALLPOWERS_VERSION}"
       -P "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake"
     DEPENDS ${firmware_sources} "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
@@ -89,6 +92,9 @@ foreach(board waveshare-147 pocket-096)
       "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake" "${PROJECT_SOURCE_DIR}/cmake/Partitions.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/CheckContracts.cmake" "${PROJECT_SOURCE_DIR}/cmake/Json.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake" "${PROJECT_BINARY_DIR}/product-version.txt"
+      "${PROJECT_SOURCE_DIR}/cmake/PrepareFirmwareKit.cmake" "${PROJECT_SOURCE_DIR}/cmake/RelinkFirmware.cmake"
+      "${PROJECT_SOURCE_DIR}/docs/firmware-licenses.md"
+      "${PROJECT_SOURCE_DIR}/docs/licenses/LGPL-3.0.md" "${PROJECT_SOURCE_DIR}/docs/licenses/GPL-3.0.md"
     USES_TERMINAL VERBATIM)
   add_custom_target(${board} DEPENDS "${output}/manifest.json")
 endforeach()

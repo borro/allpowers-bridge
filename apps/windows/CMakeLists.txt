@@ -82,6 +82,9 @@ execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${ALLPOWERS_ROOT}"
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${ALLPOWERS_ROOT}/THIRD_PARTY_NOTICES.md" "${ALLPOWERS_ROOT}/docs/relinking.md"
   "${ALLPOWERS_ROOT}/cmake/PrepareNotices.cmake" "${ALLPOWERS_ROOT}/cmake/Dependencies.cmake")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${ALLPOWERS_ROOT}/cmake/CollectQtNotices.cmake"
+  "${ALLPOWERS_ROOT}/docs/windows-runtime-terms.md" "${ALLPOWERS_ROOT}/docs/licenses/MSVC-STL.md")
 qt_add_resources(notice_sources "${CMAKE_CURRENT_BINARY_DIR}/notices.qrc")
 target_sources(AllpowersMonitor PRIVATE ${notice_sources})
 qt_add_executable(AllpowersWidget WIN32 widget_main.cpp)

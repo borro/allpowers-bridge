@@ -54,5 +54,20 @@ ExternalProject_Add(qtconnectivity-static
 ExternalProject_Add_Step(qtconnectivity-static compiler-config
   DEPENDEES patch DEPENDERS configure
   DEPENDS "${PROJECT_SOURCE_DIR}/cmake/WindowsCompiler.cmake")
-add_custom_target(qt-static)
+ExternalProject_Add_Step(qtconnectivity-static source-identity
+  COMMAND "${CMAKE_COMMAND}" -DMODE=SEAL "-DPREFIX=${ALLPOWERS_QT_ROOT}"
+    "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}"
+    "-DWORK=${PROJECT_BINARY_DIR}/qt-source-identity"
+    "-Dqtbase_SOURCE=${PROJECT_BINARY_DIR}/deps/qtbase/src/qtbase-static"
+    "-Dqtconnectivity_SOURCE=${PROJECT_BINARY_DIR}/deps/qtconnectivity/src/qtconnectivity-static"
+    -P "${PROJECT_SOURCE_DIR}/cmake/QtSourceIdentity.cmake"
+  DEPENDEES install
+  DEPENDS "${PROJECT_SOURCE_DIR}/cmake/QtSourceIdentity.cmake"
+  BYPRODUCTS "${ALLPOWERS_QT_ROOT}/allpowers-source-identity.cmake")
+# Verify on every use, but seal only after installation. Automatically resealing
+# on every build would silently accept libraries changed since the last build.
+add_custom_target(qt-static
+  COMMAND "${CMAKE_COMMAND}" -DMODE=VERIFY "-DPREFIX=${ALLPOWERS_QT_ROOT}"
+    "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}"
+    -P "${PROJECT_SOURCE_DIR}/cmake/QtSourceIdentity.cmake" VERBATIM)
 add_dependencies(qt-static qtconnectivity-static)

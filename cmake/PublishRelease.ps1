@@ -89,6 +89,7 @@ $marker
 
 - Windows Monitor and desktop Widget: standalone EXEs and a combined ZIP.
 - Separate Waveshare 1.47 and Pocket 0.96 firmware packages, with matching board manifests.
+- Each firmware package includes license notices, corresponding sources and a tested relinking kit.
 - Complete application and Qt corresponding sources, with SHA256 checksums.
 
 The applications work without the optional Windows UPS driver. That integration remains

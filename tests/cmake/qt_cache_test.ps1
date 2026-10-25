@@ -6,7 +6,7 @@ $scratch = Join-Path $Work ([guid]::NewGuid().ToString('N'))
 $source = Join-Path $scratch 'source'
 New-Item -ItemType Directory -Path "$source/cmake" -Force | Out-Null
 foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake',
-                  'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp') {
+                  'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     Copy-Item -LiteralPath "$Root/cmake/$file" -Destination "$source/cmake/$file"
 }
 $savedOutput = $env:GITHUB_OUTPUT

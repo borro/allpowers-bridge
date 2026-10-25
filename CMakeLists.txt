@@ -15,6 +15,8 @@ option(ALLPOWERS_BUILD_WINDOWS "Build the static Windows BLE monitor" OFF)
 add_subdirectory(core)
 if(BUILD_TESTING)
   add_subdirectory(tests/native)
+  add_test(NAME license-notices COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+    "-DWORK=${PROJECT_BINARY_DIR}/license-tests" -P "${PROJECT_SOURCE_DIR}/tests/cmake/licenses_test.cmake")
   add_test(NAME repository-contracts COMMAND "${CMAKE_COMMAND}"
     "-DROOT=${PROJECT_SOURCE_DIR}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckContracts.cmake")
   add_test(NAME publication-guards COMMAND "${CMAKE_COMMAND}"

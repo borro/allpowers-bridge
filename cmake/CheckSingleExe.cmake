@@ -38,6 +38,16 @@ string(JSON lgpl GET "${report}" lgpl_notice)
 if(NOT status STREQUAL "PASS" OR notices LESS 1 OR NOT lgpl)
   message(FATAL_ERROR "Standalone EXE smoke test failed")
 endif()
+execute_process(COMMAND "${WORK}/${exe_name}" --export-licenses "${WORK}/licenses"
+  -platform offscreen TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
+foreach(required LICENSE THIRD_PARTY_NOTICES.md relinking.md windows-runtime-terms.md MSVC-STL.md
+    Qt/qtbase/LICENSES/LGPL-3.0-only.txt Qt/qtbase/LICENSES/GPL-3.0-only.txt
+    Qt/qtbase/src/3rdparty/pcre2/LICENCE.md Qt/qtbase/src/3rdparty/freetype/BDF-LICENSE.txt
+    Qt/qtbase/src/3rdparty/libjpeg/COPYRIGHT.txt Qt/qtbase/src/3rdparty/libjpeg/ijg-license.txt)
+  if(NOT EXISTS "${WORK}/licenses/${required}")
+    message(FATAL_ERROR "Required license/copyright text missing from ${exe_name}: ${required}")
+  endif()
+endforeach()
 if(NOT WIDGET)
 execute_process(COMMAND "${WORK}/${exe_name}" --service
   RESULT_VARIABLE service_result TIMEOUT 10)

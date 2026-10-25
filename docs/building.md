@@ -9,9 +9,12 @@ SDK tools may internally use their own Python.
 Git is also used by the publication regression tests when rebuilding a source kit
 without its original `.git` directory.
 
-On Windows install MSVC 2026 x64 C++ Build Tools with Windows 11 SDK and open
+On Windows install licensed Visual Studio 2026 with the x64 C++ tools and Windows 11 SDK and open
 an x64 Developer PowerShell. CI pins MSVC 19.51 (toolset 14.51) / SDK 10.0.26100.0.
 On Linux use a C++23 compiler (GCC 13 or newer). Do not cross-build the Windows desktop.
+Visual Studio Community is available for qualifying personal/open-source work;
+Build Tools alone does not establish the required developer license. See
+[runtime terms](windows-runtime-terms.md) and [firmware source kits](firmware-licenses.md).
 The driver additionally pins SDK 10.0.26100.0, WDK NuGet 10.0.26100.6584 and
 KMDF 1.31. `ups-driver` runs InfVerif/Inf2Cat and kernel-import checks; the normal
 Windows target embeds that unsigned package and tests its extraction hashes.

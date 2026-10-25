@@ -30,8 +30,10 @@ ExternalProject_Add_Step(windows-monitor prepare-notices
     -P "${PROJECT_SOURCE_DIR}/cmake/PrepareNotices.cmake"
   DEPENDEES patch DEPENDERS configure
   DEPENDS "${PROJECT_SOURCE_DIR}/cmake/PrepareNotices.cmake" "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake"
+    "${PROJECT_SOURCE_DIR}/cmake/CollectQtNotices.cmake"
     "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
     "${PROJECT_SOURCE_DIR}/docs/relinking.md" "${PROJECT_SOURCE_DIR}/core/src/AllpowersModels.LICENSE.txt"
+    "${PROJECT_SOURCE_DIR}/docs/windows-runtime-terms.md" "${PROJECT_SOURCE_DIR}/docs/licenses/MSVC-STL.md"
     "${PROJECT_SOURCE_DIR}/drivers/windows/LICENSE.MS-PL.txt"
   LOG ON)
 add_custom_target(windows ALL)
@@ -57,6 +59,7 @@ add_custom_target(source-package
   COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/source-package"
     "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}" "-DOUTPUT=${ALLPOWERS_RELEASE_DIR}"
+    "-DQT_ROOT=${ALLPOWERS_QT_ROOT}"
     "-DVERSION=${ALLPOWERS_VERSION}" -P "${PROJECT_SOURCE_DIR}/cmake/PackageSources.cmake"
   DEPENDS windows-monitor USES_TERMINAL VERBATIM)
 add_custom_target(release
@@ -69,5 +72,12 @@ add_custom_target(source-package-check
   COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/source-kit-check"
     "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DARCHIVE=${ALLPOWERS_RELEASE_DIR}/AllpowersMonitor-${ALLPOWERS_VERSION}-sources.zip"
+    "-DQT_ROOT=${ALLPOWERS_QT_ROOT}"
     "-DVERSION=${ALLPOWERS_VERSION}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckSourcePackage.cmake"
   DEPENDS source-package USES_TERMINAL VERBATIM)
+add_custom_target(qt-relink-check
+  COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_BINARY_DIR}/source-kit-check/allpowers"
+    "-DWORK=${PROJECT_BINARY_DIR}/qt-relink" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
+    "-DSOURCE_CACHE=${PROJECT_BINARY_DIR}/source-kit-check/qt-source"
+    "-DJOBS=${ALLPOWERS_QT_JOBS}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckQtRelinking.cmake"
+  DEPENDS source-package-check USES_TERMINAL VERBATIM)

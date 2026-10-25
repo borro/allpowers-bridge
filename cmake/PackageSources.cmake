@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 include("${CMAKE_CURRENT_LIST_DIR}/Dependencies.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PublicSources.cmake")
+execute_process(COMMAND "${CMAKE_COMMAND}" -DMODE=VERIFY "-DPREFIX=${QT_ROOT}"
+  "-DSOURCE_CACHE=${SOURCE_CACHE}" -P "${CMAKE_CURRENT_LIST_DIR}/QtSourceIdentity.cmake"
+  COMMAND_ERROR_IS_FATAL ANY)
 ap_public_sources(public_files "${ROOT}")
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${ROOT}" -DMODE=worktree
   -P "${CMAKE_CURRENT_LIST_DIR}/Audit.cmake" COMMAND_ERROR_IS_FATAL ANY)
@@ -38,6 +41,7 @@ foreach(module qtbase qtconnectivity)
   endif()
   file(COPY_FILE "${SOURCE_CACHE}/${name}" "${payload}/qt-source/${name}" ONLY_IF_DIFFERENT)
 endforeach()
+file(COPY_FILE "${QT_ROOT}/allpowers-source-identity.cmake" "${payload}/qt-source/SDK-LIBRARIES.sha256")
 set(config "${WORK}/CPackSourceConfig.cmake")
 file(CONFIGURE OUTPUT "${config}" CONTENT [=[
 set(CPACK_GENERATOR ZIP)

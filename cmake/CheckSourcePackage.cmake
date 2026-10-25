@@ -32,7 +32,8 @@ if(NOT actual_files STREQUAL expected_files)
   message(FATAL_ERROR "Source archive contents differ from the public inventory")
 endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${work_path}/allpowers" -B "${work_path}/build"
-  -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON COMMAND_ERROR_IS_FATAL ANY)
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
+  -DBUILD_TESTING=ON COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${work_path}/build/product-version.txt" rebuilt_version)
 string(STRIP "${rebuilt_version}" rebuilt_version)
 if(NOT rebuilt_version STREQUAL VERSION)
@@ -45,4 +46,19 @@ if(result)
 endif()
 execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${work_path}/build" --output-on-failure
   COMMAND_ERROR_IS_FATAL ANY)
-message(STATUS "Source package rebuilt and passed CTest without .git or Python")
+if(CMAKE_HOST_WIN32)
+  if(NOT QT_ROOT)
+    message(FATAL_ERROR "Windows source-kit verification requires the matching static Qt SDK")
+  endif()
+  execute_process(COMMAND "${CMAKE_COMMAND}" -S "${work_path}/allpowers/apps/windows"
+    -B "${work_path}/windows" -G Ninja -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_TRY_COMPILE_CONFIGURATION=Release -DBUILD_TESTING=ON
+    "-DCMAKE_PREFIX_PATH=${QT_ROOT}" "-DALLPOWERS_QT_SOURCE_CACHE=${work_path}/qt-source"
+    COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${work_path}/windows" --parallel 4
+    OUTPUT_FILE "${work_path}/windows-build.log" ERROR_FILE "${work_path}/windows-build.log"
+    COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${work_path}/windows"
+    -R "^(desktop|widget|single-exe|widget-single-exe)$" --output-on-failure COMMAND_ERROR_IS_FATAL ANY)
+endif()
+message(STATUS "Source package rebuilt and passed core and supported desktop checks without .git or Python")

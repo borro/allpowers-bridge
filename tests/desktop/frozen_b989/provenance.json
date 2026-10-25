@@ -1,0 +1,15 @@
+{
+  "commit": "b989bd1bc970ce9e5af39d5838413a204b20f64d",
+  "purpose": "Frozen production USB parser/lifecycle/watchdog from b989bd1; no watchdog or decoder predicates are rewritten.",
+  "adaptations": [
+    "Namespace isolation only: HistoricalB989::UsbTransport and B989HistoryFormat.",
+    "Local include redirects to the frozen HistoryWire/HistoryRing headers.",
+    "One public advanceClock() entry calls the unchanged private tick() with the existing injected clock and fake channel."
+  ],
+  "original_sha256": {
+    "apps/windows/usb_transport.h": "b0cd8ab0ac2ec7d05926328b42f9f361677d0b973a5d3c2fe9767c490b302315",
+    "apps/windows/usb_transport.cpp": "a4b7e68a96ece321f7a72acee161b63d47a8530a9095af2f1241f578eef5eed1",
+    "firmware/R2500Adapter/HistoryRing.h": "30ea70e351a9bde5fe42f241cd08c739c7b6c095028257d8069988d8b66289d5",
+    "firmware/R2500Adapter/HistoryWire.h": "976496894b5a2075581d047225245866f125963681c47fa868987cdfd4612cf2"
+  }
+}

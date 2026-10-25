@@ -874,8 +874,8 @@ private slots:
         }
       }
       for(qsizetype offset=0;offset<retry.size();offset+=17)io->feed(retry.mid(offset,17));
-      QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),mode>=3?QString("partial"):QString("complete"));
-      QCOMPARE(usb.diagnostics()["usb_history_complete"].toBool(),mode<3);
+      QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),mode==3?QString("partial"):QString("complete"));
+      QCOMPARE(usb.diagnostics()["usb_history_complete"].toBool(),mode!=3);
       QCOMPARE(imported.size(),1);QCOMPARE(qvariant_cast<HistoryPoints>(imported.first()[0]).size(),2);
     }
   }

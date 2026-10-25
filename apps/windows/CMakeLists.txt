@@ -117,6 +117,18 @@ if(BUILD_TESTING)
   target_link_libraries(monitor_tests PRIVATE monitor_lib Qt6::Test)
   target_compile_definitions(monitor_tests PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures")
   target_link_libraries(monitor_tests PRIVATE widget_lib)
+  qt_add_executable(archive_transport_tests
+    ../../tests/desktop/archive_transport_test.cpp
+    ../../tests/desktop/frozen_b989/usb_transport.cpp
+    ../../tests/desktop/frozen_b989/usb_transport.h)
+  target_link_libraries(archive_transport_tests PRIVATE monitor_backend Qt6::Test)
+  target_compile_definitions(archive_transport_tests PRIVATE
+    FROZEN_B989_DIR="${ALLPOWERS_ROOT}/tests/desktop/frozen_b989")
+  if(MSVC)
+    target_compile_options(archive_transport_tests PRIVATE /utf-8 /UNDEBUG)
+  endif()
+  add_test(NAME archive-transport COMMAND archive_transport_tests
+    -o archive-transport-tests.txt,txt)
   qt_add_executable(widget_tests ../../tests/desktop/widget_test.cpp)
   target_sources(widget_tests PRIVATE widget.manifest)
   target_link_libraries(widget_tests PRIVATE widget_lib Qt6::Test)

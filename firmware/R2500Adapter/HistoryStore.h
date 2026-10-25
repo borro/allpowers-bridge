@@ -12,13 +12,7 @@
 #include "HistoryExport.h"
 #include "GraphHistory.h"
 
-struct HistoryStats {
-  bool ready=false,selfTest=false,clockSynced=false;
-  bool graphTest=false;
-  uint32_t liveCount=0,liveSamples=0,liveLatest=0;
-  uint32_t count=0,recovered=0,latest=0,oldest=0,generation=0,writes=0,errors=0,lastWriteMs=0,maxWriteMs=0,session=0;
-  const char *error="initializing";
-};
+#include "HistoryStatus.h"
 class HistoryPartition:public HistoryFormat::Flash {
 public:
   const esp_partition_t *partition=nullptr;
@@ -101,9 +95,12 @@ public:
     xSemaphoreTake(dataMutex,portMAX_DELAY);stats.recovered=stats.count;stats.latest=latest;stats.ready=true;stats.error="none";xSemaphoreGive(dataMutex);
     xSemaphoreGive(operation);
   }
+  bool tryStatus(HistoryStats &copy){
+    if(!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return false;
+    copy=stats;xSemaphoreGive(dataMutex);return true;
+  }
   HistoryStats status(){
-    HistoryStats copy;if(!dataMutex)return copy;
-    if(xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))==pdTRUE){copy=stats;xSemaphoreGive(dataMutex);}return copy;
+    HistoryStats copy;tryStatus(copy);return copy;
   }
   bool record(const Telemetry &s,bool gap){
     if(!operation||stopRequested.load()||xSemaphoreTake(operation,pdMS_TO_TICKS(10))!=pdTRUE)return false;

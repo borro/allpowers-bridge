@@ -8,6 +8,7 @@
 #include "HistoryWire.h"
 #include "TelemetryLabels.h"
 #include "HistoryExport.h"
+#include "output_test.h"
 
 int main() {
   assert(BootGestures::selfTest());
@@ -16,6 +17,7 @@ int main() {
   assert(HistoryFormat::selfTest(flash.data()));
   assert(HistoryFormat::wireSelfTest(flash.data()));
   assert(HistoryFormat::exportSelfTest());
+  OutputTests::selfTest();
   assert(telemetryLabelsSelfTest());
   std::array<HistoryFormat::Record, GraphHistory::kCapacity> graph{};
   assert(GraphHistory::selfTest(graph.data()));

@@ -40,6 +40,8 @@ public:
   void resume(const QString &, const QString &, int) override;
   void stop() override;
   void requestHistory() override;
+  // Advance lifecycle deadlines when the transport uses an externally owned clock.
+  void refresh() { tick(); }
 
 private:
   UsbChannel *channel = nullptr;

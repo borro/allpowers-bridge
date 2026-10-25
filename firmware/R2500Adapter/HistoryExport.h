@@ -63,6 +63,15 @@ public:
   ExportSession(ExportSource &input,ExportSink &output):source(input),sink(output){}
   bool active()const{return running;}
   uint32_t acknowledged()const{return cursor;}
+  bool atLineBoundary()const{return !offset&&!needsResync;}
+  bool framingPending()const{return needsResync;}
+  bool syncBoundary(){
+    if(!needsResync)return true;
+    const size_t n=sink.write("\n",1);
+    if(n>1){stop();return false;}
+    if(n==1)needsResync=false;
+    return !needsResync;
+  }
   void cancel(){stop();}
   void start(uint32_t id,uint32_t now,uint32_t legacyFirst=0,uint32_t legacySpan=0){
     stop();metadata={};request=id;started=now;ordinal=sent=cursor=0;digest=kDigestSeed;
@@ -78,9 +87,7 @@ public:
       if(offset==0){line=Line::None;length=0;done("error");}
     }
     if(needsResync){
-      const size_t n=sink.write("\n",1);
-      if(n>1){stop();return;}
-      if(n==1)needsResync=false;
+      syncBoundary();
       return; // A framing barrier never advances a record acknowledgement.
     }
     if(line!=Line::None){

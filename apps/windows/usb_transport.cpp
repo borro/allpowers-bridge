@@ -321,6 +321,17 @@ void UsbTransport::receive(const QByteArray &bytes) {
   }
 }
 void UsbTransport::row(const QJsonObject &o) {
+  // Versioned frames identify their operation independently of record contents.
+  // Delayed complete frames from another request (or a previous boot after our
+  // authoritative begin) must not finish or damage the current transaction.
+  if(importing&&importVersion==3&&(o["history_export_begin"].toBool()||
+      o["history_record"].toBool()||o["history_dump_done"].toBool())){
+    quint32 version,request,session,generation;
+    if(number(o,"history_export_version",version,3)&&version==3&&
+       number(o,"request",request)&&request&&number(o,"export_session",session)&&session&&
+       number(o,"generation",generation)&&
+       (request!=importRequest||(importBegun&&session!=importSession)))return;
+  }
   if (o.contains("product_version")) {
     for (const char *key : {"product_version","product_commit","firmware_protocol_version","board_identity"})
       if (o[key].isString()) details_[key]=o[key].toString().left(128);

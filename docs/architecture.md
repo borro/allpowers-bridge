@@ -47,7 +47,9 @@ rotating logs live in a dedicated worker thread; at most one telemetry-history
 job is outstanding, so slow disk does not build an unbounded queue. History
 retains the old schema/path, preserving Python-monitor data without conversion.
 
-Graphs render at telemetry cadence, not in a busy animation loop. Per-column
+Monitor graphs render at telemetry cadence and user interaction. The widget
+animates its time axis and power scale briefly when a new sample changes them;
+the animation stops between updates. Per-column
 extrema bound painter vertices while retaining peaks. Wheel zoom, panning,
 crosshair values, series visibility, 1/24/48-hour ranges and linear/log axes are
 local UI operations. Session, timestamp and freshness gaps break lines; known

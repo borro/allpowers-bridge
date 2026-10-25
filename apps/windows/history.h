@@ -4,6 +4,7 @@
 #include <QList>
 #include <QSqlDatabase>
 #include <QThread>
+#include <optional>
 
 struct HistoryPoint {
   QString address, session;
@@ -14,6 +15,26 @@ struct HistoryPoint {
   bool bridgeFromPrevious = false;
 };
 using HistoryPoints = QList<HistoryPoint>;
+// One dispatched write and one coalesced newest sample, independent of worker
+// speed. Completion is explicit even when SQLite cannot accept the sample.
+class HistorySampleQueue {
+  bool running = false;
+  std::optional<HistoryPoint> pending;
+public:
+  std::optional<HistoryPoint> submit(HistoryPoint point) {
+    if (running) { pending=std::move(point); return {}; }
+    running=true;return point;
+  }
+  std::optional<HistoryPoint> complete() {
+    auto next=takePending();running=next.has_value();return next;
+  }
+  std::optional<HistoryPoint> takePending() {
+    auto next=std::move(pending);pending.reset();return next;
+  }
+  void clearPending() { pending.reset(); }
+  bool busy() const { return running; }
+  bool waiting() const { return pending.has_value(); }
+};
 Q_DECLARE_METATYPE(HistoryPoints)
 bool joinPoints(const HistoryPoint &, const HistoryPoint &);
 int sourceChange(const HistoryPoint &, const HistoryPoint &);
@@ -24,6 +45,7 @@ HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &serv
 HistoryPoints mergeUsbHistory(const HistoryPoints &station, const HistoryPoints &board,
                               const QString &currentBoardSession = {});
 bool exportHistoryCsv(const HistoryPoints &, const QString &path);
+bool writeHistoryCsv(const HistoryPoints &, QIODevice &device);
 
 class HistoryStore {
   QString connection_;
@@ -66,6 +88,7 @@ public slots:
   void log(QString message);
   void saveSettings(QString path, QJsonObject settings);
 signals:
+  void sampleFinished();
   void loaded(QString address, HistoryPoints points, QJsonObject stats);
   void problem(QString message);
   void exported(QString path, bool ok);

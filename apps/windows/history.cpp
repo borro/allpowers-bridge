@@ -285,10 +285,18 @@ bool HistoryStore::exportCsv(const QString &address, qint64 now, const QString &
   return exportHistoryCsv(points(address, now), path);
 }
 bool exportHistoryCsv(const HistoryPoints &points, const QString &path) {
-  QFile file(path);
+  QSaveFile file(path);
+  file.setDirectWriteFallback(false);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
     return false;
-  QTextStream out(&file);
+  if (!writeHistoryCsv(points,file)) {
+    file.cancelWriting();
+    return false;
+  }
+  return file.commit();
+}
+bool writeHistoryCsv(const HistoryPoints &points, QIODevice &device) {
+  QTextStream out(&device);
   out.setGenerateByteOrderMark(true);
   out << "address,wall,tick,session,fresh,known,soc,input_w,output_w,source,ac_output,usb_output,"
          "dc_output,stride\n";
@@ -299,6 +307,7 @@ bool exportHistoryCsv(const HistoryPoints &points, const QString &path) {
         << s.output_w << ',' << s.source << ',' << s.ac_output << ',' << s.usb_output << ','
         << s.dc_output << ',' << p.stride << '\n';
   }
+  out.flush();
   return out.status() == QTextStream::Ok;
 }
 void HistoryWorker::exportPoints(HistoryPoints points, QString path) {
@@ -323,6 +332,7 @@ void HistoryWorker::sample(QString a, ap_snapshot s, qint64 w, qint64 t) {
       emit problem("Не удалось сохранить точку истории");
     load(a, w);
   }
+  emit sampleFinished();
 }
 void HistoryWorker::load(QString a, qint64 now) {
   if (store && store->valid())

@@ -3,6 +3,7 @@ get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 include("${ROOT}/cmake/Version.cmake")
 include("${ROOT}/cmake/Dependencies.cmake")
 project(AllpowersUps LANGUAGES CXX)
+ap_add_build_identity()
 include("${ROOT}/cmake/WindowsCompiler.cmake")
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "The UPS driver requires x64 MSVC and Windows SDK 10.0.26100.0")
@@ -19,6 +20,7 @@ if(NOT EXISTS "${sdk}/Include/${kit}/shared/batclass.h")
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(AllpowersUps driver.cpp)
+add_dependencies(AllpowersUps product-identity)
 target_compile_features(AllpowersUps PRIVATE cxx_std_23)
 set_target_properties(AllpowersUps PROPERTIES SUFFIX .sys
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/package")
@@ -42,7 +44,6 @@ target_link_libraries(AllpowersUps PRIVATE
   "${wdk}/Lib/${kit}/km/x64/hal.lib"
   "${wdk}/Lib/${kit}/km/x64/BufferOverflowK.lib")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
-configure_file(AllpowersUps.inf.in "package/AllpowersUps.inf" @ONLY)
 add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/package/allpowersups.cat"
   COMMAND "${wdk}/tools/${kit}/x64/infverif.exe" /w "${CMAKE_BINARY_DIR}/package/AllpowersUps.inf"
   COMMAND "${wdk}/bin/${kit}/x86/Inf2Cat.exe" "/driver:${CMAKE_BINARY_DIR}/package" /os:10_X64 /uselocaltime

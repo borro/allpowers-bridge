@@ -29,8 +29,41 @@ jobs:
           cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=worktree -P cmake/Audit.cmake
           cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=history -P cmake/Audit.cmake
           cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/CheckSecrets.cmake
-  products:
+  portable:
     needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitize: [false, true]
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+        with:
+          cmake-version: '4.4.4'
+      - name: Install pinned Ninja
+        run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      - name: Configure portable tests
+        env:
+          SANITIZE: ${{ matrix.sanitize }}
+        run: |
+          if [ "$SANITIZE" = true ]; then
+            cmake --preset native -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined'
+          else
+            cmake --preset native
+          fi
+      - name: Build portable and firmware host tests
+        run: cmake --build --preset native --parallel 2
+      - name: Test portable logic and build contracts
+        run: ctest --preset native
+  products:
+    needs: [audit, portable]
     timeout-minutes: 180
     strategy:
       fail-fast: false

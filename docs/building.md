@@ -109,6 +109,11 @@ Version comes from git describe --tags --match v[0-9]* --dirty. Fetch tags in CI
 A clean tagged build displays that tag's numeric version; intermediate builds
 carry commit/dirty metadata. The source ZIP receives a generated VERSION fallback,
 so it rebuilds without .git. No product version is duplicated in tracked files.
+Identity is refreshed during each product build; generated headers/resources are
+rewritten only when their contents change. The chosen tag/version is passed to
+the desktop and driver projects. Firmware stages an exact source inventory,
+keeping its compiler cache separately. Packaging rechecks the current identity
+against the configured one and requires reconfiguration after an identity change.
 
 Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
 contains user history or private recovery storage. Do not delete .local/ or the
@@ -120,6 +125,9 @@ external preservation folders when cleaning build output.
 manual runs. Feature branches are checked through PR events, avoiding a second
 matrix build for the same branch push. Before opening a PR, use workflow dispatch
 to build a feature branch. A merge into `main` still gets its own integration build.
+After the audit, a portable tier runs core/ABI/UPS tests, RAM-only firmware
+self-tests and build regressions on Linux, both normally and with ASan/UBSan.
+The full Windows/Linux product matrix follows only after that tier succeeds.
 New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
 release for the same tag. Shared build commands use Bash with fail-fast behavior
 on both platforms; Windows-specific scripts and the release job use PowerShell.
@@ -216,6 +224,22 @@ changes and unstaged tracked changes locally. Untracked source files must be
 reviewed and staged before the final scan. No source data is uploaded by these
 checks. Automated scans reduce risk; inspect new binary assets and personal
 content manually as well.
+
+## Dependency updates and reproducibility
+
+Review non-Action dependencies monthly alongside Dependabot: Qt, Arduino CLI,
+ESP32 core and its transitive tools, MSVC/SDK/WDK, CMake/Ninja, and the optional
+maintenance packages. Update the central versions/checksums and relevant licenses
+together; inspect upstream release notes and the actual resolved tool/package
+inventory. A live Arduino package index alone is not an immutable toolchain lock.
+Each update needs both board builds, portable and Qt tests, package/source-kit
+rebuilds and a review of cached SDK compatibility. Keep changes reviewable per
+dependency instead of silently changing versions during a normal build.
+
+The source-kit checks establish that the product can be rebuilt from its sources.
+They do not establish identical ZIP/PE bytes: compiler timestamps and archive
+metadata can differ. Reuse the original checked artifacts for a publication retry;
+different bytes under an already published version must still be rejected.
 
 Source ZIPs are assembled from the Git public-file inventory; ignored files are
 never copied. Unknown file types/locations fail publication checks. `SOURCE_FILES`

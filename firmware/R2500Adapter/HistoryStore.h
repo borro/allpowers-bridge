@@ -1,18 +1,21 @@
 #pragma once
 #include <Arduino.h>
 #include <atomic>
+#include <new>
 #include "esp_partition.h"
 #include "esp_timer.h"
 #include "esp_random.h"
 #include "Telemetry.h"
 #include "HistoryRing.h"
+#include "HistoryWire.h"
+#include "HistorySample.h"
 #include "GraphHistory.h"
 
 struct HistoryStats {
   bool ready=false,selfTest=false,clockSynced=false;
   bool graphTest=false;
   uint32_t liveCount=0,liveSamples=0,liveLatest=0;
-  uint32_t count=0,recovered=0,latest=0,writes=0,errors=0,lastWriteMs=0,maxWriteMs=0,session=0;
+  uint32_t count=0,recovered=0,latest=0,oldest=0,writes=0,errors=0,lastWriteMs=0,maxWriteMs=0,session=0;
   const char *error="initializing";
 };
 class HistoryPartition:public HistoryFormat::Flash {
@@ -47,26 +50,15 @@ class HistoryStore {
     xSemaphoreTake(dataMutex,portMAX_DELAY);
     if(stats.count<HistoryFormat::kKeep)records[(head+stats.count++)%HistoryFormat::kKeep]=r;
     else {records[head]=r;head=(head+1)%HistoryFormat::kKeep;}
-    stats.latest=r.sequence;xSemaphoreGive(dataMutex);
+    stats.latest=r.sequence;stats.oldest=records[head].sequence;xSemaphoreGive(dataMutex);
   }
   HistoryFormat::Record makeRecord(const Telemetry &s,bool gap){
     uint64_t uptime=uint64_t(esp_timer_get_time())/1000000;
-    HistoryFormat::Record r={};r.uptimeSeconds=uint32_t(uptime);
+    HistoryFormat::Record r=HistoryFormat::sample(s,millis());r.uptimeSeconds=uint32_t(uptime);
     xSemaphoreTake(dataMutex,portMAX_DELAY);r.session=stats.session;
     if(epochBase){r.epochSeconds=epochBase+uint32_t(uptime-epochUptime);r.flags|=HistoryFormat::Clock;}
     xSemaphoreGive(dataMutex);
     if(gap)r.flags|=HistoryFormat::Gap;
-    bool fresh=telemetryFresh(s,millis());
-    r.soc=fresh?s.soc:255;r.chargeWatts=fresh?s.chargeWatts:0xffff;
-    r.outputWatts=fresh?s.outputWatts:0xffff;r.runtimeMinutes=fresh?s.minutes:0xffff;
-    if(fresh){
-      r.flags|=HistoryFormat::Fresh;
-      if(s.source==PowerSource::Mains)r.flags|=HistoryFormat::Mains;
-      if(s.source==PowerSource::Battery)r.flags|=HistoryFormat::Battery;
-      if(s.mainFlags&2)r.flags|=HistoryFormat::AcOutput;
-      if(s.mainFlags&1)r.flags|=HistoryFormat::UsbOutput;
-      if(s.settingsFlags&0x10)r.flags|=HistoryFormat::DcOutput;
-    }
     return r;
   }
 public:
@@ -89,15 +81,18 @@ public:
       error("partition");xSemaphoreGive(operation);return;
     }
     flash.partition=part;
-    records=static_cast<HistoryFormat::Record*>(ps_malloc(HistoryFormat::kKeep*sizeof(HistoryFormat::Record)));
-    liveMemory=static_cast<HistoryFormat::Record*>(ps_malloc(GraphHistory::kLiveKeep*sizeof(HistoryFormat::Record)));
-    if(!records||!liveMemory){error("memory");xSemaphoreGive(operation);return;}
-    live=new GraphHistory::LiveRing(liveMemory);
+    auto *archive=static_cast<HistoryFormat::Record*>(ps_malloc(HistoryFormat::kKeep*sizeof(HistoryFormat::Record)));
+    auto *recent=static_cast<HistoryFormat::Record*>(ps_malloc(GraphHistory::kLiveKeep*sizeof(HistoryFormat::Record)));
+    if(!archive||!recent){free(archive);free(recent);error("memory");xSemaphoreGive(operation);return;}
+    auto *liveRing=new(std::nothrow) GraphHistory::LiveRing(recent);
+    if(!liveRing){free(archive);free(recent);error("memory");xSemaphoreGive(operation);return;}
+    xSemaphoreTake(dataMutex,portMAX_DELAY);records=archive;liveMemory=recent;live=liveRing;xSemaphoreGive(dataMutex);
     if(!ring.recover()){error("read");xSemaphoreGive(operation);return;}
     uint32_t latest=ring.latestSequence();
     if(latest){
-      for(uint32_t back=HistoryFormat::kKeep;back>0;--back){
-        uint32_t sequence=latest-(back-1);HistoryFormat::Record r;
+      for(uint32_t back=HistoryFormat::kSlots;back>0;--back){
+        // Sequence zero is reserved and skipped at wrap.
+        uint32_t sequence=latest>=back?latest-(back-1):UINT32_MAX-(back-latest-1);HistoryFormat::Record r;
         if(sequence&&ring.readSequence(sequence,r))push(r);
         if(!ring.ok()){error("read");xSemaphoreGive(operation);return;}
       }
@@ -128,7 +123,8 @@ public:
   }
   size_t copyGraph(GraphHistory::Point *dest,size_t capacity,bool &unknown){
     unknown=false;
-    if(capacity<GraphHistory::kCapacity||!dataMutex||!records||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return 0;
+    if(capacity<GraphHistory::kCapacity||!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return 0;
+    if(!records){xSemaphoreGive(dataMutex);return 0;}
     size_t n=0;uint32_t liveCount=live?live->size():0,session=stats.session;
     for(uint32_t i=0;i<stats.count;++i){const auto &r=records[(head+i)%HistoryFormat::kKeep];
       if(liveCount&&r.session==live->at(0).session&&r.uptimeSeconds>=live->at(0).uptimeSeconds)continue;
@@ -140,7 +136,8 @@ public:
     return n;
   }
   size_t copyRecent(HistoryFormat::Record *dest,size_t capacity){
-    if(!dataMutex||!records||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return 0;
+    if(!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return 0;
+    if(!records){xSemaphoreGive(dataMutex);return 0;}
     size_t n=min(capacity,size_t(stats.count));uint32_t first=(head+stats.count-n)%HistoryFormat::kKeep;
     size_t firstCount=min(n,size_t(HistoryFormat::kKeep-first));
     memcpy(dest,records+first,firstCount*sizeof(*dest));
@@ -148,9 +145,16 @@ public:
     xSemaphoreGive(dataMutex);return n;
   }
   bool readSequence(uint32_t sequence,HistoryFormat::Record &result){
-    if(!dataMutex||!records||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return false;
+    if(!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return false;
+    if(!records){xSemaphoreGive(dataMutex);return false;}
     bool found=false;
     for(uint32_t i=0;i<stats.count;++i){auto &r=records[(head+i)%HistoryFormat::kKeep];if(r.sequence==sequence){result=r;found=true;break;}}
+    xSemaphoreGive(dataMutex);return found;
+  }
+  bool readAtOrAfter(uint32_t sequence,HistoryFormat::Record &result){
+    if(!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return false;
+    if(!records){xSemaphoreGive(dataMutex);return false;}
+    bool found=HistoryFormat::atOrAfter(records,head,stats.count,HistoryFormat::kKeep,sequence,result);
     xSemaphoreGive(dataMutex);return found;
   }
   void setTime(uint32_t epoch){

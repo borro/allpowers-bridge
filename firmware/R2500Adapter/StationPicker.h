@@ -116,8 +116,9 @@ public:
     return removed;
   }
   // seenAt is always reception time `now`, never untrusted advertisement input.
-  // A full fresh catalog rejects an extra MAC; it does not reshuffle/evict entries.
-  bool upsert(const Entry &entry, uint32_t now, const char *connectedMAC = nullptr) {
+  // A full fresh catalog rejects extra MACs, except the explicit reconnect target.
+  bool upsert(const Entry &entry, uint32_t now, const char *connectedMAC = nullptr,
+              const char *requestedMAC = nullptr) {
     if (!valid(targetOf(entry))) return false;
     int8_t position = find(entry.identity.address);
     // Refresh before pruning so a just-seen existing station keeps its order.
@@ -128,7 +129,18 @@ public:
       return true;
     }
     prune(now, connectedMAC);
-    if (count_ == kCapacity) return false;
+    if (count_ == kCapacity) {
+      // The UI inventory must never prevent reconnecting the explicit target.
+      if (!sameMAC(entry.identity.address, requestedMAC) &&
+          !sameMAC(entry.identity.address, connectedMAC)) return false;
+      int victim = -1;
+      for (int i = count_ - 1; i >= 0; --i)
+        if (!sameMAC(entries_[i].identity.address, connectedMAC) &&
+            !sameMAC(entries_[i].identity.address, selected_)) { victim = i; break; }
+      if (victim < 0) return false;
+      entries_[victim] = entry; entries_[victim].seenAt = now;
+      return true;
+    }
     entries_[count_] = entry;
     entries_[count_++].seenAt = now;
     return true;
@@ -172,13 +184,15 @@ public:
 // Name tail is zeroed by encode, so save-if-changed ignores unused source bytes.
 constexpr uint32_t kMagic = 0x31545041; // APT1
 constexpr uint16_t kVersion = 1;
-struct __attribute__((packed)) Blob {
+#pragma pack(push,1)
+struct Blob {
   uint32_t magic;
   uint16_t version, bytes;
   char name[32], address[18];
   uint8_t addressType, model;
   uint32_t crc;
 };
+#pragma pack(pop)
 static_assert(sizeof(Blob) == 64 && offsetof(Blob, crc) == 60, "Target blob format");
 
 inline bool encode(const Target &target, Blob &out) {
@@ -326,6 +340,17 @@ inline bool selfTest() {
   Catalog wrap;
   if (!wrap.upsert(first, 0xfffffff0u) || wrap.prune(0x10u) != 0 ||
       wrap.prune(uint32_t(0xfffffff0u + kTtlMs)) != 1) return false;
+  // The requested station arrives after 24 continuously refreshed strangers.
+  for(unsigned cycle=0;cycle<100;++cycle){
+    Catalog crowded;
+    for(uint8_t i=0;i<kCapacity;++i){Entry stranger=first;
+      stranger.identity.address[15]="0123456789abcdef"[i>>4];
+      stranger.identity.address[16]="0123456789abcdef"[i&15];
+      if(!crowded.upsert(stranger,cycle*100))return false;
+    }
+    if(!crowded.upsert(first,cycle*100+1,nullptr,first.identity.address)||
+       crowded.find(first.identity.address)<0||crowded.size()!=kCapacity)return false;
+  }
   return true;
 }
 } // namespace StationPicker

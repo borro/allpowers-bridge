@@ -1,6 +1,9 @@
 #include "AllpowersModels.h"
+#include "TelemetryRecovery.h"
+#include "AllpowersCore.h"
 #include <assert.h>
 #include <stdio.h>
+#include <initializer_list>
 using namespace AllpowersModels;
 static void checksum(uint8_t *p, size_t n) {
   p[n - 1] = 0;
@@ -8,10 +11,39 @@ static void checksum(uint8_t *p, size_t n) {
     p[n - 1] ^= p[i];
 }
 int main() {
+  AllpowersCore::TelemetryRecovery recovery;
+  recovery.begin(100);
+  // Initial silence, main-only, settings-only and missing RX all remain
+  // incomplete: packets alone cannot reset the recovery deadline.
+  for (uint32_t now=100;now<=45100;now+=1000) {
+    recovery.observe(now,false);
+    assert(!recovery.reconnectDue(now));
+  }
+  assert(recovery.reconnectDue(45101));
+  recovery.observe(46000,true);
+  assert(!recovery.reconnectDue(91000));
+  assert(recovery.reconnectDue(91001));
+  recovery.begin(UINT32_MAX-1000);
+  assert(!recovery.reconnectDue(1000));
+  assert(recovery.reconnectDue(45000));
   assert(selfTest());
   // Actual local R2500V2 captures: SOC100, input0W, output230W, 38400 minutes.
   const uint8_t ownMain[] = {0xa5, 0x65, 0xb1, 0, 1, 8, 1, 2, 100, 0, 0, 0, 230, 0x96, 0, 0x6f};
   const uint8_t ownSettings[] = {0xa5, 0x65, 0xb1, 0, 1, 6, 3, 0, 1, 0, 0, 3, 2, 0x75};
+  for(bool mainOnly : {false,true}) {
+    AllpowersCore::Session session(Model::R2500V2);
+    recovery.begin(0);
+    for(uint32_t now=0;now<=46000;now+=1000) {
+      assert(mainOnly ? session.receive(ownMain,sizeof(ownMain),now)
+                      : session.receive(ownSettings,sizeof(ownSettings),now));
+      recovery.observe(now,session.fresh(now));
+    }
+    assert(recovery.reconnectDue(46000));
+    assert(session.receive(ownMain,sizeof(ownMain),46001));
+    assert(session.receive(ownSettings,sizeof(ownSettings),46001));
+    recovery.observe(46001,session.fresh(46001));
+    assert(!recovery.reconnectDue(46002));
+  }
   // Real public PR2 capture: https://github.com/madninjaskillz/allpowers-ble/pull/2
   const uint8_t prMain[] = {0xa5, 0x65, 0xb1, 0, 1, 8, 1, 2, 0x2a, 0, 0, 0, 5, 4, 0x41, 0x11};
   const uint8_t prSettings[] = {0xa5, 0x65, 0xb1, 0, 1, 6, 3, 0, 0, 0, 0, 0x14, 0x30, 0x51};

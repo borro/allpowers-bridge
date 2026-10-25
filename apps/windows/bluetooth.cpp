@@ -4,7 +4,6 @@
 BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots)
     : TelemetryTransport(parent), offline_(offline) {
   elapsed.start();
-  lastValid.start();
   if (!offline) {
     scanner = new QBluetoothDeviceDiscoveryAgent(this);
     scanner->setLowEnergyDiscoveryTimeout(7000);
@@ -39,8 +38,12 @@ BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots)
     if (!connected_)
       s.fresh = 0;
     emit snapshot(s);
-    if (connected_ && lastValid.elapsed() > ap_reconnect_silence_ms())
-      fail("Данные не поступают");
+    if (connected_) {
+      const auto now = quint32(elapsed.elapsed());
+      recovery.observe(now, s.fresh);
+      if (recovery.reconnectDue(now))
+        fail("Полная телеметрия не поступает");
+    }
   });
   if (snapshots)
     tick.start();
@@ -71,6 +74,7 @@ void BleTransport::scan() {
   if (active_ && current.isValid())
     devices[address_] = current;
   error_.clear();
+  ++discoveries;
   scanner->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
   emit stateChanged();
 }
@@ -214,6 +218,7 @@ void BleTransport::connectDevice() {
   });
   setPhase("Подключение…");
   deadline.start(30000);
+  ++attempts;
   c->connectToDevice();
 }
 void BleTransport::readyService(quint64 generation) {
@@ -245,8 +250,6 @@ void BleTransport::readyService(quint64 generation) {
             if (!active_ || epoch != generation || service != s || characteristic != rx)
               return;
             bool valid = session.receive(token, value, quint32(elapsed.elapsed()));
-            if (valid)
-              lastValid.restart();
             packets++;
             emit packet(QString::fromLatin1(value.toHex()), valid);
           });
@@ -261,7 +264,7 @@ void BleTransport::readyService(quint64 generation) {
             connected_ = true;
             connects++;
             retrySeconds = 2;
-            lastValid.restart();
+            recovery.begin(quint32(elapsed.elapsed()));
             error_.clear();
             setPhase("Подключено · получение данных");
             poll.start();
@@ -295,6 +298,9 @@ QJsonObject BleTransport::diagnostics() const {
           {"active", active_},
           {"connected", connected_},
           {"scanning", scanning()},
+          {"discovery_attempts", qint64(discoveries)},
+          {"connection_attempts", qint64(attempts)},
+          {"bluetooth_used", discoveries > 0 || attempts > 0},
           {"connections", qint64(connects)},
           {"drops", qint64(drops)},
           {"polls", qint64(polls)},

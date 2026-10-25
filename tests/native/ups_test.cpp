@@ -2,8 +2,44 @@
 #include "UpsState.h"
 #include <cassert>
 #include <initializer_list>
+#include <algorithm>
+#include <iterator>
 int main() {
   using namespace AllpowersUps;
+  // Captured packets through the production C ABI, rather than hand-setting
+  // the very known bits whose propagation this integration test verifies.
+  const uint8_t mainPacket[]={0xa5,0x65,0xb1,0,1,8,1,2,100,0,0,0,230,0x96,0,0x6f};
+  const uint8_t mains[]={0xa5,0x65,0xb1,0,1,6,3,0,1,0,0,3,2,0x75};
+  const uint8_t battery[]={0xa5,0x65,0xb1,0,1,6,3,0,1,0xff,0xff,3,2,0x75};
+  auto *session=ap_create(3);
+  assert(session);
+  ap_snapshot decoded{};
+  auto stateAt=[&](uint32_t now){
+    assert(ap_get_snapshot(session,now,&decoded,sizeof(decoded)));
+    return makeUpsState(decoded,1,now+1);
+  };
+  assert(!stateAt(0).flags);
+  assert(ap_receive(session,mainPacket,sizeof(mainPacket),100));
+  assert(!stateAt(100).flags); // Missing Settings.
+  assert(ap_receive(session,mains,sizeof(mains),100));
+  assert((stateAt(101).flags&(Present|Mains))==(Present|Mains));
+  assert(decoded.known&AllpowersModels::MainsSource);
+  assert(ap_receive(session,battery,sizeof(battery),200));
+  assert((stateAt(201).flags&(Present|Discharging))==(Present|Discharging));
+  uint8_t unknown[sizeof(mains)];
+  std::copy(std::begin(mains),std::end(mains),unknown);
+  unknown[9]=1;unknown[13]^=1;
+  assert(ap_receive(session,unknown,sizeof(unknown),300));
+  assert(!stateAt(301).flags && !(decoded.known&AllpowersModels::MainsSource));
+  assert(ap_receive(session,mains,sizeof(mains),400));
+  assert(!stateAt(15101).flags); // Main has expired while Settings is recent.
+  assert(ap_receive(session,mainPacket,sizeof(mainPacket),20000));
+  assert(!stateAt(20000).flags); // Settings alone has expired.
+  ap_reset(session,3);
+  assert(!stateAt(20000).flags && !decoded.known);
+  assert(ap_receive(session,mains,sizeof(mains),20001));
+  assert(!stateAt(20001).flags); // Missing Main after reset.
+  ap_destroy(session);
   ap_snapshot input{};
   input.fresh = input.main_seen = input.settings_seen = 1;
   input.model = 3;

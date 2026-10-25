@@ -1,5 +1,6 @@
 #pragma once
 #include "transport.h"
+#include "TelemetryRecovery.h"
 #include <QBluetoothDeviceDiscoveryAgent>
 #include <QElapsedTimer>
 #include <QJsonObject>
@@ -18,12 +19,13 @@ class BleTransport : public TelemetryTransport {
   QMap<QString, QBluetoothDeviceInfo> devices;
   Session session;
   QTimer tick, poll, retry, deadline;
-  QElapsedTimer elapsed, lastValid;
+  QElapsedTimer elapsed;
+  AllpowersCore::TelemetryRecovery recovery;
   QString address_, name_, phase_ = "Отключено", error_;
   int profile = 0, retrySeconds = 2;
   bool active_ = false, connected_ = false, offline_ = false;
   quint64 epoch = 0;
-  quint64 connects = 0, drops = 0, polls = 0, packets = 0;
+  quint64 discoveries = 0, attempts = 0, connects = 0, drops = 0, polls = 0, packets = 0;
   void connectDevice();
   void discoveryEnded();
   void fail(const QString &message);

@@ -1,4 +1,5 @@
 #include "battery_probe.h"
+#include "connection_lease.h"
 #include "integration.h"
 #include "notices.h"
 #include "service_host.h"
@@ -128,6 +129,15 @@ int main(int argc, char **argv) {
     const auto address = settings["address"].toString();
     if (address.isEmpty())
       return 2;
+    ConnectionLease lease;
+    if (integrationInstalled() || !lease.acquire()) {
+      QFile file(parser.value("report"));
+      if (file.open(QIODevice::WriteOnly))
+        file.write(QJsonDocument(QJsonObject{{"status", "BUSY"},
+          {"error", "Direct verification unavailable: installed service or another direct owner"},
+          {"bluetooth_used", false}}).toJson());
+      return 5;
+    }
     BleTransport transport(&app);
     ap_snapshot latest{};
     QElapsedTimer clock;
@@ -204,6 +214,10 @@ int main(int argc, char **argv) {
   }
   bool selfTest = parser.isSet("self-test"), demo = parser.isSet("demo");
   QTemporaryDir temporary;
+  if ((selfTest || demo) && !temporary.isValid()) {
+    qCritical("Cannot create an isolated data directory for demo/self-test");
+    return 3;
+  }
   if (selfTest || demo)
     qputenv("ALLPOWERS_DATA_DIR", temporary.path().toUtf8());
   if (!ap_self_test())
@@ -226,7 +240,7 @@ int main(int argc, char **argv) {
         info["embedded_notices"] = embeddedLicenseFiles().size();
         info["lgpl_notice"] = lgplNotice;
         info["qt_runtime"] = qVersion();
-        info["bluetooth_used"] = false;
+        info["requested_mode"] = selfTest ? "self-test" : demo ? "demo" : "normal";
         out.write(QJsonDocument(info).toJson(QJsonDocument::Indented));
       } else
         ok = false;

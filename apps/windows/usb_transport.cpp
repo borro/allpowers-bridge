@@ -1,5 +1,6 @@
 #include "usb_transport.h"
 #include "AllpowersModels.h"
+#include "../../firmware/R2500Adapter/HistoryWire.h"
 #include <QBluetoothAddress>
 #include <QDateTime>
 #include <QJsonArray>
@@ -26,6 +27,10 @@ quint32 crc32(const QByteArray &data) {
 }
 bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quint32 &epoch) {
   quint32 seq, tick, soc, in, out, minutes, flags, check;
+  quint32 version=1, known=0, model=0;
+  if (o.contains("record_version") && !number(o,"record_version",version,2)) return false;
+  if (version!=1 && version!=2) return false;
+  if (version==2 && (!number(o,"known",known,4095) || !number(o,"protocol",model,3))) return false;
   if (!number(o, "sequence", seq) || !seq || !number(o, "session", session) ||
       !number(o, "uptime_s", tick) || !number(o, "epoch", epoch) || !number(o, "soc", soc, 255) ||
       !number(o, "charge_w", in, 65535) || !number(o, "output_w", out, 65535) ||
@@ -34,7 +39,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
     return false;
   QByteArray bytes(28, 0);
   auto *d = reinterpret_cast<uchar *>(bytes.data());
-  qToLittleEndian<quint32>(0x31504841, d);
+  qToLittleEndian<quint32>(version==2?HistoryFormat::header(known,quint8(model)):HistoryFormat::kMagic, d);
   qToLittleEndian(seq, d + 4);
   qToLittleEndian(session, d + 8);
   qToLittleEndian(tick, d + 12);
@@ -53,6 +58,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
     p.session += QString("-gap-%1").arg(seq);
   auto &s = p.data;
   s.abi_version = 1;
+  s.model = model;
   s.fresh = bool(flags & 1);
   s.main_seen = 1;
   if (soc <= 100) {
@@ -72,7 +78,8 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
     s.known |= 8;
   }
   if (s.fresh) {
-    s.known |= 16 | 32 | 64;
+    // AHP1 never recorded output known bits. Do not turn unknown into OFF.
+    if (version==2) s.known |= known & (16 | 32 | 64);
     s.ac_output = bool(flags & 8);
     s.usb_output = bool(flags & 16);
     s.dc_output = bool(flags & 32);
@@ -81,6 +88,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
       s.known |= 512;
     }
   }
+  if (version==2) s.known &= known;
   if (!(flags & 64))
     epoch = 0;
   return true;
@@ -243,7 +251,7 @@ void UsbTransport::command(const QByteArray &data) {
   if (!channel || !opened_)
     return;
   if (data == "STATUS\n" || data == "DIAG\n" ||
-      (importing && data.startsWith("HISTORY-READ ") && data.size() < 40))
+      (importing && (data.startsWith("HISTORY-READ ") || data.startsWith("HISTORY-EXPORT ")) && data.size() < 40))
     channel->write(data);
 }
 void UsbTransport::tick() {
@@ -313,7 +321,14 @@ void UsbTransport::receive(const QByteArray &bytes) {
   }
 }
 void UsbTransport::row(const QJsonObject &o) {
-  if (o.contains("adapter")) {
+  if (o.contains("product_version")) {
+    for (const char *key : {"product_version","product_commit","firmware_protocol_version","board_identity"})
+      if (o[key].isString()) details_[key]=o[key].toString().left(128);
+    details_["product_dirty"]=o["product_dirty"].toBool();
+  } else if (o.contains("ble_task_started")) {
+    for (const char *key : {"ble_task_started","ble_startup_failed","history_task_started","startup_maintenance_available"})
+      if (o[key].isBool()) details_[key]=o[key];
+  } else if (o.contains("adapter")) {
     pending = knownPending = false;
     if (o["adapter"] != "UPSDEV" || !o["version"].isString() || !o["fresh"].isBool() ||
         !o["gatt_connected"].isBool()) {
@@ -405,6 +420,13 @@ void UsbTransport::row(const QJsonObject &o) {
     details_["history_ready"] = o["history_ready"].toBool();
     details_["history_records"] = int(count);
     details_["history_latest"] = double(latest);
+    quint32 oldest, exportVersion;
+    if (number(o,"history_oldest",oldest) && number(o,"history_export_version",exportVersion,2) && exportVersion==2) {
+      details_["history_oldest"] = double(oldest);
+      details_["history_export_version"] = int(exportVersion);
+    } else {
+      details_.remove("history_oldest"); details_.remove("history_export_version");
+    }
     details_["history_session"] = double(session);
     details_["board_history_clock"] = o["history_clock"];
   } else if (o.contains("graph_live_latest_s")) {
@@ -522,11 +544,18 @@ void UsbTransport::requestHistory() {
   if (!count || !latest)
     return;
   quint32 first = latest;
-  for (quint32 i = 1; i < count; ++i)
-    first = first == 1 ? UINT32_MAX : first - 1;
+  const bool cursor=details_["history_export_version"].toInt()==2;
+  if (cursor) first=quint32(details_["history_oldest"].toDouble());
+  else {
+    // Older firmware counts records, not occupied sequence numbers. Scan its
+    // entire retained sequence window so torn-write holes cannot hide records.
+    count=2880;
+    for (quint32 i = 1; i < count; ++i) first = first == 1 ? UINT32_MAX : first - 1;
+  }
+  if (!first) return;
   importing = true;
   importDeadline = elapsedMs() + 60000;
   details_.remove("usb_history_error");
-  command("HISTORY-READ " + QByteArray::number(first) + " " + QByteArray::number(count) + "\n");
+  command(QByteArray(cursor?"HISTORY-EXPORT ":"HISTORY-READ ") + QByteArray::number(first) + " " + QByteArray::number(count) + "\n");
   emit stateChanged();
 }

@@ -26,7 +26,7 @@ endforeach()
 add_executable(Unversioned main.cpp)
 ]=] @ONLY)
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${scratch}/probe" -B "${scratch}/probe-build"
-  -G Ninja "-DCMAKE_CXX_COMPILER=${CXX}" -DCMAKE_BUILD_TYPE=Release
+  -G Ninja "-DCMAKE_CXX_COMPILER=${CXX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
   OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${scratch}/probe-build"
   OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)

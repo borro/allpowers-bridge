@@ -269,6 +269,10 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   connect(this, &WidgetController::openHistory, history, &HistoryWorker::open);
   connect(this, &WidgetController::loadHistory, history, &HistoryWorker::load);
   connect(this, &WidgetController::sample, history, &HistoryWorker::sample);
+  connect(history, &HistoryWorker::sampleFinished, this, [this] {
+    if (auto next=sampleQueue.complete())
+      emit sample(next->address,next->data,next->wall,next->tick);
+  });
   connect(this, &WidgetController::newSession, history, &HistoryWorker::newSession);
   connect(this, &WidgetController::importHistory, history, &HistoryWorker::importPoints);
   connect(history, &HistoryWorker::loaded, this,
@@ -291,7 +295,10 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   emit openHistory(directory + "/history.sqlite3");
   connect(&transport, &TelemetryTransport::snapshot, this, &WidgetController::receive);
   connect(&transport, &TelemetryTransport::stateChanged, this, &WidgetController::refresh);
-  connect(&transport, &TelemetryTransport::newSession, this, &WidgetController::newSession);
+  connect(&transport, &TelemetryTransport::newSession, this, [this] {
+    sampleQueue.clearPending();
+    emit newSession();
+  });
   connect(&transport, &TelemetryTransport::historyReady, this, [this](HistoryPoints points) {
     remotePoints = std::move(points);
     refreshHistory();
@@ -338,6 +345,8 @@ WidgetController::~WidgetController() {
   transport.disconnect(this);
   disconnectStation();
   save();
+  if (auto pending=sampleQueue.takePending())
+    emit sample(pending->address,pending->data,pending->wall,pending->tick);
   // All posted history writes complete before the worker thread quits.
   QMetaObject::invokeMethod(history, [] {}, Qt::BlockingQueuedConnection);
   historyThread.quit();
@@ -393,6 +402,7 @@ void WidgetController::receive(ap_snapshot value) {
     stored.clear();
     remotePoints.clear();
     sampleAt = -1;
+    sampleQueue.clearPending();
     emit newSession();
     emit loadHistory(address, QDateTime::currentSecsSinceEpoch());
   }
@@ -400,7 +410,10 @@ void WidgetController::receive(ap_snapshot value) {
   if (!offline_ && !transport.remote() && transport.active() && value.main_seen &&
       !address.isEmpty() && now != sampleAt) {
     sampleAt = now;
-    emit sample(address, value, now, clock.elapsed() / 1000);
+    HistoryPoint point;
+    point.address=address;point.data=value;point.wall=now;point.tick=clock.elapsed()/1000;
+    if (auto next=sampleQueue.submit(std::move(point)))
+      emit sample(next->address,next->data,next->wall,next->tick);
   }
   refresh();
 }
@@ -560,6 +573,8 @@ QJsonObject WidgetController::diagnostics() const {
   auto result = card_.nativeDiagnostics();
   const QJsonObject values{
       {"history_error", historyError},
+      {"history_worker_busy", sampleQueue.busy()},
+      {"history_sample_pending", sampleQueue.waiting()},
       {"desktop_attached", card_.attached()},
       {"desktop_error", card_.attachmentError()},
       {"points", plotted.size()},
@@ -567,8 +582,7 @@ QJsonObject WidgetController::diagnostics() const {
       {"input_segments", WidgetCard::graphSegments(plotted, 2, QDateTime::currentSecsSinceEpoch())},
       {"output_segments",
        WidgetCard::graphSegments(plotted, 4, QDateTime::currentSecsSinceEpoch())},
-      {"bluetooth_used",
-       !offline_ && !transport.usb() && !transport.remote() && transport.active()}};
+      {"bluetooth_used", transport.diagnostics()["bluetooth_used"].toBool()}};
   for (auto it = values.begin(); it != values.end(); ++it)
     result[it.key()] = it.value();
   return result;

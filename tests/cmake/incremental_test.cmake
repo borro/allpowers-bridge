@@ -17,7 +17,7 @@ add_executable(probe main.cpp)
 file(WRITE "${scratch}/source/value.h" "#define VALUE 0\n")
 file(WRITE "${scratch}/source/main.cpp" "#include \"value.h\"\nint main() { return VALUE; }\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${scratch}/source" -B "${scratch}/build"
-  -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=${CXX}"
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release "-DCMAKE_CXX_COMPILER=${CXX}"
   COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${CMAKE_COMMAND}" --build "${scratch}/build" COMMAND_ERROR_IS_FATAL ANY)
 set(executable "${scratch}/build/probe")

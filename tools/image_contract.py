@@ -1,7 +1,34 @@
 """Offline integrity checks shared by the optional board-maintenance tools."""
 import hashlib, json, struct
+from dataclasses import dataclass
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
+
+# Complete, deliberately fixed on-device layout. Changing a type or flag is a
+# migration, even if the labels and byte ranges remain the same.
+PARTITIONS = {
+    'nvs': (1, 2, 0x9000, 0x5000, 0),
+    'otadata': (1, 0, 0xe000, 0x2000, 0),
+    'app0': (0, 0x10, 0x10000, 0x300000, 0),
+    'app1': (0, 0x11, 0x310000, 0x300000, 0),
+    'ffat': (1, 0x81, 0x610000, 0x9c0000, 0),
+    'history': (1, 0x40, 0xfd0000, 0x20000, 0),
+    'coredump': (1, 3, 0xff0000, 0x10000, 0),
+}
+SEGMENTS = ((0, 'R2500Adapter.ino.bootloader.bin', 0x8000),
+            (0x8000, 'R2500Adapter.ino.partitions.bin', 0x1000),
+            (0xe000, 'boot_app0.bin', 0x2000),
+            (0x10000, 'R2500Adapter.ino.bin', 0x300000))
+SECTOR = 0x1000
+
+
+@dataclass(frozen=True)
+class WriteOperation:
+    name: str
+    start: int
+    end: int
+    erase_start: int
+    erase_end: int
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -9,11 +36,56 @@ def sha(path):
 def partition_check(path):
     entries = {}
     table = path.read_bytes()
+    if not table or len(table) > SECTOR or len(table) % 32:
+        raise ValueError('Partition table must fit its sector and contain whole entries')
+    checksum = False
     for offset in range(0, len(table), 32):
+        record = table[offset:offset + 32]
+        if record[:2] == b'\xeb\xeb':
+            if record[2:16] != b'\xff' * 14 or record[16:] != hashlib.md5(table[:offset]).digest():
+                raise ValueError('Partition table checksum mismatch')
+            if table[offset + 32:] != b'\xff' * (len(table) - offset - 32):
+                raise ValueError('Unexpected data after partition checksum')
+            checksum = True
+            break
         magic, kind, subtype, address, size, label, flags = struct.unpack_from('<HBBII16sI', table, offset)
-        if magic != 0x50aa: break
-        entries[label.rstrip(b'\0').decode()] = [address, size]
+        if magic != 0x50aa:
+            raise ValueError('Invalid partition entry or missing checksum')
+        name_bytes, separator, padding = label.partition(b'\0')
+        if not separator or padding.strip(b'\0'):
+            raise ValueError('Invalid partition label')
+        name = name_bytes.decode('ascii')
+        if name in entries or PARTITIONS.get(name) != (kind, subtype, address, size, flags):
+            raise ValueError('Partition schema mismatch: ' + name)
+        entries[name] = [address, size]
+    if not checksum or set(entries) != set(PARTITIONS):
+        raise ValueError('Incomplete partition schema or checksum')
     contract = json.loads((ROOT/'tests/fixtures/usb-contract.json').read_text())
     for name, expected in contract['partitions'].items():
         if entries.get(name) != expected: raise RuntimeError('Partition changed: '+name)
     return entries
+
+
+def write_plan(folder):
+    """Validate all write and erase ranges without importing/opening a device."""
+    partition_check(folder / 'R2500Adapter.ino.partitions.bin')
+    operations = []
+    # Only app0 and otadata are intentionally replaced. All other partition
+    # contents, including the inactive application, are protected.
+    protected = [(name, entry[2], entry[2] + entry[3])
+                 for name, entry in PARTITIONS.items() if name not in ('app0', 'otadata')]
+    for start, name, capacity in SEGMENTS:
+        size = (folder / name).stat().st_size
+        if not 0 < size <= capacity:
+            raise ValueError('Firmware segment exceeds its allowed range: ' + name)
+        end = start + size
+        erase_start = start // SECTOR * SECTOR
+        erase_end = (end + SECTOR - 1) // SECTOR * SECTOR
+        for partition, lower, upper in protected:
+            if erase_start < upper and lower < erase_end:
+                raise ValueError('Erase range overlaps protected partition: ' + partition)
+        if any(erase_start < previous.erase_end and previous.erase_start < erase_end
+               for previous in operations):
+            raise ValueError('Firmware erase ranges overlap')
+        operations.append(WriteOperation(name, start, end, erase_start, erase_end))
+    return tuple(operations)

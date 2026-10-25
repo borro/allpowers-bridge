@@ -34,7 +34,7 @@ endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${work_path}/allpowers" -B "${work_path}/build"
   -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
   -DBUILD_TESTING=ON COMMAND_ERROR_IS_FATAL ANY)
-file(READ "${work_path}/build/product-version.txt" rebuilt_version)
+file(READ "${work_path}/build/identity/product-version.txt" rebuilt_version)
 string(STRIP "${rebuilt_version}" rebuilt_version)
 if(NOT rebuilt_version STREQUAL VERSION)
   message(FATAL_ERROR "Source archive lost its Git-tag-derived version")

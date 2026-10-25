@@ -55,21 +55,10 @@ file(GENERATE OUTPUT "${arduino_config}" CONTENT
 add_custom_target(arduino-setup COMMAND "${CMAKE_COMMAND}"
   "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}" "-DCONFIG=${arduino_config}"
   -P "${PROJECT_SOURCE_DIR}/cmake/SetupArduino.cmake" USES_TERMINAL VERBATIM)
-set(firmware_sources
-  core/library.properties.in
-  core/src/AllpowersCore.h core/src/AllpowersModels.h
-  core/src/AllpowersModels.LICENSE.txt core/src/TelemetryState.h core/src/UpsState.h
-  firmware/R2500Adapter/AllpowersModels.h firmware/R2500Adapter/AllpowersModels.LICENSE.txt
-  firmware/R2500Adapter/BoardProfile.h firmware/R2500Adapter/BootButton.h
-  firmware/R2500Adapter/BootGestures.h firmware/R2500Adapter/BuildVersion.h
-  firmware/R2500Adapter/Diagnostics.h firmware/R2500Adapter/Display.h
-  firmware/R2500Adapter/DisplayPanel.h firmware/R2500Adapter/GraphHistory.h
-  firmware/R2500Adapter/HistoryRing.h firmware/R2500Adapter/HistoryStore.h
-  firmware/R2500Adapter/MaintenanceProtocol.h firmware/R2500Adapter/R2500Adapter.ino
-  firmware/R2500Adapter/StationIdentity.h firmware/R2500Adapter/StationPicker.h
-  firmware/R2500Adapter/TargetPreferences.h firmware/R2500Adapter/Telemetry.h
-  firmware/R2500Adapter/UpsDescriptor.h firmware/R2500Adapter/partitions.csv)
-list(TRANSFORM firmware_sources PREPEND "${PROJECT_SOURCE_DIR}/")
+# Reconfigure for added/removed inputs; build dependencies follow the actual inventory.
+file(GLOB_RECURSE firmware_sources CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/core/src/*" "${PROJECT_SOURCE_DIR}/firmware/R2500Adapter/*")
+list(APPEND firmware_sources "${PROJECT_SOURCE_DIR}/core/library.properties.in")
 set(board_number 0)
 foreach(board waveshare-147 pocket-096)
   math(EXPR board_number "${board_number}+1")
@@ -85,16 +74,18 @@ foreach(board waveshare-147 pocket-096)
       "-DCONFIG=${arduino_config}" "-DWORK=${PROJECT_BINARY_DIR}/firmware/${board}"
       "-DJOBS=${ALLPOWERS_ARDUINO_JOBS}"
       "-DLEGAL_CACHE=${ALLPOWERS_DEPS_DIR}/firmware-legal"
-      "-DOUTPUT=${output}" "-DVERSION=${ALLPOWERS_VERSION}"
+      "-DOUTPUT=${output}" "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
       -P "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake"
     DEPENDS ${firmware_sources} "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
       "${arduino_config}" "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
       "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake" "${PROJECT_SOURCE_DIR}/cmake/Partitions.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/CheckContracts.cmake" "${PROJECT_SOURCE_DIR}/cmake/Json.cmake"
-      "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake" "${PROJECT_BINARY_DIR}/product-version.txt"
+      "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake" "${ALLPOWERS_IDENTITY_FILE}"
+      "${PROJECT_SOURCE_DIR}/cmake/StageFirmware.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/PrepareFirmwareKit.cmake" "${PROJECT_SOURCE_DIR}/cmake/RelinkFirmware.cmake"
       "${PROJECT_SOURCE_DIR}/docs/firmware-licenses.md"
       "${PROJECT_SOURCE_DIR}/docs/licenses/LGPL-3.0.md" "${PROJECT_SOURCE_DIR}/docs/licenses/GPL-3.0.md"
     USES_TERMINAL VERBATIM)
   add_custom_target(${board} DEPENDS "${output}/manifest.json")
+  add_dependencies(${board} product-identity)
 endforeach()

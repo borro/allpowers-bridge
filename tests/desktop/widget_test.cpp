@@ -58,7 +58,7 @@ public:
     return running ? "connected" : "idle";
   }
   QJsonObject diagnostics() const override {
-    return {};
+    return {{"connection_attempts",starts},{"bluetooth_used",starts>0}};
   }
   bool remote() const override {
     return service;
@@ -115,6 +115,8 @@ static QByteArray widgetUsbStatus(const QString &board, int frames, int output =
       {{"history_ready", true},
        {"history_records", 2},
        {"history_latest", 2},
+       {"history_oldest", 1},
+       {"history_export_version", 2},
        {"history_session", 7},
        {"history_clock", false}},
       {{"board", board}}};
@@ -127,6 +129,19 @@ static QByteArray widgetUsbStatus(const QString &board, int frames, int output =
 class WidgetTests : public QObject {
   Q_OBJECT
 private slots:
+  void activitySurvivesStopAndTransportSwitch() {
+    TransportRouter router(nullptr,false,false,"bluetooth",
+      [](const QString &,QObject *parent){return new CountingTransport(parent);},
+      "ALLPOWERS.Test.Activity."+QUuid::createUuid().toString());
+    QVERIFY(!router.diagnostics()["bluetooth_used"].toBool());
+    router.resume("synthetic",{},3);
+    router.stop();
+    QVERIFY(router.diagnostics()["bluetooth_used"].toBool());
+    QCOMPARE(router.diagnostics()["connection_attempts"].toInteger(),1);
+    router.setMode("usb");
+    QVERIFY(router.diagnostics()["bluetooth_used"].toBool());
+    QCOMPARE(router.diagnostics()["connection_attempts"].toInteger(),1);
+  }
   void recentGraphUpdatesRemainVisible() {
     WidgetCard card(false);
     const qint64 now = 100000;
@@ -228,7 +243,7 @@ private slots:
     };
     QTRY_VERIFY(has(cached)); // Cached archive appears before the USB dump completes.
     QVERIFY(!has(other));
-    QTRY_VERIFY(io->writes.contains("HISTORY-READ 1 2\n"));
+    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT 1 2\n"));
     const QByteArray dump =
         "{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
         "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
@@ -261,7 +276,7 @@ private slots:
     io->writes.clear();
     usb->resume("R2500-000000000001", {}, 0);
     io->feed(widgetUsbStatus(board, 11));
-    QTRY_VERIFY(io->writes.contains("HISTORY-READ 1 2\n"));
+    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT 1 2\n"));
     io->feed(dump);
     QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 3);
     usb->resume("R2500-000000000002", {}, 0);

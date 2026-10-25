@@ -3,26 +3,24 @@ from __future__ import annotations
 import argparse, hashlib, json, subprocess, sys
 from pathlib import Path
 from boards import ROOT, BOARDS, device, rom_port
-
-SEGMENTS=[('0','R2500Adapter.ino.bootloader.bin'),('0x8000','R2500Adapter.ino.partitions.bin'),
-          ('0xe000','boot_app0.bin'),('0x10000','R2500Adapter.ino.bin')]
+from image_contract import SEGMENTS
 
 def validate_image(folder,board):
-    from image_contract import partition_check, sha
+    from image_contract import write_plan, sha
     manifest=json.loads((folder/'manifest.json').read_text())
     contract=json.loads((ROOT/'tests/fixtures/usb-contract.json').read_text())
     if manifest['board']!=board or manifest['descriptor_sha256']!=contract['descriptor_sha256']:
         raise ValueError('Board/USB contract mismatch')
     if manifest.get('maintenance')!='BOOT-R2500!!' or manifest.get('efuse_writes') is not False:
         raise ValueError('Maintenance contract missing')
-    required={name for _,name in SEGMENTS}
+    required={name for _,name,_ in SEGMENTS}
     if not required.issubset(manifest['files']):raise ValueError('Missing firmware segments')
+    if {name for name in manifest['files'] if name.endswith('.bin')} != required:
+        raise ValueError('Unexpected firmware segment')
     for name,expected in manifest['files'].items():
         path=(folder/name).resolve()
         if path.parent!=folder.resolve() or sha(path)!=expected:raise ValueError('Image integrity mismatch: '+name)
-    partition_check(folder/'R2500Adapter.ino.partitions.bin')
-    app=folder/'R2500Adapter.ino.bin'
-    if app.stat().st_size>0x300000:raise ValueError('Application exceeds its partition')
+    write_plan(folder)
     return manifest
 
 def main():
@@ -47,7 +45,11 @@ def main():
         finally:handle.close()
         return
     folder=args.image_dir or ROOT/'dist/firmware'/args.board
-    if args.action in ('flash','verify'):validate_image(folder,args.board)
+    plan = None
+    if args.action in ('flash','verify'):
+        validate_image(folder,args.board)
+        from image_contract import write_plan
+        plan = write_plan(folder)
     if args.action=='flash':
         if not args.confirm_write:raise RuntimeError('Writing requires --confirm-write')
         if not identity.get('physical_rom_verified'):raise RuntimeError('Verify independent physical BOOT/RESET entry before replacing firmware')
@@ -62,7 +64,8 @@ def main():
     print(result)
     if identity['mac'] not in result.lower() or 'Detected flash size: 16MB' not in result:
         raise RuntimeError('Hardware identity/flash size mismatch; no write performed')
-    segments=[value for offset,name in SEGMENTS for value in (offset,str(folder/name))]
+    segments=[value for operation in (plan or ())
+              for value in (hex(operation.start),str(folder/operation.name))]
     if args.action=='flash':subprocess.run(command+['write-flash','--no-progress',*segments],check=True)
     if args.action in ('flash','verify'):subprocess.run(command+['verify-flash',*segments],check=True)
     if args.action in ('flash','reset'):

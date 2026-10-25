@@ -1,5 +1,39 @@
 # Validation
 
+## Review-fix evidence — 2026-10-25
+
+The review fixes were validated before committing, in a working tree based on
+`79b0173`, identified as `0.5.1-3-g79b0173-dirty`. The offline results below
+record that source validation; later tagged builds and deployment are separate checks.
+Hardware and hosted CI rows describe earlier evidence, not a rerun of the changes.
+Local build/test evidence remains in ignored storage and is not distributed in Git.
+
+| Component | Revision / date | Environment and result | Evidence / remaining limit |
+| --- | --- | --- | --- |
+| Core, C ABI, UPS mapper, firmware RAM logic, build regressions | Review working tree / 2026-10-25 | Linux GCC 13.3: CTest 12/12; Windows MSVC 19.51: CTest 14/14 passed | Local `/tmp/allpowers-review-integrated-native` and `build/review-integrated-native`; real fixture bytes through C ABI to UPS cache, gaps/known metadata and staging/version/partition cases; no hardware |
+| Memory/undefined-behavior checks | Same working tree / 2026-10-25 | Linux ASan + UBSan: models, ABI, UPS state and firmware host 4/4 passed | Local `/tmp/allpowers-review-sanitizers`; default sanitizer options; no hardware |
+| Monitor and Widget | Same working tree / 2026-10-25 | Windows MSVC 19.51, static Qt 6.12, /MT, WinRT: Qt CTest 6/6 passed | Local `build/review-windows`; desktop 46 cases; native UI/DPI and isolated EXEs; no BLE/USB |
+| Firmware and relink kits | Same working tree / 2026-10-25 | Both board targets compile, partition/USB contracts and object-kit relinking pass on Windows and Linux | Local `build/review-integrated-native` and `/tmp/allpowers-review-integrated-native`; both resulting Windows image packages pass offline maintenance validation; no activation or second-write test of these images |
+| Maintenance image guards | Same working tree / 2026-10-25 | Offline Python tests 6/6 passed; existing firmware package accepted | `tests/maintenance/test_image_contract.py`; synthetic hash-consistent invalid images rejected before device access |
+| Driver and release package | Same working tree / 2026-10-25 | Windows driver/INF/catalog and CPack runtime/source ZIP passed; extracted source kit rebuilt/tested without .git | Local `build/review-integrated-windows`; extracted core CTest 14/14 and desktop suites 4/4; kernel runtime remains unverified |
+| Hosted product checks | `da1415b`, before review fixes / 2026-10-25 | Previously recorded hosted MSVC 19.51, Ubuntu, CTest and CPack success | Toolchain-upgrade journal below; these working-tree changes have not run on hosted CI |
+| Waveshare + R2500 V2 | Firmware before review fixes; exact hardware-test revision not recorded / 2026-10-25 | Previously recorded BLE Central/GATT, fresh telemetry and physical HID UPS success | Hardware journal below; no claim of transitions, Pocket hardware or native Windows driver readiness |
+
+Regression tests cover data validity, archive recovery, bounded work, failure
+paths and build contracts. Firmware synchronization and direct-verification
+ownership were also reviewed in code. The packet decoder/reducer, full-snapshot recovery deadline and
+bounded history queue are shared logic. Archive AHP2 adds CRC-covered known/model
+metadata without moving partitions or changing slot sizes; old AHP1 remains
+readable with conservative output validity. New cursor export is additive;
+legacy HISTORY-READ retains its original meaning. Firmware STATUS exposes the
+product identity independently of the unchanged USB protocol version.
+
+Driver VM lifecycle/IOCTL, LocalSystem BLE, sleep/resume and real Windows power
+actions remain pending. Firmware compilation and offline contracts do not prove
+an actual next write. No device was opened or flashed while applying these fixes.
+
+The sections below are a dated journal; superseded observations are historical.
+
 Configure/build with CMake Presets and run ctest --preset windows or native.
 C++ tests exercise the actual shared C ABI, model decoding, recorded packets,
 freshness, malformed data, timer wrap and bounds. QtTest covers session generations,
@@ -108,7 +142,7 @@ entry and factory rollback were not exercised again in this session.
 | Deleted firmware byproduct restored by the next Linux build | Passed |
 | New CMake Linux firmware orchestration, both boards | Passed; official SHA256-verified SDK archives were downloaded through Windows because WSL could not reach the ESP32 index |
 | Reachable Git history and current public sources, Gitleaks 8.30.1 | No leaks detected |
-| GitHub workflow, Actionlint 1.7.12 | Passed; remote execution pending publication |
+| GitHub workflow, Actionlint 1.7.12 | Passed; remote execution was pending at this stage (subsequent hosted evidence above) |
 
 ## USB monitor — 2026-10-24
 
@@ -143,8 +177,8 @@ is not assumed. See [the lab procedure](windows-ups.md).
 
 Both firmware targets now pass the CMake build/contract path on Linux. This does
 not verify WSL's failed network/index-update path: the pinned SDK was installed
-from verified cached downloads. Windows and Ubuntu CI jobs are configured, but
-have not run remotely because the repository has not been pushed.
+from verified cached downloads. At this earlier stage Windows and Ubuntu CI
+jobs had not run remotely; subsequent hosted results are recorded above.
 
 An earlier authorized manual WinRT test verified a real Central/GATT connection,
 subscription and fresh R2500 V2 telemetry. That result is separate from BLE

@@ -21,6 +21,29 @@ required. The board archive automatically fills gaps in the main USB history
 chart; its records remain labelled separately because they lack station identity.
 See [USB mode](docs/usb-monitor.md).
 
+## Start here
+
+Run **AllpowersMonitor.exe** for the full interface or **AllpowersWidget.exe**
+for the desktop card. Choose USB to use a board already connected to the station;
+choose Bluetooth for a direct PC connection. Disconnect the other direct client
+first. If Bluetooth is busy, release the connection in the other app or board;
+the application does not take it over. An installed UPS service owns Bluetooth
+and supplies viewers with its readings.
+
+Stale means the required telemetry has expired. Missing or stale values are not
+evidence of an empty battery. Settings/history are local to each app under
+`%LOCALAPPDATA%`; the paths and archive limitations are described below.
+
+| Protocol family | Known telemetry | Hardware evidence |
+| --- | --- | --- |
+| R2500 V2 | Charge, input/output, runtime, AC/DC/USB outputs, explicit mains/battery source | R2500 V2 + Waveshare BLE/GATT and HID UPS on Windows, 2026-10-25; see [validation](docs/validation.md) for the tested revision |
+| Legacy16 | Charge, power, runtime, AC/DC/light outputs; USB output and mains source unknown | Offline protocol tests; individual catalog models and Pocket hardware unverified |
+| Old10 | Charge, power, runtime, cycles, AC/DC/USB/light outputs; mains source unknown | Offline protocol tests; individual catalog models unverified |
+
+Pocket is compiled and protocol-tested. The native Windows UPS driver/service
+remains experimental for every model; successful HID reporting on a board does
+not validate the driver. Catalog recognition alone does not establish compatibility.
+
 **Interface examples**
 
 <table>
@@ -71,7 +94,7 @@ and never stops it on exit. The widget owns its USB port directly.
 On USB connection/reconnection it automatically reads the board archive and merges
 it with current samples into one line per metric, preserving genuine data gaps.
 Its logarithmic time axis gives recent seconds more space within the one-hour
-history; a marker identifies the latest fresh sample.
+history. Lines join consecutive valid samples; isolated samples have no endpoint dot.
 Run `AllpowersWidget.exe --demo` to preview without hardware; demo uses temporary
 storage and does not change user settings or login startup.
 Diagnostics includes a live event log that follows new entries. Scrolling up

@@ -27,7 +27,10 @@ The old STATUS command takes runtime from the HID report. Runtime is therefore
 shown only for a current confirmed UPS report; unsupported profiles or a retained
 HID runtime produce an unknown value rather than an old estimate.
 
-Only `STATUS`, `DIAG` and bounded `HISTORY-READ` requests are sent. The monitor
+Only `STATUS`, `DIAG` and bounded archive read requests are sent. New firmware
+advertises cursor pagination; the reader uses `HISTORY-EXPORT` to traverse actual
+records, including sequence gaps left by interrupted writes. Older firmware
+continues to use `HISTORY-READ`. The monitor
 never sends 1200-baud touch, boot/reset/firmware/clock/screen/station-selection
 commands. **Отключить** closes the USB port; the board continues BLE, HID reporting
 and recording. Change the station with the board's BOOT picker. Some stations
@@ -42,7 +45,7 @@ rows appear in the existing parameter/value table, alongside USB port, serial,
 profile, errors and archive progress. Optional Windows driver controls are in
 **Диагностика → ИБП Windows…**.
 
-The old flash record format does not contain a station identity. Its records are
+Flash records do not contain a station identity. Their records are
 stored in a separate `usb_minutes` table keyed by board serial. On connection,
 the monitor automatically reads the archive and merges it into the main History
 chart (**История станции + USB**, the default). Saved archive points also appear
@@ -83,11 +86,13 @@ Board records retain their original unidentified provenance and remain separate
 from station history in storage. Switching boards clears the previous archive;
 Bluetooth/service mode does not include a USB board overlay. The one-hour graph
 refreshes every second, with disk work on the history worker. Repeated reads do
-not duplicate records. The monitor and widget still use a direct connection in
+not duplicate records. New AHP2 records retain CRC-protected model and field
+validity; old AHP1 records keep output states unknown because their validity was
+never stored. The monitor and widget still use a direct connection in
 turn, so disconnect the monitor before connecting the widget to the same port.
 The widget uses logarithmic time over that hour to keep live-second changes
 visible on its compact plot, instead of compressing each second into 0.075 pixels.
-Its endpoint marker is shown only for a fresh sample no more than three seconds old.
+It draws lines between consecutive valid samples; an isolated sample has no endpoint dot.
 
 ## Tests
 

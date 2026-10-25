@@ -294,7 +294,6 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       selectedAddress = ble->address();
       localPoints.clear();
       points.clear();
-      historyBusy = false;
       refreshHistory();
       emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
     }
@@ -349,6 +348,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(this, &MonitorWindow::openHistory, history, &HistoryWorker::open);
   connect(this, &MonitorWindow::historySession, history, &HistoryWorker::newSession);
   connect(this, &MonitorWindow::historySample, history, &HistoryWorker::sample);
+  connect(history, &HistoryWorker::sampleFinished, this, [this] { historyBusy=false; });
   connect(this, &MonitorWindow::historyLoad, history, &HistoryWorker::load);
   connect(this, &MonitorWindow::historyExport, history, &HistoryWorker::exportFile);
   connect(this, &MonitorWindow::historyExportPoints, history, &HistoryWorker::exportPoints);
@@ -358,7 +358,6 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(ble, &TelemetryTransport::newSession, this, &MonitorWindow::historySession);
   connect(history, &HistoryWorker::loaded, this,
           [this](QString address, HistoryPoints values, QJsonObject stats) {
-            historyBusy = false;
             const bool boardArchive = ble->usb() && !ble->endpoint().isEmpty() &&
                                       address == "usb-board:" + ble->endpoint();
             if (!boardArchive && address != selectedAddress)
@@ -382,7 +381,6 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
     emit historyImport(values, QDateTime::currentSecsSinceEpoch());
   });
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
-    historyBusy = false;
     historyError = message;
     appendLog("Ошибка истории · " + message);
     refreshDiagnostics();
@@ -457,7 +455,6 @@ void MonitorWindow::changeTransport() {
   usbEndpoint.clear();
   points.clear();
   lastSample = -1;
-  historyBusy = false;
   historySource->setCurrentIndex(0);
   settings["transport"] = mode;
   router->setMode(mode);

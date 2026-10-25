@@ -177,7 +177,6 @@ struct ServiceHost::Impl {
       config = selected;
       error.clear();
       points.clear();
-      busy = false;
       QMetaObject::invokeMethod(
           history,
           [h = history, address = address.toString()] {
@@ -228,18 +227,17 @@ bool ServiceHost::start() {
   d->history = new HistoryWorker;
   d->history->moveToThread(&d->thread);
   connect(&d->thread, &QThread::finished, d->history, &QObject::deleteLater);
+  connect(d->history, &HistoryWorker::sampleFinished, this, [d] { d->busy=false; });
   connect(d->history, &HistoryWorker::loaded, this,
           [d](QString address, HistoryPoints p, QJsonObject stats) {
             if (address != d->ble.address())
               return;
-            d->busy = false;
             d->points = p;
             d->stats = stats;
             if (!p.isEmpty())
               d->broadcast({{"op", "sample"}, {"point", Ipc::point(p.last())}});
           });
   connect(d->history, &HistoryWorker::problem, this, [d](QString error) {
-    d->busy = false;
     d->error = error;
   });
   d->thread.start();

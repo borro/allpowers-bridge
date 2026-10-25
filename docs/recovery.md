@@ -6,6 +6,21 @@ The USB descriptor contract and partition offsets are checked against fixtures.
 
 ## Before replacing code
 
+For a new owner without a registered identity, first enter physical ROM mode and
+list ports with `python -m serial.tools.list_ports -v`. Listing does not open a
+port or write the board. Match the newly appearing VID 303A/PID 1001 port to the
+physical board; its ROM USB serial gives the chip MAC used by `rom_port`.
+Register that MAC and derive the application serial as `R2500-` followed by its
+12 uppercase hex digits without colons. The board profile is selected explicitly;
+the USB VID alone does not distinguish Waveshare from Pocket. Then use the
+registered `identity` command below to confirm the chip before considering a write.
+
+Prepare a rollback from a previously verified image for that exact board profile,
+or the checked matching release package, and store it outside the checkout with
+its SHA256. A downloaded image is a candidate rollback until its boot/update path
+has been verified; a read of one region is not a factory backup. Do not mark
+physical ROM recovery as verified until BOOT/RESET entry works on that unit.
+
 1. Confirm the board profile and record the actual chip MAC and generated USB serial.
 2. Verify physical ROM entry on that unit: hold BOOT, press/release RESET, release
    BOOT; for a board without RESET, insert it while holding BOOT.
@@ -37,7 +52,9 @@ Python is optional and used only by these explicit USB tools. CMake/CTest/CPack
 do not invoke them. Replace the board name for Pocket. `boot` sends the existing HID feature command
 `BOOT-R2500!!`; it does not erase flash. Physical ROM entry is independent of the
 application. `identity`, `verify` and `reset` require the registered device in ROM.
-Writing validates the matching build manifest, hashes, partitions and hardware,
+Writing validates the matching build manifest, hashes, complete partition schema,
+partition MD5 and every segment's write/sector-erase range before opening ROM USB.
+It rejects any overlap with protected data or the inactive application, then checks hardware,
 then writes only bootloader, partition table, boot_app0 and app0. It verifies the
 written segments and uses the existing volatile watchdog reset path. NVS/history
 are outside these writes; no full-chip erase or eFuse command is provided.
@@ -51,3 +68,8 @@ The optional maintenance command uses `boards.py` for board/identity checks and
 are pinned in `requirements-maintenance.txt`. These four files are independent
 of the CMake build. For telemetry and archive import, use the monitor's USB mode;
 select a station with the board's physical controls.
+
+Run the maintenance validator's tests explicitly with
+`python -m unittest discover -s tests/maintenance -v`. They create synthetic images
+in temporary storage and never import a USB backend or open a device. These tests
+are separate from the Python-free CMake/CTest product build.

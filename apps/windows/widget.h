@@ -72,6 +72,7 @@ class WidgetController : public QObject {
   qint64 receivedAt = -1, sampleAt = -1;
   QString historyAddress, historyError, usbEndpoint;
   HistoryPoints stored, remotePoints, usbPoints, plotted;
+  HistorySampleQueue sampleQueue;
   bool offline_, locked = false;
   QPointer<QDialog> settingsDialog;
   void save();

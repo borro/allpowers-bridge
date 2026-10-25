@@ -15,26 +15,32 @@ struct Telemetry {
   uint8_t protocol=uint8_t(AllpowersModels::Model::R2500V2);
   uint32_t known=0;
 };
+// The protocol decoder emits deltas; this is the single accumulator used by
+// firmware and the C ABI. An unknown Settings source explicitly clears its bit.
+inline bool decodeStationTelemetry(Telemetry &s,const uint8_t *p,size_t n,uint32_t now,AllpowersModels::Model &model){
+  using namespace AllpowersModels;
+  Decoded d;
+  if(decode(model,p,n,now,d)!=Result::Decoded){s.invalidFrames++;return false;}
+  model=d.model;s.protocol=uint8_t(model);
+  if(d.kind==Kind::Main){
+    s.mainSeen=true;s.mainAt=now;s.soc=d.soc;s.chargeWatts=d.inputWatts;s.outputWatts=d.outputWatts;s.minutes=d.runtimeMinutes;
+    s.mainFlags=(d.acOutput?2:0)|(d.usbOutput?1:0);
+    if(model==Model::R2500V2) s.known|=d.known;
+    else {s.settingsFlags=d.dcOutput?0x10:0;s.known=d.known;}
+  }else if(d.kind==Kind::Settings){
+    s.settingsSeen=true;s.settingsAt=now;
+    if(model==Model::R2500V2){
+      s.settingsFlags=d.settingsFlags;s.sourceRaw=d.sourceRaw;s.source=PowerSource(d.source);
+      s.known=(s.known&~uint32_t(MainsSource))|d.known;
+      if(s.source!=PowerSource::Unknown)s.lastKnownSource=s.source;
+    }else s.known|=d.known;
+  }
+  if(model!=Model::R2500V2)s.source=s.lastKnownSource=PowerSource::Unknown;
+  s.validFrames++;return true;
+}
 inline bool decodeTelemetry(Telemetry &s, const uint8_t *p, size_t n, uint32_t now) {
-  const uint8_t prefix[] = {0xa5,0x65,0xb1,0x00,0x01};
-  if (n < 8 || memcmp(p, prefix, 5) || n != size_t(p[5]) + 8) { s.invalidFrames++; return false; }
-  uint8_t crc = 0; for (size_t i = 0; i < n; ++i) crc ^= p[i];
-  if (crc) { s.invalidFrames++; return false; }
-  if (p[6] == 1 && n == 16 && p[8] <= 100) {
-    s.mainSeen = true; s.mainAt = now; s.mainFlags = p[7]; s.soc = p[8];
-    s.chargeWatts = (uint16_t(p[9]) << 8) | p[10];
-    s.outputWatts = (uint16_t(p[11]) << 8) | p[12];
-    s.minutes = (uint16_t(p[13]) << 8) | p[14];
-    s.known|=AllpowersModels::Soc|AllpowersModels::InputWatts|AllpowersModels::OutputWatts|AllpowersModels::RuntimeMinutes|AllpowersModels::AcOutput|AllpowersModels::UsbOutput;
-  } else if (p[6] == 3 && n == 14) {
-    s.settingsSeen = true; s.settingsAt = now; s.settingsFlags = p[7];
-    s.sourceRaw = (uint16_t(p[9]) << 8) | p[10];
-    s.source = s.sourceRaw == 0xffff ? PowerSource::Battery :
-      s.sourceRaw == 0 ? PowerSource::Mains : PowerSource::Unknown;
-    if(s.source != PowerSource::Unknown)s.lastKnownSource=s.source;
-    s.known|=AllpowersModels::DcOutput|AllpowersModels::SourceRaw;
-  } else { s.invalidFrames++; return false; }
-  s.validFrames++; return true;
+  auto model=AllpowersModels::Model::R2500V2;
+  return decodeStationTelemetry(s,p,n,now,model);
 }
 inline bool telemetryFresh(const Telemetry &s, uint32_t now) {
   if(!s.mainSeen||uint32_t(now-s.mainAt)>15000)return false;
@@ -43,18 +49,6 @@ inline bool telemetryFresh(const Telemetry &s, uint32_t now) {
 }
 inline bool upsTelemetryFresh(const Telemetry &s,uint32_t now){
   return s.protocol==uint8_t(AllpowersModels::Model::R2500V2)&&telemetryFresh(s,now);
-}
-inline bool decodeStationTelemetry(Telemetry &s,const uint8_t *p,size_t n,uint32_t now,AllpowersModels::Model &model){
-  if(model==AllpowersModels::Model::R2500V2){s.protocol=uint8_t(model);return decodeTelemetry(s,p,n,now);}
-  AllpowersModels::Decoded d;
-  if(AllpowersModels::decode(model,p,n,now,d)!=AllpowersModels::Result::Decoded){s.invalidFrames++;return false;}
-  model=d.model;s.protocol=uint8_t(model);s.source=s.lastKnownSource=PowerSource::Unknown;
-  if(d.kind==AllpowersModels::Kind::Main){
-    s.mainSeen=true;s.mainAt=now;s.soc=d.soc;s.chargeWatts=d.inputWatts;s.outputWatts=d.outputWatts;s.minutes=d.runtimeMinutes;
-    s.mainFlags=(d.acOutput?2:0)|(d.usbOutput?1:0);s.settingsFlags=d.dcOutput?0x10:0;
-    s.known=d.known;
-  }else if(d.kind==AllpowersModels::Kind::Settings){s.settingsSeen=true;s.settingsAt=now;}
-  s.validFrames++;return true;
 }
 inline const char *sourceName(PowerSource source) {
   return source == PowerSource::Mains ? "mains" : source == PowerSource::Battery ? "battery" : "unknown";

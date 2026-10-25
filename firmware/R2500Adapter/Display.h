@@ -4,6 +4,7 @@
 #include "Telemetry.h"
 #include "StationIdentity.h"
 #include "HistoryStore.h"
+#include "TelemetryLabels.h"
 #include "StationPicker.h"
 #include "Diagnostics.h"
 
@@ -103,9 +104,8 @@ public:
     if(!n){centered(70,"NO HISTORY",2,DIM);show();return;}
     bool fresh=telemetryFresh(current,millis());
     snprintf(label,sizeof(label),current.mainSeen?"%u%%":"--",current.soc);text(8,6,label,2,fresh?GREEN:DIM);
-    snprintf(label,sizeof(label),fresh?"OUT %uW":"NO DATA",current.outputWatts);text(86,6,label,textWidth(label,2)>112?1:2,fresh?WHITE:DIM);
-    if(fresh)snprintf(label,sizeof(label),current.protocol==uint8_t(AllpowersModels::Model::R2500V2)?"CHG %uW":"IN %uW",current.chargeWatts);
-    else strlcpy(label,"IN --",sizeof(label));
+    currentPowerLabel(label,sizeof(label),"OUT",current,millis(),true);text(86,6,label,textWidth(label,2)>112?1:2,fresh?WHITE:DIM);
+    currentPowerLabel(label,sizeof(label),current.protocol==uint8_t(AllpowersModels::Model::R2500V2)?"CHG":"IN",current,millis(),false);
     text(200,6,label,textWidth(label,2)>112?1:2,fresh?CYAN:DIM);
     // Fixed log-age axis expands recent seconds while retaining older minutes.
     // ON TIME excludes unknown downtime rather than inventing timestamps.
@@ -191,8 +191,8 @@ private:
     else if(s.minutes>=1440)snprintf(b,sizeof(b),"%uD %uH",s.minutes/1440,s.minutes%1440/60);
     else snprintf(b,sizeof(b),"%uH %uM",s.minutes/60,s.minutes%60);
     text(98,31,b,1,fresh?WHITE:DIM);
-    snprintf(b,sizeof(b),s.mainSeen?"OUT %uW":"OUT --",s.outputWatts);text(2,47,b,1,fresh?WHITE:DIM);
-    snprintf(b,sizeof(b),s.mainSeen?"IN %uW":"IN --",s.chargeWatts);text(98,47,b,1,fresh?CYAN:DIM);
+    currentPowerLabel(b,sizeof(b),"OUT",s,now,true);text(2,47,b,1,fresh?WHITE:DIM);
+    currentPowerLabel(b,sizeof(b),"IN",s,now,false);text(98,47,b,1,fresh?CYAN:DIM);
     const char *labels[]={"AC","USB","DC"};const uint32_t bits[]={AllpowersModels::AcOutput,AllpowersModels::UsbOutput,AllpowersModels::DcOutput};
     bool on[]={bool(s.mainFlags&2),bool(s.mainFlags&1),bool(s.settingsFlags&0x10)};
     for(int i=0;i<3;++i){bool known=fresh&&(s.known&bits[i]);snprintf(b,sizeof(b),"%s %s",labels[i],known?(on[i]?"ON":"OFF"):"?");text(2+54*i,61,b,1,known&&on[i]?GREEN:DIM);}
@@ -202,9 +202,10 @@ private:
     compactStart();char b[28];auto info=history.status();
     if(!info.ready||!graphPoints){centered(32,"LOG STARTING",1,DIM);show();return;}
     bool unknown=false;size_t n=history.copyGraph(graphPoints,GraphHistory::kCapacity,unknown);
-    snprintf(b,sizeof(b),current.mainSeen?"%u%%":"--",current.soc);text(2,2,b,1,GREEN);
-    snprintf(b,sizeof(b),"OUT %uW",current.outputWatts);text(38,2,b,1,WHITE);
-    snprintf(b,sizeof(b),"IN %uW",current.chargeWatts);text(112,2,b,1,CYAN);
+    bool fresh=telemetryFresh(current,millis());
+    snprintf(b,sizeof(b),fresh&&(current.known&AllpowersModels::Soc)?"%u%%":"--",current.soc);text(2,2,b,1,fresh?GREEN:DIM);
+    currentPowerLabel(b,sizeof(b),"OUT",current,millis(),true);text(38,2,b,1,fresh?WHITE:DIM);
+    currentPowerLabel(b,sizeof(b),"IN",current,millis(),false);text(112,2,b,1,fresh?CYAN:DIM);
     const int left=22,right=132,top=23,bottom=61;
     auto gx=[&](uint32_t age){return left+(GraphHistory::x(age)-32)*(right-left)/248;};
     uint32_t maximum=100;

@@ -4,8 +4,11 @@
 #include "service_host.h"
 #include "transport_router.h"
 #include "usb_transport.h"
+#include "../../firmware/R2500Adapter/HistoryWire.h"
+#include "../../firmware/R2500Adapter/HistorySample.h"
 #include "window.h"
 #include <QAbstractItemView>
+#include <QBuffer>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
@@ -16,6 +19,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QPainter>
+#include <QProcess>
 #include <QScopeGuard>
 #include <QScreen>
 #include <QScrollBar>
@@ -73,6 +77,8 @@ static QByteArray usbCycle(const QString &board = "waveshare-147", int frames = 
       {{"history_ready", true},
        {"history_records", 1},
        {"history_latest", 1},
+       {"history_oldest", 1},
+       {"history_export_version", 2},
        {"history_session", 7},
        {"history_clock", false}},
       {{"board", board}}};
@@ -82,6 +88,13 @@ static QByteArray usbCycle(const QString &board = "waveshare-147", int frames = 
   return data;
 }
 
+class FailingCsvDevice : public QIODevice {
+public:
+  int writes=0;
+  FailingCsvDevice() { open(QIODevice::WriteOnly); }
+  qint64 readData(char *,qint64) override { return -1; }
+  qint64 writeData(const char *,qint64) override { ++writes;return -1; }
+};
 class MonitorTests : public QObject {
   Q_OBJECT
   QTemporaryDir temp;
@@ -92,6 +105,78 @@ private slots:
     auto fonts = QDir(qEnvironmentVariable("SystemRoot") + "/Fonts");
     for (const QString &name : {QString("segoeui.ttf"), QString("segoeuib.ttf")})
       QFontDatabase::addApplicationFont(fonts.filePath(name));
+  }
+  void failedDemoIsolationStopsBeforeDataAccess() {
+    QTemporaryDir dir;
+    const auto invalidTemp=dir.filePath("not-a-directory");
+    QFile blocker(invalidTemp);
+    QVERIFY(blocker.open(QIODevice::WriteOnly));
+    blocker.write("invalid temporary root");blocker.close();
+    const auto data=dir.filePath("real-data");
+    QVERIFY(QDir().mkpath(data));
+    QFile settings(data+"/settings.json");
+    QVERIFY(settings.open(QIODevice::WriteOnly));
+    settings.write("sentinel");settings.close();
+    for(const auto &mode : {"--demo","--self-test"}) {
+      QProcess child;
+      auto env=QProcessEnvironment::systemEnvironment();
+      env.insert("TEMP",invalidTemp);env.insert("TMP",invalidTemp);
+      env.insert("QT_QPA_PLATFORM","offscreen");
+      env.insert("ALLPOWERS_DATA_DIR",data);
+      child.setProcessEnvironment(env);
+      child.start(QCoreApplication::applicationDirPath()+"/AllpowersMonitor.exe",
+                  {mode,"--test-seconds","1","--report",dir.filePath("report.json")});
+      QVERIFY(child.waitForFinished(10000));
+      QCOMPARE(child.exitCode(),3);
+      QVERIFY(!QFile::exists(dir.filePath("report.json")));
+      QVERIFY(!QFile::exists(data+"/history.sqlite3"));
+      QVERIFY(settings.open(QIODevice::ReadOnly));
+      QCOMPARE(settings.readAll(),QByteArray("sentinel"));settings.close();
+    }
+  }
+  void boundedHistoryAndCompletion() {
+    HistorySampleQueue queue;
+    HistoryPoint point;point.wall=1;
+    QVERIFY(queue.submit(point).has_value());
+    for(int i=2;i<=10000;++i){
+      point.wall=i;
+      QVERIFY(!queue.submit(point).has_value());
+    }
+    QVERIFY(queue.busy() && queue.waiting());
+    const auto next=queue.complete();
+    QVERIFY(next.has_value());
+    QCOMPARE(next->wall,10000);
+    QVERIFY(queue.busy() && !queue.waiting());
+    QVERIFY(!queue.complete().has_value());
+    QVERIFY(!queue.busy());
+    HistoryWorker worker;
+    QSignalSpy completed(&worker,&HistoryWorker::sampleFinished);
+    worker.sample("test",{},1,1); // No store is still a completed job.
+    QCOMPARE(completed.size(),1);
+    QTemporaryDir dir;
+    worker.open(dir.path()); // A directory cannot be opened as a SQLite file.
+    worker.sample("test",{},2,2);
+    QCOMPARE(completed.size(),2);
+  }
+  void csvFlushAndAtomicReplacement() {
+    QTemporaryDir dir;
+    const auto path=dir.filePath("history.csv");
+    QFile original(path);
+    QVERIFY(original.open(QIODevice::WriteOnly));
+    QCOMPARE(original.write("old content"),11);
+    original.close();
+    QVERIFY(exportHistoryCsv({},path)); // Short CSV is buffered until flush.
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    const auto bytes=original.readAll();
+    QVERIFY(bytes.contains("address,wall,tick,session"));
+    QVERIFY(!bytes.contains("old content"));
+    original.close();
+    FailingCsvDevice failed;
+    QVERIFY(!writeHistoryCsv({},failed));
+    QCOMPARE(failed.writes,1); // Failure of the final buffered write.
+    QVERIFY(!exportHistoryCsv({},dir.path()));
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    QCOMPARE(original.readAll(),bytes);
   }
   void sharedDecoderAndGeneration() {
     Session session;
@@ -128,7 +213,7 @@ private slots:
     QVERIFY(snapshot.fresh);
     QVERIFY(snapshot.ac_output);
     usb.requestHistory();
-    QVERIFY(io->writes.contains("HISTORY-READ 1 1\n"));
+    QVERIFY(io->writes.contains("HISTORY-EXPORT 1 1\n"));
     io->feed("{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
              "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
              "\"crc\":3397945926}\n");
@@ -142,6 +227,7 @@ private slots:
     auto points = qvariant_cast<HistoryPoints>(archive.first()[0]);
     QCOMPARE(points.size(), 1);
     QCOMPARE(points.first().address, QString("usb-board:R2500-000000000001"));
+    QCOMPARE(points.first().data.known & quint32(16 | 32 | 64), 0u); // AHP1 has no output provenance.
     QVERIFY(qAbs(points.first().wall - (QDateTime::currentSecsSinceEpoch() - 20)) <= 1);
     QCOMPARE(usb.diagnostics()["usb_history_undated"].toInt(), 1);
     QCOMPARE(usb.diagnostics()["usb_history_bad"].toInt(), 1);
@@ -205,6 +291,96 @@ private slots:
     mode->setCurrentIndex(0);
     QVERIFY(!router->usb());
     window.close();
+  }
+  void usbArchiveRecoversGapsAndPreservesUnknownOutputs() {
+    for (int mode=0;mode<3;++mode) {
+      auto *io=new FakeUsbChannel;
+      UsbTransport usb(nullptr,false,io,fakeUsbPorts);
+      QSignalSpy archive(&usb,&TelemetryTransport::historyImported);
+      usb.resume("R2500-000000000001",{},0);
+      io->feed(usbCycle());
+      io->feed("{\"history_ready\":true,\"history_records\":2,\"history_latest\":3,\"history_oldest\":1,\"history_export_version\":2,\"history_session\":7}\n");
+      usb.requestHistory();
+      QVERIFY(io->writes.contains("HISTORY-EXPORT 1 2\n"));
+      QByteArray memory(int(HistoryFormat::kBytes),0);
+      HistoryFormat::MemoryFlash flash(reinterpret_cast<uint8_t*>(memory.data()));
+      HistoryFormat::Ring ring(flash);
+      QVERIFY(ring.recover());
+      auto r=HistoryFormat::example();
+      r.magic=HistoryFormat::header(1|2|4|8|16|32|(mode?64:0),2);
+      r.flags=HistoryFormat::Fresh|HistoryFormat::Clock|(mode==2?HistoryFormat::UsbOutput:0);
+      r.epochSeconds=quint32(QDateTime::currentSecsSinceEpoch()-120);
+      r.uptimeSeconds=100;r.session=7;
+      QVERIFY(ring.append(r));
+      HistoryFormat::Record records[2]={r,{}};
+      flash.partial=8;QVERIFY(!ring.append(r));
+      HistoryFormat::Ring recovered(flash);QVERIFY(recovered.recover());
+      r.epochSeconds+=60;r.uptimeSeconds+=60;
+      QVERIFY(recovered.append(r));QCOMPARE(r.sequence,3u);records[1]=r;
+      quint32 cursor=1;HistoryFormat::Record next;
+      for(int i=0;i<2;++i){
+        QVERIFY(HistoryFormat::atOrAfter(records,0,2,2,cursor,next));
+        char line[512];int length=HistoryFormat::serialize(next,line,sizeof(line));
+        QVERIFY(length>0&&size_t(length)<sizeof(line));
+        io->feed(QByteArray(line,length));cursor=HistoryFormat::next(next.sequence);
+      }
+      io->feed("{\"history_dump_done\":true}\n");
+      QCOMPARE(archive.size(),1);
+      const auto points=qvariant_cast<HistoryPoints>(archive.first()[0]);
+      QCOMPARE(points.size(),2);
+      for(const auto &p:points){
+        QCOMPARE(p.data.model,2u);
+        QCOMPARE(bool(p.data.known&64),mode!=0);
+        QCOMPARE(bool(p.data.usb_output),mode==2);
+      }
+    }
+  }
+  void usbDecodedOutputsSurviveArchiveRoundTrip() {
+    for(int protocol:{1,2,3})for(bool on:{false,true}){
+      Telemetry telemetry;auto model=AllpowersModels::Model(protocol);
+      QByteArray main=protocol==1?QByteArray::fromHex("0f32006400c800070441"):
+                                   QByteArray::fromHex("a565b1000108010264000000e696006f");
+      if(protocol==1)main[0]=on?7:0;
+      else {
+        main[7]=on?3:0;main[main.size()-1]=0;quint8 sum=0;
+        for(char byte:main)sum^=quint8(byte);main[main.size()-1]=char(sum);
+      }
+      QVERIFY(decodeStationTelemetry(telemetry,reinterpret_cast<const uint8_t*>(main.constData()),size_t(main.size()),100,model));
+      if(protocol==3){
+        auto settings=QByteArray::fromHex("a565b10001060300010000030275");
+        settings[7]=on?0x10:0;settings[settings.size()-1]=0;quint8 sum=0;
+        for(char byte:settings)sum^=quint8(byte);settings[settings.size()-1]=char(sum);
+        QVERIFY(decodeStationTelemetry(telemetry,reinterpret_cast<const uint8_t*>(settings.constData()),size_t(settings.size()),100,model));
+      }
+      // This is the exact conversion used by HistoryStore::makeRecord.
+      auto record=HistoryFormat::sample(telemetry,101);
+      record.session=7;record.uptimeSeconds=100;
+      record.epochSeconds=quint32(QDateTime::currentSecsSinceEpoch()-60);record.flags|=HistoryFormat::Clock;
+      QByteArray memory(int(HistoryFormat::kBytes),0);
+      HistoryFormat::MemoryFlash flash(reinterpret_cast<uint8_t*>(memory.data()));
+      HistoryFormat::Ring ring(flash);QVERIFY(ring.recover());QVERIFY(ring.append(record));
+      char line[512];int length=HistoryFormat::serialize(record,line,sizeof(line));
+      QVERIFY(length>0&&size_t(length)<sizeof(line));
+      auto *io=new FakeUsbChannel;UsbTransport usb(nullptr,false,io,fakeUsbPorts);
+      QSignalSpy archive(&usb,&TelemetryTransport::historyImported);
+      usb.resume("R2500-000000000001",{},0);io->feed(usbCycle());usb.requestHistory();
+      io->feed(QByteArray(line,length));io->feed("{\"history_dump_done\":true}\n");
+      QCOMPARE(archive.size(),1);const auto points=qvariant_cast<HistoryPoints>(archive.first()[0]);
+      QCOMPARE(points.size(),1);const auto &s=points.first().data;
+      QCOMPARE(s.model,quint32(protocol));
+      QVERIFY(s.known&AllpowersModels::AcOutput);QVERIFY(s.known&AllpowersModels::DcOutput);
+      QCOMPARE(bool(s.ac_output),on);QCOMPARE(bool(s.dc_output),on);
+      QCOMPARE(bool(s.known&AllpowersModels::UsbOutput),protocol!=2);
+      QCOMPARE(bool(s.usb_output),on&&protocol!=2);
+    }
+  }
+  void usbLegacyArchiveScansSequenceWindow() {
+    auto *io=new FakeUsbChannel;UsbTransport usb(nullptr,false,io,fakeUsbPorts);
+    usb.resume("R2500-000000000001",{},0);io->feed(usbCycle());
+    io->feed("{\"history_ready\":true,\"history_records\":2,\"history_latest\":3,\"history_session\":7}\n");
+    usb.requestHistory();
+    // A legacy board can have records {1,3}; count=2 does not imply first=2.
+    QVERIFY(io->writes.contains("HISTORY-READ 4294964419 2880\n"));
   }
   void usbHistoryOverlayKeepsProvenanceAndPrefersStation() {
     HistoryPoint live;
@@ -351,7 +527,7 @@ private slots:
     };
     QTRY_VERIFY(hasOldArchive());
     QTRY_VERIFY(window.historyChart()->points().size() >= 2);
-    QTRY_VERIFY(io->writes.contains("HISTORY-READ 1 1\n")); // Automatic archive read.
+    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT 1 1\n")); // Automatic archive read.
     const QByteArray dump =
         "{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
         "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"

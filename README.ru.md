@@ -23,18 +23,29 @@ R2500 V2; другие профили показывают только изве
 
 **Примеры интерфейса**
 
-![Монитор Windows — обзор показаний](docs/images/windows-monitor.png)
+<table>
+  <tr>
+    <th width="33%">Виджет Windows</th>
+    <th width="34%">Waveshare · 1.47″</th>
+    <th width="33%">Pocket · 0.96″</th>
+  </tr>
+  <tr>
+    <td align="center" valign="middle"><a href="docs/images/windows-widget.png"><img src="docs/images/windows-widget.png" alt="Виджет с показаниями и часовым графиком мощности" width="260"></a></td>
+    <td align="center" valign="middle"><a href="docs/images/waveshare-display.png"><img src="docs/images/waveshare-display.png" alt="Экран Waveshare — обзор показаний" width="172"></a></td>
+    <td align="center" valign="middle"><a href="docs/images/pocket-display.png"><img src="docs/images/pocket-display.png" alt="Экран Pocket — обзор показаний" width="240"></a></td>
+  </tr>
+</table>
 
-| Виджет рабочего стола Windows | Экран Waveshare 1.47″ |
-| --- | --- |
-| <img src="docs/images/windows-widget.png" alt="Виджет с показаниями и часовым графиком мощности" width="300"> | <img src="docs/images/waveshare-display.png" alt="Экран Waveshare — обзор показаний" width="172"> |
-
-<details>
-<summary>История в мониторе</summary>
-
-![Монитор Windows — история показаний](docs/images/windows-history.png)
-
-</details>
+<table>
+  <tr>
+    <th width="50%">Монитор · Показания</th>
+    <th width="50%">Монитор · История</th>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/images/windows-monitor.png"><img src="docs/images/windows-monitor.png" alt="Монитор Windows — обзор показаний" width="560"></a></td>
+    <td align="center"><a href="docs/images/windows-history.png"><img src="docs/images/windows-history.png" alt="Монитор Windows — история показаний" width="560"></a></td>
+  </tr>
+</table>
 
 В Windows-пакете два самостоятельных приложения: **AllpowersMonitor.exe** и
 **AllpowersWidget.exe**. Каждому достаточно собственного EXE. Qt, SQLite, оконные плагины, общее ядро и

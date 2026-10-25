@@ -44,6 +44,10 @@ and CSV; board diagnostics appear in the table. No flashing or extra driver is
 required. The board archive automatically fills gaps in the main USB history
 chart; its records remain labelled separately because they lack station identity.
 See [USB mode](docs/usb-monitor.md).
+Archive diagnostics distinguish a verified complete import from partial/error
+results. Legacy readers receive a compatible AHP1 projection; exact unknown-field
+semantics require the current versioned export. Firmware rollback requires an
+AHP1/AHP2-compatible package with matching metadata; see [recovery](docs/recovery.md).
 
 ## Start here
 

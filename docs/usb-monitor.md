@@ -27,10 +27,11 @@ The old STATUS command takes runtime from the HID report. Runtime is therefore
 shown only for a current confirmed UPS report; unsupported profiles or a retained
 HID runtime produce an unknown value rather than an old estimate.
 
-Only `STATUS`, `DIAG` and bounded archive read requests are sent. New firmware
-advertises cursor pagination; the reader uses `HISTORY-EXPORT` to traverse actual
-records, including sequence gaps left by interrupted writes. Older firmware
-continues to use `HISTORY-READ`. The monitor
+Only `STATUS`, `DIAG` and bounded archive read requests are sent. Export v3 uses
+`HISTORY-EXPORT <request-id>` and freezes at most 2880 retained records. Begin,
+each row and completion identify the request, boot session and captured generation.
+Count, order, final cursor and a rolling record digest must agree before the
+desktop reports `complete`. The monitor
 never sends 1200-baud touch, boot/reset/firmware/clock/screen/station-selection
 commands. **Отключить** closes the USB port; the board continues BLE, HID reporting
 and recording. Change the station with the board's BOOT picker. Some stations
@@ -67,9 +68,52 @@ existing 3600 live / 2880 station-minute points.
 Clocked records keep their timestamps. Without a clock, only the current boot can
 be anchored to PC time using session and uptime. Previous unclocked boots are
 skipped and counted under **Пропущено без достоверной даты**. No clock-setting
-command is sent automatically. **Считать с платы** repeats the bounded read; an
-unfinished import times out after 60 seconds. SQLite/import/export work remains
-outside the UI thread.
+command is sent automatically. **Считать с платы** repeats the bounded read.
+New v3 firmware bounds capture/transmission retries to 60 seconds with a final
+2-second drain limit; the desktop allows 70 seconds. Legacy multi-page reads
+have a 120-second overall deadline. SQLite/import/export work remains outside
+the UI thread.
+
+## Archive protocol compatibility and completion
+
+`HISTORY-READ <first> <sequence-count>` retains the old limit of 2880 sequence
+numbers per request. New firmware projects physical AHP2 records to an AHP1 wire
+record and recalculates its CRC for this command, leaving flash bytes unchanged.
+An old parser can therefore read mixed archives. AHP1 cannot carry AHP2's field
+validity/model. If a new record has unknown outputs, its legacy projection clears
+`Fresh`: an old graph may omit that point instead of inventing a known OFF state.
+Use the versioned export with a current desktop to preserve known/model data.
+Wire compatibility does not make an AHP1-only firmware writer a safe rollback;
+the separate [maintenance gate](recovery.md#ahp1ahp2-storage-and-supported-rollback)
+checks that case.
+
+For v3, firmware captures a bounded immutable copy under the storage mutex and
+then transmits outside that lock. Busy, end and storage error are distinct; short
+writes retain their offset and acknowledge a cursor only after the whole line.
+Optional notification logs are suppressed and other console responses deferred
+during a dump to prevent interleaving. Appends and retention after capture do not
+change that snapshot. A new request cancels the previous one; old request/session
+rows cannot complete the replacement import.
+
+Diagnostics distinguishes `usb_history_result` values `reading`, `complete`,
+`partial` and `error`; `usb_history_complete` is true only for verified completion.
+Accepted valid points may be saved even when a later row is damaged or missing.
+The received-record count includes records skipped because their dates are unknown;
+wire completeness and the number of usable plotted points are separate measures.
+A disconnected board, new boot, unavailable storage, lost/corrupt row, premature
+done or deadline cannot be reported as complete. Repeat **Считать с платы** after
+a partial/error result.
+
+Old v2 cursor exports have no verifiable complete footer; the new desktop labels
+them partial. With original firmware, it freezes the advertised session/count/latest,
+reads backwards in up to three legacy pages, deduplicates sequences, and rechecks
+the advertised inventory before confirming completion. The search bound is 5888
+nonzero sequence positions: legacy boot recovery inspected at most 2880 positions,
+the first append could skip at most a 128-slot erase sector, and an initial RAM
+record could survive fewer than 2880 more appends. RAM can thus retain a record
+whose physical slot has already been erased; a 4096-slot search is insufficient.
+An append/retention or boot change during these live legacy reads, an unconfirmed
+count, or exhaustion of that bound produces an explicit partial result.
 
 With optional integration installed, Bluetooth mode uses the service. Selecting
 USB detaches this viewer without stopping the service or changing its Bluetooth

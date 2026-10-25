@@ -114,6 +114,11 @@ rewritten only when their contents change. The chosen tag/version is passed to
 the desktop and driver projects. Firmware stages an exact source inventory,
 keeping its compiler cache separately. Packaging rechecks the current identity
 against the configured one and requires reconfiguration after an identity change.
+Firmware's generated sorted relative inventory is itself a build input, so a
+deletion-only change runs the actual board target even while the version remains
+dirty. Unchanged inputs keep their no-op build. Isolated EXE checks read expected
+version from that artifact's generated identity at test execution, covering
+clean → source-only dirty → clean revert without a manual configure.
 
 Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
 contains user history or private recovery storage. Do not delete .local/ or the
@@ -121,13 +126,23 @@ external preservation folders when cleaning build output.
 
 ## GitHub Actions and publication
 
-`.github/workflows/build.yml` checks pushes to `main`, all tags, pull requests and
-manual runs. Feature branches are checked through PR events, avoiding a second
-matrix build for the same branch push. Before opening a PR, use workflow dispatch
-to build a feature branch. A merge into `main` still gets its own integration build.
+`.github/workflows/build.yml` checks all branch pushes, tags, pull requests and
+manual runs. This also verifies the final commit pushed to a working branch
+without requiring a release tag. A PR and its branch push can each produce a run.
 After the audit, a portable tier runs core/ABI/UPS tests, RAM-only firmware
 self-tests and build regressions on Linux, both normally and with ASan/UBSan.
-The full Windows/Linux product matrix follows only after that tier succeeds.
+`-DALLPOWERS_SANITIZERS=ON` adds fatal UBSan (`-fno-sanitize-recover=undefined`)
+and ASan. A deliberate recoverable-UB control must fail under those production
+flags while retaining its diagnostic; ordinary tests must pass. CI leaves
+LeakSanitizer enabled.
+
+An independent `maintenance` job runs
+`python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v` with only the
+standard library. It installs no HID/serial/esptool backend and performs no
+discovery. This checks synthetic image ranges, schema/checksum, history metadata
+and rollback rejection before device access. It is separate from the Python-free
+CMake product build. Both portable and maintenance jobs gate the complete
+Windows/Linux product matrix and therefore tag publication.
 New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
 release for the same tag. Shared build commands use Bash with fail-fast behavior
 on both platforms; Windows-specific scripts and the release job use PowerShell.

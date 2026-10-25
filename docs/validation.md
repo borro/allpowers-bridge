@@ -1,5 +1,77 @@
 # Validation
 
+## Follow-up review: R1–R8 — 2026-10-25
+
+Baseline: `b989bd1bc970ce9e5af39d5838413a204b20f64d`, including fixes in
+`82bde93be836607f5d7b9c2fdb68689d71d1e9ed` after the original review of
+`79b017332a11f78be632e33885d91c2ea0d66f0a`. The follow-up uses working branch
+`codex/review-followup`. All new checks are offline or hosted CI: no physical
+flashing, live BLE/USB, service/driver installation or security-setting changes.
+Historical hardware observations below do not validate these new images.
+
+### R1–R8 implementation and regression matrix
+
+| ID | Production change | Regression / observable result | Limit |
+| --- | --- | --- | --- |
+| R1 | `HistoryWire.h` legacy projection and separate versioned export | `usbLegacyProjectionAcceptedByFrozenOldParser`: AHP1-only, mixed and AHP2-only; old CRC contract accepts rows and flash stays byte-identical | Old wire format cannot carry known/model; unknown-output projections clear Fresh and old graphs may omit them |
+| R2 | `HistoryCompatibility.h`, build/package metadata, `history_contract`/`rollback_check` before ROM access | `history-rollback`: original Ring demonstrates old erase; compatible rollback preserves all records through upgrade/write/upgrade. Stdlib maintenance tests bind app/hash/manifest/marker and reject unsafe combinations before device access | Supported rollback keeps an AHP1/AHP2 reader/writer; AHP1-only downgrade is refused |
+| R3 | `HistoryExport.h` typed reads, frozen snapshot, bounded retries, short-write offsets, acknowledged cursor; strict desktop completion | `exportSelfTest`, versioned fault, legacy final-read error and invalid/empty inventory tests: busy/timeout/short/failed writes, lost/corrupt lines, early done, session/generation, append/retention | Complete means all valid wire records received; unusable dates are counted separately. v2 completion stays partial |
+| R4 | `UsbTransport::nextLegacyPage`, bounded 5888-position search, frozen inventory/final recheck | `usbLegacyPaginationRecoversRetainedRecords`, bounds/inventory tests: `{1,3…2881}`, `{1,3}`, wrap, three pages including RAM span beyond physical slots, deduplication, changed inventory | Legacy mutation/unconfirmed count/deadline yields partial; max 2880 positions/request, 2880 retained records, 120 s total |
+| R5 | Sorted relative generated firmware inventory is a real command dependency; staging mirror retained | `firmware-graph`: ordinary build of both targets with all byproducts present; unchanged/add/rename/deletion-only while identity stays dirty; source kit without .git and no-op | Only supported inventory/staging directories participate |
+| R6 | Isolated EXE tests read authoritative generated identity at execution | `windows-identity-graph`: actual root/standalone Monitor+Widget CLI and PE versions, clean → dirty → revert without configure; wrong expected identity fails; tag/INF and package guards retained | Windows MSVC/Qt integration test |
+| R7 | `ALLPOWERS_SANITIZERS` adds fatal UBSan and ASan | `sanitizer-policy`: signed-overflow control diagnoses UB and exits nonzero with production flags; normal native suites pass; recoverable contrast exits zero | GCC/Clang instrumentation; no suppressions or forced LSan disable |
+| R8 | Separate stdlib-only maintenance CI job gates product builds/publication on branch push, PR and tag | `python3 -I -S -B -m unittest discover -s tests/maintenance -v`: hash-consistent malformed images, all segment bounds, full partition schema/MD5, compatibility and pre-device refusal | Independent of Python-free CMake product build; no USB backend installed |
+
+### Original F01–F16 traceability
+
+| ID | Production change retained / completed | Confirming check |
+| --- | --- | --- |
+| F01 | Shared decoder/reducer sets and clears MainsSource truthfully | `ups-state`: fixture bytes → C ABI → mapper/cache; mains/battery/unknown/stale/reset/missing groups |
+| F02 | Full partition schema/checksum and sector-safe write plan | `partitions` plus stdlib image/rollback tests; invalid packages rejected before ROM access |
+| F03 | Real-record export and multi-page legacy import | R3/R4 tests recover interrupted-write gaps and compare the final record set |
+| F04 | Explicit reconnect target admitted to a full BLE catalog | `firmware-host`, `StationPicker::selfTest` saturation cases |
+| F05 | Full usable telemetry controls recovery rather than any valid packet | Real `BleTransport`/channel/fake-clock test: healthy → either group missing → freshness expiry → fail/retry/reconnect; no first snapshot and GATT deadline |
+| F06 | One running history sample plus one coalesced latest sample | Real WidgetController/QThread/SQLite tests with held worker and 1000 submissions, station/session change, invalid DB and controlled shutdown |
+| F07 | Firmware snapshots/atomic flags and synchronized history publication | Source synchronization audit; both board compilers and portable firmware tests; hardware task interleavings not exercised |
+| F08 | Exact staging mirror plus membership dependency | `firmware-staging` and R5 real `firmware-graph` |
+| F09 | Build-time identity includes tracked/untracked dirtiness and checks parent commit | `build-identity` and R6 graph: current header/CLI/PE/CTest expectation through source-only changes |
+| F10 | Selected root tag/commit forwarded to desktop and driver | `build-identity`, release tag tests and driver INF checks with competing tags |
+| F11 | Physical AHP2 carries CRC-protected known/model; AHP1 read conservatively | Actual decode → HistorySample → Ring → serializer → USB parser for Old10/Legacy16/R2500, unknown/OFF/ON; R1 legacy limits and R2 rollback policy |
+| F12 | Direct verification acquires lease and rejects installed service before transport creation | Real CLI parser BUSY cases; fake service and held test lease produce zero constructed transports/discovery/connect |
+| F13 | Invalid demo/self-test temporary directory fails before opening user data | Actual subprocess demo/self-test isolation failure test |
+| F14 | Session activity counters survive stop/transport changes and reach the timed report | Real `--test-seconds` parser/finish with fake transport; stopped connection still reports Bluetooth activity |
+| F15 | Shared current-power formatter checks fresh/known | `firmware-host`, `telemetryLabelsSelfTest` plus both display builds |
+| F16 | Atomic QSaveFile export checks final flush and commit | Same existing good destination survives injected flush failure and actual Windows commit sharing-denial; probe confirms open/write succeeded |
+
+The additional F05/F06/F12/F14/F16 tests strengthen evidence for retained fixes;
+they are not claimed as newly reproduced baseline defects. The new production
+seams inject clocks/channels/workers/transactions into the real paths. They do
+not enable native I/O in automated tests. Console service-mode refusal (1063)
+and embedded-driver extraction inspect offline behavior/files; they do not
+install or start a Windows service or kernel driver.
+
+### Follow-up evidence
+
+Local source validation was performed before committing, against the working
+tree based on `b989bd1`, identified as `0.5.2-dirty`. Exact successful hosted
+commit/run links are added after their completion; the old baseline's hosted
+result is listed separately below.
+
+| Environment / check | Result | Scope |
+| --- | --- | --- |
+| Windows 11, MSVC 19.51.36260, Qt 6.12 static, /MT, WinRT | Root CTest 20/20 passed | Real build graphs, core/ABI/UPS, portable firmware, rollback, Qt, isolated EXEs, driver INF/catalog/build checks |
+| Windows extracted source kit, without .git/Python product build | Native 16/16 and supported desktop 4/4 passed; CPack runtime/source ZIP + SHA256 passed | Rebuilds actual source archive; latest desktop run includes invalid/empty-inventory cases |
+| Ubuntu WSL, GCC 13.3 | Full native CTest 14/14 passed; affected firmware-host rerun passed after final legacy footer | Both actual board compiles, USB/partition/maintenance checks and object-kit relink; strict offline image validation and all source/artifact hashes matched |
+| Ubuntu WSL, fatal ASan/UBSan | Full CTest 15/15 passed; affected firmware-host/policy 2/2 rerun passed | No ASAN/UBSAN/LSAN suppression variables; recoverable control exits zero, production-policy UB control diagnoses and exits nonzero |
+| Python standard library, Windows and Linux | 11/11 passed | No USB/serial/esptool packages imported; synthetic malformed images and supported/unsupported rollback before device boundary |
+| Workflow / publication source audit | Actionlint, source inventory, local doc links and diff checks passed | No private hardware identities, images, reports or absolute user paths in public files |
+| Historical baseline hosted CI, `b989bd1bc970ce9e5af39d5838413a204b20f64d` | [main run 40199484506 succeeded](https://github.com/borro/allpowers-bridge/actions/runs/40199484506) | Baseline only; not evidence for R1–R8 |
+
+Kernel runtime, live station transitions and the next physical write of these
+new images remain separate, unperformed stages. The archive gate requires a
+compatible complete rollback package; it deliberately does not provide an
+AHP1-only downgrade/migration path.
+
 ## Review-fix evidence — 2026-10-25
 
 The review fixes were validated before committing, in a working tree based on

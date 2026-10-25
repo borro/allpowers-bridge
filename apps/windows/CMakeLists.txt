@@ -94,9 +94,14 @@ if(MSVC)
 endif()
 if(WIN32)
   enable_language(RC)
-  configure_file(app.rc.in app.rc @ONLY)
-  target_sources(AllpowersMonitor PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
-  target_sources(AllpowersWidget PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
+  string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" numeric_version "${ALLPOWERS_VERSION}")
+  string(REPLACE "." "," ALLPOWERS_RC_VERSION "${numeric_version}")
+  foreach(app AllpowersMonitor AllpowersWidget)
+    set(ALLPOWERS_EXE_NAME "${app}")
+    set(ALLPOWERS_EXE_DESCRIPTION "${app}")
+    configure_file(app.rc.in "${app}.rc" @ONLY)
+    target_sources(${app} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/${app}.rc")
+  endforeach()
 endif()
 target_link_libraries(AllpowersMonitor PRIVATE monitor_lib)
 if(BUILD_TESTING)
@@ -121,10 +126,12 @@ if(BUILD_TESTING)
     -platform windows -o dropdown-native-tests.txt,txt)
   set_tests_properties(dropdown-native PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5")
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersMonitor>"
+    "-DVERSION=${ALLPOWERS_VERSION}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/single-exe-check"
     "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     -P "${ALLPOWERS_ROOT}/cmake/CheckSingleExe.cmake")
   add_test(NAME widget-single-exe COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:AllpowersWidget>"
+    "-DVERSION=${ALLPOWERS_VERSION}"
     "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/widget-single-exe-check" -DWIDGET=ON
     -P "${ALLPOWERS_ROOT}/cmake/CheckSingleExe.cmake")
 

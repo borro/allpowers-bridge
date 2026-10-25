@@ -62,7 +62,12 @@ jobs:
             build/deps/arduino
             build/deps/arduino-cli
           key: ${{ runner.os }}-${{ runner.arch }}-downloads-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/SetupArduino.cmake') }}
-      - run: cmake --preset ${{ matrix.preset }}
+      - name: Configure
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && github.ref_name || '' }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: cmake --preset ${{ matrix.preset }} -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT"
       - run: cmake --build build/${{ matrix.preset }} --target arduino-setup
       - run: cmake --build --preset ${{ matrix.products }} --parallel 2
       - run: ctest --preset ${{ matrix.preset }}
@@ -94,3 +99,37 @@ jobs:
             build/**/widget-tests.txt
             build/**/*-err.log
             build/**/*-out.log
+  release:
+    needs: [audit, products]
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+        with:
+          cmake-version: '4.4.4'
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: cmake "-DROOT=$env:GITHUB_WORKSPACE" "-DTAG=$env:RELEASE_TAG" "-DCOMMIT=$env:BUILD_COMMIT" -P cmake/CheckReleaseTag.cmake
+      - name: Download this run's checked Windows artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$env:GITHUB_RUN_ID" --repo "$env:GITHUB_REPOSITORY" --name allpowers-Windows --dir build/release-input
+      - name: Prepare and verify release assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: cmake "-DINPUT=$env:GITHUB_WORKSPACE/build/release-input" "-DOUTPUT=$env:GITHUB_WORKSPACE/build/release-assets" "-DTAG=$env:RELEASE_TAG" -P cmake/PrepareRelease.cmake
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./cmake/PublishRelease.ps1 -Repository "$env:GITHUB_REPOSITORY" -Tag "$env:RELEASE_TAG" -Assets build/release-assets

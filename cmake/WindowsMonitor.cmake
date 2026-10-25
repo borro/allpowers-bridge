@@ -40,6 +40,7 @@ if(BUILD_TESTING)
   add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure)
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
     "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
+    "-DVERSION=${ALLPOWERS_VERSION}"
     "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
 endif()

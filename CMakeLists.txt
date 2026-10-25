@@ -25,6 +25,16 @@ if(BUILD_TESTING)
     "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DWORK=${PROJECT_BINARY_DIR}/incremental-test" "-DCXX=${CMAKE_CXX_COMPILER}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/incremental_test.cmake")
+  add_test(NAME release-tags COMMAND "${CMAKE_COMMAND}"
+    "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
+    "-DWORK=${PROJECT_BINARY_DIR}/release-tag-tests"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/release_tag_test.cmake")
+  if(WIN32 AND MSVC)
+    add_test(NAME release-assets COMMAND "${CMAKE_COMMAND}"
+      "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
+      "-DWORK=${PROJECT_BINARY_DIR}/release-asset-tests" "-DCXX=${CMAKE_CXX_COMPILER}"
+      -P "${PROJECT_SOURCE_DIR}/tests/cmake/release_assets_test.cmake")
+  endif()
 endif()
 include(cmake/Arduino.cmake)
 add_custom_target(products)

@@ -54,17 +54,20 @@ install or start a Windows service or kernel driver.
 
 Local source validation covered the working tree based on `b989bd1` through
 the retry-framing follow-up based on `5884b23` (`0.5.2-4-g5884b23-dirty`).
-Exact successful hosted commit/run links are added after their completion;
-the old baseline's hosted result is listed separately below.
+The complete implementation, including retry framing, is confirmed by the
+successful hosted run for `b944a304f1007f58a6588825b986230ac809b890` below.
+This evidence update changes documentation only; the old baseline's hosted
+result is listed separately.
 
 | Environment / check | Result | Scope |
 | --- | --- | --- |
-| Windows 11, MSVC 19.51.36260, Qt 6.12 static, /MT, WinRT | Root CTest 20/20 passed | Real build graphs, core/ABI/UPS, portable firmware, rollback, Qt, isolated EXEs, driver INF/catalog/build checks |
+| Windows 11, MSVC 19.51.36260, Qt 6.12 static, /MT, WinRT | Root CTest 20/20 passed again at clean `b944a304f1007f58a6588825b986230ac809b890` | Both firmware builds/relinks; real build graphs, core/ABI/UPS, portable firmware, rollback, Qt, isolated EXEs, driver INF/catalog/build checks |
 | Windows extracted source kit, without .git/Python product build | Native 16/16 and supported desktop 4/4 passed; CPack runtime/source ZIP + SHA256 passed | Rebuilt again after retry framing; actual source archive includes invalid/empty inventory and exporter/parser restart tests |
 | Ubuntu WSL, GCC 13.3 | Full native CTest 14/14 passed after retry framing | Both actual board compiles, USB/partition/maintenance checks and object-kit relink; strict offline image validation and all source/artifact hashes matched |
 | Ubuntu WSL, fatal ASan/UBSan | Full CTest 15/15 passed after retry framing | No ASAN/UBSAN/LSAN suppression variables; recoverable control exits zero, production-policy UB control diagnoses and exits nonzero |
 | Python standard library, Windows and Linux | 11/11 passed | No USB/serial/esptool packages imported; synthetic malformed images and supported/unsupported rollback before device boundary |
 | Workflow / publication source audit | Actionlint, source inventory, local doc links and diff checks passed | No private hardware identities, images, reports or absolute user paths in public files |
+| Hosted follow-up CI, `b944a304f1007f58a6588825b986230ac809b890` | [Run 40206524419 succeeded](https://github.com/borro/allpowers-bridge/actions/runs/40206524419), attempt 1, completed 2026-10-25 | All six checking jobs passed: audit, stdlib maintenance, portable normal/fatal sanitizer, Linux products and Windows products including CPack/source-kit rebuild. Release job skipped for this branch push; no release published |
 | Historical baseline hosted CI, `b989bd1bc970ce9e5af39d5838413a204b20f64d` | [main run 40199484506 succeeded](https://github.com/borro/allpowers-bridge/actions/runs/40199484506) | Baseline only; not evidence for R1–R8 |
 
 Kernel runtime, live station transitions and the next physical write of these

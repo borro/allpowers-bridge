@@ -97,7 +97,7 @@ reads; Windows and Linux build/SDK directories are separate.
 
 ## Packaging and versions
 
-The release target builds/stages Windows, runs its enabled tests and invokes
+The local `release` target builds/stages Windows, runs its enabled tests and invokes
 CPack. It creates a runtime ZIP and complete application/Qt source ZIP with SHA256
 files. See relinking.md for library replacement/rebuild instructions. CPack never
 includes user settings/history or local device configuration.
@@ -123,16 +123,48 @@ the core and both firmware profiles, and run CTest. Windows bootstraps static Qt
 builds the driver/monitor/widget and verifies the CPack source-kit rebuild.
 
 Actions are pinned to commit hashes; Dependabot proposes monthly updates. The
-workflow has read-only repository permissions, does not persist Git credentials,
-and requires no user secrets. Only dependency downloads/Arduino packages are
+build/test jobs have read-only repository permissions, do not persist Git credentials,
+and require no user secrets. Only dependency downloads/Arduino packages are
 cached; installed Qt is rebuilt so cached absolute paths cannot break another
 runner. Qt defaults to two parallel compiler jobs (`ALLPOWERS_QT_JOBS`).
 Qt Core C++/WinRT and the Qt Bluetooth WinRT backend are required explicitly;
 unsupported compiler/SDK combinations fail configuration instead of disabling
 WinRT and failing later on a missing private Qt header.
 Artifacts contain the two firmware packages and, on Windows, runtime/source ZIPs
-and SHA256 files. They expire after 14 days. No automatic GitHub Release, push,
-driver/service installation or device access is part of this workflow.
+and SHA256 files. They expire after 14 days. The tag-only release job publishes
+the checked files as described below. No build installs a driver/service or accesses devices.
+
+## Tagged releases
+
+A push of a SemVer tag (`v1.2.3`, `v1.2.3-alpha.1`) containing this workflow
+publishes a GitHub Release after the audit and both platform builds/tests pass.
+Manual workflow dispatch against such a tag uses the same checks. Branch/PR
+events cannot publish. Only the release job receives `contents: write` and
+`actions: read`, using the built-in `GITHUB_TOKEN`; no personal token is needed.
+
+Tag builds pass `ALLPOWERS_RELEASE_TAG` to CMake. It must resolve to the actual
+clean checkout's HEAD and be a valid version fitting Windows VERSIONINFO.
+`ALLPOWERS_RELEASE_COMMIT` pins the checkout to the push/dispatch event's Git object,
+including when an annotated tag object is supplied.
+The requested tag takes precedence over other tags on that commit. The `v`
+prefix is removed for the application version, PE ProductVersion/FileVersion,
+firmware manifests, filenames and corresponding-source VERSION. Before upload,
+both EXEs' complete prerelease strings/numeric versions, source VERSION, both
+board manifests, maintenance/partition contracts and all artifact hashes are checked.
+
+Assets include the combined Windows ZIP, two standalone EXEs, separate board
+firmware ZIPs and the complete application/Qt source ZIP. Each has a `.sha256`
+file; `SHA256SUMS` covers all six payloads. The release starts as a draft and
+becomes public only after every uploaded asset's size and server SHA256 match.
+Prerelease tags set GitHub's prerelease flag; stable tags become Latest.
+SemVer build metadata remains in the embedded version; `+` is encoded as `_`
+only in uploaded asset filenames to avoid GitHub filename normalization.
+
+An interrupted draft can be retried for the same commit. Unexpected draft files
+or a moved tag stop publication. Published files are never replaced: a rerun
+accepts identical assets, and rejects different bytes under an existing release.
+Use a new version tag for changed binaries. Existing historical tags are not
+rewritten or retroactively published. Pushing a new tag is the explicit publication action.
 
 Local publication checks (use `build/native` on Linux):
 

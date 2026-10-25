@@ -30,6 +30,10 @@ if(BUILD_TESTING)
     "-DWORK=${PROJECT_BINARY_DIR}/release-tag-tests"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/release_tag_test.cmake")
   if(WIN32 AND MSVC)
+    find_program(ALLPOWERS_PWSH NAMES pwsh powershell REQUIRED)
+    add_test(NAME qt-cache COMMAND "${ALLPOWERS_PWSH}" -NoProfile -File
+      "${PROJECT_SOURCE_DIR}/tests/cmake/qt_cache_test.ps1"
+      -Root "${PROJECT_SOURCE_DIR}" -Work "${PROJECT_BINARY_DIR}/qt-cache-tests")
     add_test(NAME release-assets COMMAND "${CMAKE_COMMAND}"
       "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
       "-DWORK=${PROJECT_BINARY_DIR}/release-asset-tests" "-DCXX=${CMAKE_CXX_COMPILER}"

@@ -1,16 +1,25 @@
 name: Build and test
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+    tags: ['**']
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 jobs:
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -35,14 +44,17 @@ jobs:
             products: all-linux
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: '4.4.4'
-      - if: runner.os == 'Windows'
+      - name: Set up MSVC and Windows SDK
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # MSVC environment
         with:
           arch: x64
@@ -51,34 +63,73 @@ jobs:
       - name: Verify pinned MSVC toolset
         if: runner.os == 'Windows'
         run: cmake -P cmake/CheckMsvcToolchain.cmake
+      - name: Install pinned Ninja
+        run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
       - name: Check build tools
         run: |
           cmake --version
           ninja --version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Cache dependency downloads and Arduino SDK
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/deps/downloads
             build/deps/arduino
             build/deps/arduino-cli
           key: ${{ runner.os }}-${{ runner.arch }}-downloads-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/SetupArduino.cmake') }}
+      - name: Identify compatible static Qt SDK
+        if: runner.os == 'Windows'
+        id: qt-key
+        shell: pwsh
+        run: ./cmake/QtCache.ps1 -Mode Key
+      - name: Restore static Qt SDK
+        if: runner.os == 'Windows'
+        id: qt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.qt-key.outputs.path }}
+          key: ${{ steps.qt-key.outputs.key }}
+      - name: Verify restored static Qt SDK
+        if: runner.os == 'Windows'
+        id: qt-verified
+        shell: pwsh
+        run: ./cmake/QtCache.ps1 -Mode Restore
       - name: Configure
-        shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && github.ref_name || '' }}
           RELEASE_COMMIT: ${{ github.sha }}
-        run: cmake --preset ${{ matrix.preset }} -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT"
-      - run: cmake --build build/${{ matrix.preset }} --target arduino-setup
-      - run: cmake --build --preset ${{ matrix.products }} --parallel 2
-      - run: ctest --preset ${{ matrix.preset }}
-      - if: runner.os == 'Windows'
+          QT_ROOT: ${{ steps.qt-verified.outputs.root }}
+        run: cmake --preset ${{ matrix.preset }} -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT" -DALLPOWERS_QT_ROOT="$QT_ROOT"
+      - name: Build and verify static Qt SDK on cache miss
+        if: runner.os == 'Windows' && steps.qt-verified.outputs.root == ''
+        shell: pwsh
+        run: |
+          cmake --build build/windows --target qt-static
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./cmake/QtCache.ps1 -Mode Seal
+      - name: Save verified static Qt SDK
+        if: runner.os == 'Windows' && steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.qt-key.outputs.path }}
+          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
+      - name: Prepare Arduino toolchain
+        run: cmake --build build/${{ matrix.preset }} --target arduino-setup
+      - name: Build products
+        run: cmake --build --preset ${{ matrix.products }} --parallel 2
+      - name: Run tests
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Package Windows release and verify source rebuild
+        if: runner.os == 'Windows'
         run: cmake --build --preset release
-      - run: cmake --build build/${{ matrix.preset }} --target audit
-      - run: git diff --exit-code
+      - name: Audit tracked publication files
+        run: cmake --build build/${{ matrix.preset }} --target audit
+      - name: Check for modified source files
+        run: git diff --exit-code
       - name: Check for unexpected public files
-        shell: bash
         run: test -z "$(git ls-files --others --exclude-standard)"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Upload checked products
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: allpowers-${{ runner.os }}
           if-no-files-found: error
@@ -104,15 +155,19 @@ jobs:
     if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-2025
     timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
     permissions:
       contents: write
-      actions: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
         with:
           cmake-version: '4.4.4'
       - name: Verify release tag
@@ -121,9 +176,10 @@ jobs:
           BUILD_COMMIT: ${{ github.sha }}
         run: cmake "-DROOT=$env:GITHUB_WORKSPACE" "-DTAG=$env:RELEASE_TAG" "-DCOMMIT=$env:BUILD_COMMIT" -P cmake/CheckReleaseTag.cmake
       - name: Download this run's checked Windows artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run download "$env:GITHUB_RUN_ID" --repo "$env:GITHUB_REPOSITORY" --name allpowers-Windows --dir build/release-input
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: allpowers-Windows
+          path: build/release-input
       - name: Prepare and verify release assets
         env:
           RELEASE_TAG: ${{ github.ref_name }}

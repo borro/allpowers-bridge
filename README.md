@@ -94,6 +94,10 @@ ctest --preset native
 The first Windows build downloads checksum-pinned Qt 6.12.0 source and builds the
 static MSVC/WinRT SDK with ExternalProject. Later builds reuse it. Existing static
 Qt can be selected with `-DALLPOWERS_QT_ROOT=/path/to/qt`.
+GitHub Actions also caches the installed static SDK with an exact compatibility
+key covering Qt/build inputs, MSVC, Windows SDK, architecture, tools and install
+path. Restored SDKs must pass a compile/link and offline runtime check; a missing
+or rejected cache falls back to building Qt from source.
 The Windows target also builds/embeds the driver using checksum-pinned WDK
 10.0.26100.6584 (KMDF 1.31), with INF/catalog/kernel-PE checks. `ups-driver` builds
 only that package. Building or testing does not install it.
@@ -118,8 +122,11 @@ instructions; keep it with binary distributions.
 
 ## GitHub builds and publication checks
 
-GitHub Actions runs on pushes, pull requests and manual requests. A publication
-gate checks the index, working tree and reachable history, including a pinned
+GitHub Actions runs on pushes to `main`, tags, pull requests and manual requests.
+Feature branches use PR checks instead of a duplicate push build; before opening
+a PR, a build can be started manually. CI installs checksum-verified Ninja 1.13.2
+on both platforms. A publication gate checks the index, working tree and reachable
+history, including a pinned
 Gitleaks secret scan. Windows Server 2025 builds the static monitor/widget and
 driver; Ubuntu 24.04 builds the portable core. Both jobs compile both board
 profiles and run CTest. Windows also rebuilds/tests the source kit and creates

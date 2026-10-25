@@ -113,7 +113,13 @@ external preservation folders when cleaning build output.
 
 ## GitHub Actions and publication
 
-`.github/workflows/build.yml` checks every push, pull request and manual run.
+`.github/workflows/build.yml` checks pushes to `main`, all tags, pull requests and
+manual runs. Feature branches are checked through PR events, avoiding a second
+matrix build for the same branch push. Before opening a PR, use workflow dispatch
+to build a feature branch. A merge into `main` still gets its own integration build.
+New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
+release for the same tag. Shared build commands use Bash with fail-fast behavior
+on both platforms; Windows-specific scripts and the release job use PowerShell.
 The audit job checks the index and working tree, rejects unexpected public files,
 scans reachable history, and runs checksum-pinned Gitleaks. The build matrix uses
 Windows Server 2025 (Visual Studio 2026, MSVC 14.51 x64, SDK 10.0.26100.0) and
@@ -121,12 +127,35 @@ Ubuntu 24.04. CI validates the selected toolset before configuring Qt; it must
 not silently switch to a newer Visual Studio installed on the hosted image. Both compile
 the core and both firmware profiles, and run CTest. Windows bootstraps static Qt,
 builds the driver/monitor/widget and verifies the CPack source-kit rebuild.
+Before configuration, `cmake/SetupNinja.cmake` installs the exact Ninja version
+from `cmake/Dependencies.cmake` into the runner's temporary directory, verifies
+the platform archive's pinned SHA256 and the executable's reported version,
+then adds that directory to `GITHUB_PATH`. Windows and Linux builds therefore
+use the same pinned Ninja release instead of the runner image's bundled version.
 
 Actions are pinned to commit hashes; Dependabot proposes monthly updates. The
 build/test jobs have read-only repository permissions, do not persist Git credentials,
-and require no user secrets. Only dependency downloads/Arduino packages are
-cached; installed Qt is rebuilt so cached absolute paths cannot break another
-runner. Qt defaults to two parallel compiler jobs (`ALLPOWERS_QT_JOBS`).
+and require no user secrets. Dependency downloads/Arduino packages and the installed
+static Qt SDK are cached separately. `cmake/QtCache.ps1` computes an exact SDK key
+from the dependency pins and Qt recipe/check scripts, actual compiler SHA256 and
+path, full MSVC toolset and Windows SDK/UCRT versions, architecture, CMake/Ninja
+versions and absolute SDK install path. There are no partial restore keys. Including
+paths avoids treating an SDK built in a different location as relocatable.
+
+Before selecting `ALLPOWERS_QT_ROOT`, CI compares the SDK's compatibility manifest,
+checks the exact Qt version, static modules and Core/Bluetooth WinRT features,
+then compiles/links a small `/MT` consumer. It checks PE imports and runs offline
+Widgets/SQLite/plugin checks with a system-only PATH; it never scans or connects
+Bluetooth. A missing, incomplete or rejected cache falls back to the normal Qt
+source build. Rejected installs are moved aside inside the build directory.
+Only a successfully checked install is saved, before the application/firmware
+build, so unrelated later failures do not discard a usable SDK. Object directories
+and ExternalProject stamps are never cached. An invalid existing exact-key entry
+cannot be overwritten by Actions: remove that entry in GitHub's cache settings
+to let the next successful build replace it. Qt source archives remain available
+through the separate download cache for notices and source packaging.
+
+Qt defaults to two parallel compiler jobs (`ALLPOWERS_QT_JOBS`).
 Qt Core C++/WinRT and the Qt Bluetooth WinRT backend are required explicitly;
 unsupported compiler/SDK combinations fail configuration instead of disabling
 WinRT and failing later on a missing private Qt header.
@@ -139,8 +168,10 @@ the checked files as described below. No build installs a driver/service or acce
 A push of a SemVer tag (`v1.2.3`, `v1.2.3-alpha.1`) containing this workflow
 publishes a GitHub Release after the audit and both platform builds/tests pass.
 Manual workflow dispatch against such a tag uses the same checks. Branch/PR
-events cannot publish. Only the release job receives `contents: write` and
-`actions: read`, using the built-in `GITHUB_TOKEN`; no personal token is needed.
+events cannot publish. Only the release job receives `contents: write`, using
+the built-in `GITHUB_TOKEN`; no personal token is needed. The official
+`download-artifact` action retrieves artifacts from the same workflow run without
+an additional GitHub token or `actions: read` permission.
 
 Tag builds pass `ALLPOWERS_RELEASE_TAG` to CMake. It must resolve to the actual
 clean checkout's HEAD and be a valid version fitting Windows VERSIONINFO.

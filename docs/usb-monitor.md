@@ -90,15 +90,45 @@ checks that case.
 For v3, firmware captures a bounded immutable copy under the storage mutex and
 then transmits outside that lock. Busy, end and storage error are distinct; short
 writes retain their offset and acknowledge a cursor only after the whole line.
-Optional notification logs are suppressed and other console responses deferred
-during a dump to prevent interleaving. Appends and retention after capture do not
-change that snapshot. A new request cancels the previous one. If cancel/timeout
-abandoned a partially accepted line, firmware retains that framing state and
-sends a bounded newline barrier before opening the next snapshot or advancing
-ACK. The desktop treats its own matching begin as the transaction boundary;
-prior framing residue cannot spoil a valid retry. Corruption after that begin
-still prevents complete. Old request/session rows cannot complete the replacement
-import.
+One output controller owns the CDC byte stream, including STATUS, archive rows
+and optional diagnostic lines. It finishes each JSON line before changing the
+writer. During a long dump it continues the released desktop's real STATUS
+cycle: adapter, station, known/protocol and board, followed by the graph-time
+anchor and archive inventory. The periodic interval is one second after the
+primary cycle completes. This updates the old transport's watchdog; archive
+rows alone do not. STATUS reads current telemetry without changing the frozen
+archive. A busy history-status mutex produces an advisory instead of a false
+unavailable inventory or a fabricated time anchor.
+
+STATUS rows and complete optional diagnostic/log rows may occur between archive
+lines. Optional output has one bounded batch and may be dropped when that slot
+is occupied; it cannot splice an unfinished archive or STATUS line. Appends and
+retention after capture do not change the frozen snapshot.
+
+Every valid new `HISTORY-READ` or `HISTORY-EXPORT` command replaces the active
+request immediately, releasing its snapshot. Multiple quick requests retain
+only the latest operation. An in-progress STATUS/diagnostic line keeps its
+writer until it finishes or reaches its deadline. If cancel/timeout abandoned
+an archive prefix, the controller sends a newline barrier before new output;
+the barrier never advances cursor, record count or digest. Thus an early retry
+after a desktop metadata error starts without waiting for the old dump to end.
+An explicit STATUS request can also obtain a fresh handshake while an old
+export is active, allowing a reopened client to verify the board.
+
+The desktop treats its own matching begin as the transaction boundary. Prior
+framing residue is ignored before it. Identifiable v3 frames belonging to
+another request/session are ignored; malformed or inconsistent frames of the
+current transaction still prevent complete. An initial begin with wrong metadata
+for the current request is an error, so the user can immediately retry
+**Считать с платы**.
+
+Archive deadlines remain 60 seconds plus a 2-second drain limit, including time
+spent sending STATUS. Ordinary output allows at most 4 seconds without write
+progress and 8 seconds per line; a stalled framing barrier also has a 4-second
+limit. On such a failure the controller releases the archive and pauses output,
+retaining any required delimiter. A new explicit STATUS or archive-read command
+rearms it; periodic heartbeats do not restart an endless retry. A completely
+blocked channel can therefore still cause the desktop's bounded timeout/error.
 
 Diagnostics distinguishes `usb_history_result` values `reading`, `complete`,
 `partial` and `error`; `usb_history_complete` is true only for verified completion.

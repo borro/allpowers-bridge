@@ -1,5 +1,68 @@
 # Validation
 
+## Serial output lifecycle follow-up: R1/R3 — 2026-10-25
+
+Baseline: `9e043226d5c2f7694e20665e49c2211390506b6e` on
+`codex/review-followup`. Its successful CI did not exercise a full legacy dump
+against the released transport watchdog, or send an early retry through the
+firmware command dispatcher. The earlier direct `ExportSession::start` retry
+test bypassed the active-export guard in that dispatcher.
+
+An offline MSVC probe of the exact baseline exporter, using 2880 mixed AHP1/AHP2
+records, a fully accepting sink and the production 5 ms pump cadence, sent only
+600 records by 6005 ms and finished at 28810 ms. The production dispatcher
+extraction retaining the original behavior emitted no STATUS during the dump
+and no begin for an early replacement request. The frozen `b989bd1` transport
+then reproduced a first watchdog close at 6500 ms and zero imported records.
+The current desktop's early-error/retry test sent request 2 through the real
+dispatcher while request 1 was still active; no second snapshot opened and the
+retry remained in `reading`. Both new integration regressions failed with that
+baseline behavior. These are host/fake-channel observations, not a hardware
+test. The previous CI and hardware journals below retain their original scope;
+they do not establish these missing lifecycle properties.
+
+The production fix uses `OutputController::command` in the actual `.ino`, a
+single line-aware byte-stream owner and shared `StatusWire.h` serializers.
+Implementation and regressions: [5ba366ae4771995d470381248fb9a763002509d8](https://github.com/borro/allpowers-bridge/commit/5ba366ae4771995d470381248fb9a763002509d8).
+STATUS continues during legacy and v3 exports; a busy history-status lock omits
+inventory/time-anchor claims instead of fabricating unavailable storage. New
+read commands replace the active export and release its snapshot. Framing
+barriers do not acknowledge records. Valid foreign v3 transactions are ignored;
+the current transaction still requires its complete count/cursor/digest footer.
+
+| Host/fake-channel regression | Observed result |
+| --- | --- |
+| `releasedTransportReceivesFullMixedArchiveWithWatchdog` | Exact frozen `b989bd1` transport/parser/watchdog imports all 2880 mixed records: 31.295 s, zero port closes, maximum accepted STATUS gap 1.025 s |
+| Same test, short writes and a 2 s stall | 2880/2880 imported in 33.735 s, zero closes, maximum STATUS gap 2.680 s; complete JSON lines |
+| `currentV3ReceivesFullMixedArchiveThroughProductionScheduler` | Complete original 2880-record frozen set despite live append/retention and history-status Busy; 31.300 s normally, 49.355 s with short writes/stall |
+| `earlyDesktopErrorCanReplaceActiveFirmwareRequest` | Real current desktop rejects request 1 metadata, immediately sends request 2 through the production dispatcher while request 1 has a partial row; complete in 1.660 s, two snapshots opened sequentially |
+| `repeatedReplacementIgnoresCapturedOldFramesBeforeAuthoritativeBegin`, `staleFramesAfterAuthoritativeBeginDoNotDamageCurrentImport`, `previousBootFramesWithRecycledRequestAreIgnoredAfterBegin` | Rapid replacements and attributable old request/session begin/record/done frames do not complete or damage the current operation; at most one snapshot active, all released |
+| `stalledOutputReleasesSnapshotAndRetryWorks`, native `OutputTests::selfTest` in `firmware-host` | Blocked ordinary output/barrier pauses within its deadline, releases the archive and preserves framing; explicit retry recovers; STATUS/barrier never advances ACK |
+| `reopenedTransportGetsStatusAndFreshOperation` | Same-object reopen and a new transport reusing request 1 obtain STATUS and import the newly changed archive, not the old snapshot |
+| `frozenParserAndLifecycleMatchHistoricalSource` | Reverse only documented namespace/include/clock-access adaptations and reproduce all four original source SHA256 values |
+
+The new Windows Qt integration suite passed 14 cases with no skips using fake
+channels and clocks. These elapsed values are simulated device-loop time, not
+wall-clock USB measurements. No new image was activated and no live BLE/USB,
+service/driver installation or kernel-runtime test was performed.
+
+The complete local working tree based on `9e04322`, identified as
+`0.5.2-6-g9e04322-dirty`, also passed the following gates:
+
+| Environment / standard gate | Result |
+| --- | --- |
+| Windows 11, MSVC 19.51.36260, static Qt 6.12, /MT, WinRT | Integrated products build and root CTest 20/20; standalone app CTest 7/7, including archive-transport, native UI checks and isolated EXEs |
+| Ubuntu WSL, GCC 13.3 | Both actual firmware builds and relinks; full native CTest 14/14 |
+| Ubuntu WSL, fatal ASan/UBSan | Full CTest 15/15, including the production output controller in firmware-host; no ASAN/UBSAN/LSAN suppression variables |
+| Stdlib maintenance, Windows and Linux | 11/11; no device discovery or backend dependencies |
+| Windows driver and packaging | Driver/INF/catalog checks and CPack runtime/source ZIP with SHA256; extracted source kit without .git rebuilt and passed native 16/16 and supported desktop 5/5, including archive-transport |
+| Strict offline firmware package validation | Both Linux packages accepted; artifact hashes and all 35 source hashes matched the tested working tree; history reader [1,2], writer 2 and 32-byte records unchanged |
+
+CI coverage uses the ordinary Windows app CTest and extracted-source-kit check
+for `archive-transport`; portable `OutputTests::selfTest` runs in both normal
+and fatal sanitizer `firmware-host` jobs. The earlier hosted runs below are
+historical evidence for their named commits, not executions of these new tests.
+
 ## Follow-up review: R1–R8 — 2026-10-25
 
 Baseline: `b989bd1bc970ce9e5af39d5838413a204b20f64d`, including fixes in
@@ -13,9 +76,9 @@ Historical hardware observations below do not validate these new images.
 
 | ID | Production change | Regression / observable result | Limit |
 | --- | --- | --- | --- |
-| R1 | `HistoryWire.h` legacy projection and separate versioned export | `usbLegacyProjectionAcceptedByFrozenOldParser`: AHP1-only, mixed and AHP2-only; old CRC contract accepts rows and flash stays byte-identical | Old wire format cannot carry known/model; unknown-output projections clear Fresh and old graphs may omit them |
+| R1 | `HistoryWire.h` legacy projection plus `OutputController.h`/`StatusWire.h` periodic real STATUS and separate versioned export | `usbLegacyProjectionAcceptedByFrozenOldParser`: AHP1-only, mixed and AHP2-only, unchanged flash; `releasedTransportReceivesFullMixedArchiveWithWatchdog`: actual released transport imports 2880 mixed records over >6 s with short writes/stall and no disconnect | Old wire format cannot carry known/model; unknown-output projections clear Fresh and old graphs may omit them |
 | R2 | `HistoryCompatibility.h`, build/package metadata, `history_contract`/`rollback_check` before ROM access | `history-rollback`: original Ring demonstrates old erase; compatible rollback preserves all records through upgrade/write/upgrade. Stdlib maintenance tests bind app/hash/manifest/marker and reject unsafe combinations before device access | Supported rollback keeps an AHP1/AHP2 reader/writer; AHP1-only downgrade is refused |
-| R3 | `HistoryExport.h` typed reads, frozen snapshot, bounded retries, short-write offsets, acknowledged cursor and persistent retry framing; strict desktop transaction boundary | `exportSelfTest`, actual exporter/parser retry, versioned fault, legacy final-read error and invalid/empty inventory tests: busy/timeout/short/failed writes, lost/corrupt lines, early done, session/generation, append/retention | Complete means all valid wire records received; unusable dates are counted separately. v2 completion stays partial |
+| R3 | `HistoryExport.h` frozen snapshot/typed reads/ACK and `OutputController::command` latest-request replacement; one output owner, bounded ordinary writes/barriers; strict current-transaction footer and foreign-frame filtering | `earlyDesktopErrorCanReplaceActiveFirmwareRequest`, rapid replacement/reopen/stale-frame tests and native `OutputTests::selfTest`, plus retained export/parser fault tests: real dispatcher retry, partial STATUS/archive rows, Busy, timeout, count/cursor/digest, append/retention | Complete means all valid wire records received; unusable dates are counted separately. v2 completion stays partial; prolonged blocked writes require a new explicit STATUS/read after bounded pause |
 | R4 | `UsbTransport::nextLegacyPage`, bounded 5888-position search, frozen inventory/final recheck | `usbLegacyPaginationRecoversRetainedRecords`, bounds/inventory tests: `{1,3…2881}`, `{1,3}`, wrap, three pages including RAM span beyond physical slots, deduplication, changed inventory | Legacy mutation/unconfirmed count/deadline yields partial; max 2880 positions/request, 2880 retained records, 120 s total |
 | R5 | Sorted relative generated firmware inventory is a real command dependency; staging mirror retained | `firmware-graph`: ordinary build of both targets with all byproducts present; unchanged/add/rename/deletion-only while identity stays dirty; source kit without .git and no-op | Only supported inventory/staging directories participate |
 | R6 | Isolated EXE tests read authoritative generated identity at execution | `windows-identity-graph`: actual root/standalone Monitor+Widget CLI and PE versions, clean → dirty → revert without configure; wrong expected identity fails; tag/INF and package guards retained | Windows MSVC/Qt integration test |

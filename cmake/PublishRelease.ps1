@@ -43,8 +43,19 @@ function Confirm-RemoteTag {
   $remote = (Invoke-GitHub @('api', "repos/$Repository/commits/$encoded", '--jq', '.sha') | Out-String).Trim()
   if ($remote -cne $commit) { throw 'Remote tag moved or does not identify the built commit' }
 }
-function Read-Release {
-  $json = Invoke-GitHub @('api', "repos/$Repository/releases/tags/$encoded")
+function Find-Release {
+  # The tag endpoint only returns published releases. Drafts must be found in
+  # the authenticated, paginated release list, including on an upload retry.
+  $json = Invoke-GitHub @('api', "repos/$Repository/releases?per_page=100", '--paginate', '--slurp')
+  $pages = $json -join "`n" | ConvertFrom-Json
+  $matches = @(foreach ($page in $pages) {
+    foreach ($item in $page) { if ($item.tag_name -ceq $Tag) { $item } }
+  })
+  if ($matches.Count -gt 1) { throw 'Multiple releases identify this tag' }
+  if ($matches.Count -eq 1) { return $matches[0] }
+}
+function Read-Release([long]$ReleaseId) {
+  $json = Invoke-GitHub @('api', "repos/$Repository/releases/$ReleaseId")
   return ($json -join "`n" | ConvertFrom-Json)
 }
 function Assert-UploadedAssets($Release) {
@@ -59,10 +70,8 @@ function Assert-UploadedAssets($Release) {
   }
 }
 Confirm-RemoteTag
-$errorFile = Join-Path $Assets '.stage/release-api-error.txt'
-$json = & $GitHubCli api "repos/$Repository/releases/tags/$encoded" 2> $errorFile
-if ($LASTEXITCODE -eq 0) {
-  $release = $json -join "`n" | ConvertFrom-Json
+$release = Find-Release
+if ($release) {
   if (-not $release.draft) {
     Assert-UploadedAssets $release
     Write-Output "Release already published with matching assets: $Tag"
@@ -73,9 +82,6 @@ if ($LASTEXITCODE -eq 0) {
     throw 'Existing draft contains unexpected assets; refusing to modify it'
   }
 } else {
-  if ((Get-Content -LiteralPath $errorFile -Raw) -notmatch 'HTTP 404') {
-    throw 'Cannot determine whether the release exists'
-  }
   $notes = Join-Path $Assets '.stage/release-notes.md'
   @"
 Built and tested from **$Tag** on Windows and Ubuntu.
@@ -93,10 +99,16 @@ board profile; settings and private recovery images are not part of these assets
     '--title', "ALLPOWERS Bridge $Tag", '--draft', '--notes-file', $notes)
   if (($Tag -split '\+', 2)[0].Contains('-')) { $arguments += '--prerelease' }
   Invoke-GitHub $arguments
+  $release = Find-Release
+  if (-not $release -or -not $release.draft -or -not ([string]$release.body).Contains($marker)) {
+    throw 'Created draft could not be identified for this commit'
+  }
 }
 # Only an unpublished draft may be resumed/replaced after an interrupted upload.
 Invoke-GitHub (@('release', 'upload', $Tag, '--repo', $Repository, '--clobber') + $files.FullName)
-Assert-UploadedAssets (Read-Release)
+$uploaded = Read-Release $release.id
+if ($uploaded.tag_name -cne $Tag -or -not $uploaded.draft) { throw 'Draft identity changed during upload' }
+Assert-UploadedAssets $uploaded
 Confirm-RemoteTag
 $prerelease = ($Tag -split '\+', 2)[0].Contains('-')
 $arguments = @('release', 'edit', $Tag, '--repo', $Repository, '--draft=false',

@@ -1,7 +1,7 @@
 name: Build and test
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['**']
   pull_request:
   workflow_dispatch:
@@ -54,7 +54,7 @@ jobs:
           SANITIZE: ${{ matrix.sanitize }}
         run: |
           if [ "$SANITIZE" = true ]; then
-            cmake --preset native -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined'
+            cmake --preset native -DALLPOWERS_SANITIZERS=ON
           else
             cmake --preset native
           fi
@@ -62,8 +62,19 @@ jobs:
         run: cmake --build --preset native --parallel 2
       - name: Test portable logic and build contracts
         run: ctest --preset native
+  maintenance:
+    needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test maintenance contracts using only the Python standard library
+        run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v
   products:
-    needs: [audit, portable]
+    needs: [audit, portable, maintenance]
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -191,7 +202,7 @@ jobs:
             build/**/*-err.log
             build/**/*-out.log
   release:
-    needs: [audit, products]
+    needs: [audit, products, maintenance]
     if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-2025
     timeout-minutes: 20

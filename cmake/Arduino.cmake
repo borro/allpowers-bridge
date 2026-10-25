@@ -56,9 +56,26 @@ add_custom_target(arduino-setup COMMAND "${CMAKE_COMMAND}"
   "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}" "-DCONFIG=${arduino_config}"
   -P "${PROJECT_SOURCE_DIR}/cmake/SetupArduino.cmake" USES_TERMINAL VERBATIM)
 # Reconfigure for added/removed inputs; build dependencies follow the actual inventory.
-file(GLOB_RECURSE firmware_sources CONFIGURE_DEPENDS
+file(GLOB_RECURSE firmware_candidates CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/core/src/*" "${PROJECT_SOURCE_DIR}/firmware/R2500Adapter/*")
-list(APPEND firmware_sources "${PROJECT_SOURCE_DIR}/core/library.properties.in")
+list(APPEND firmware_candidates "${PROJECT_SOURCE_DIR}/core/library.properties.in")
+# A removed dependency vanishes from Ninja's graph; no remaining source needs
+# to become newer than the existing manifest. Make membership itself an input.
+# Relative, sorted paths keep the inventory stable in clones and source kits.
+set(firmware_inventory)
+set(firmware_sources)
+foreach(path IN LISTS firmware_candidates)
+  file(RELATIVE_PATH relative "${PROJECT_SOURCE_DIR}" "${path}")
+  if(relative MATCHES "(^|/)(__pycache__|build|data)/")
+    continue()
+  endif()
+  list(APPEND firmware_sources "${path}")
+  list(APPEND firmware_inventory "${relative}")
+endforeach()
+list(SORT firmware_inventory)
+string(REPLACE ";" "\n" firmware_inventory "${firmware_inventory}")
+set(firmware_inventory_file "${PROJECT_BINARY_DIR}/firmware/source-inventory.txt")
+file(GENERATE OUTPUT "${firmware_inventory_file}" CONTENT "${firmware_inventory}\n")
 set(board_number 0)
 foreach(board waveshare-147 pocket-096)
   math(EXPR board_number "${board_number}+1")
@@ -76,12 +93,13 @@ foreach(board waveshare-147 pocket-096)
       "-DLEGAL_CACHE=${ALLPOWERS_DEPS_DIR}/firmware-legal"
       "-DOUTPUT=${output}" "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
       -P "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake"
-    DEPENDS ${firmware_sources} "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
+    DEPENDS ${firmware_sources} "${firmware_inventory_file}" "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
       "${arduino_config}" "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
       "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake" "${PROJECT_SOURCE_DIR}/cmake/Partitions.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/CheckContracts.cmake" "${PROJECT_SOURCE_DIR}/cmake/Json.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake" "${ALLPOWERS_IDENTITY_FILE}"
       "${PROJECT_SOURCE_DIR}/cmake/StageFirmware.cmake"
+      "${PROJECT_SOURCE_DIR}/cmake/HistoryCompatibility.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/PrepareFirmwareKit.cmake" "${PROJECT_SOURCE_DIR}/cmake/RelinkFirmware.cmake"
       "${PROJECT_SOURCE_DIR}/docs/firmware-licenses.md"
       "${PROJECT_SOURCE_DIR}/docs/licenses/LGPL-3.0.md" "${PROJECT_SOURCE_DIR}/docs/licenses/GPL-3.0.md"

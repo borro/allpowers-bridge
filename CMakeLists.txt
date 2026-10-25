@@ -12,6 +12,7 @@ include(cmake/Dependencies.cmake)
 set(ALLPOWERS_RELEASE_DIR "${PROJECT_BINARY_DIR}/dist" CACHE PATH "Release artifacts")
 set(ALLPOWERS_DEPS_DIR "${PROJECT_BINARY_DIR}/deps" CACHE PATH "Dependency cache")
 option(ALLPOWERS_BUILD_WINDOWS "Build the static Windows BLE monitor" OFF)
+include(cmake/Sanitizers.cmake)
 add_subdirectory(core)
 add_dependencies(core product-identity)
 if(BUILD_TESTING)
@@ -28,7 +29,7 @@ if(BUILD_TESTING)
     "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DWORK=${PROJECT_BINARY_DIR}/incremental-test" "-DCXX=${CMAKE_CXX_COMPILER}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/incremental_test.cmake")
-  foreach(check build-identity firmware-staging partitions)
+  foreach(check build-identity firmware-staging firmware-graph partitions)
     string(REPLACE "-" "_" script "${check}")
     add_test(NAME ${check} COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
       "-DBUILD_ROOT=${PROJECT_BINARY_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/${check}-tests"

@@ -94,7 +94,7 @@ Pocket проходит компиляцию и тесты протокола. W
     <th width="33%">Pocket · 0.96″</th>
   </tr>
   <tr>
-    <td align="center" valign="middle"><a href="docs/images/windows-widget.png"><img src="docs/images/windows-widget.png" alt="Виджет с показаниями и часовым графиком мощности" width="260"></a></td>
+    <td align="center" valign="middle"><a href="docs/images/windows-widget-ru.png"><img src="docs/images/windows-widget-ru.png" alt="Виджет с показаниями и часовым графиком мощности" width="260"></a></td>
     <td align="center" valign="middle"><a href="docs/images/waveshare-display.png"><img src="docs/images/waveshare-display.png" alt="Экран Waveshare — обзор показаний" width="172"></a></td>
     <td align="center" valign="middle"><a href="docs/images/pocket-display.png"><img src="docs/images/pocket-display.png" alt="Экран Pocket — обзор показаний" width="240"></a></td>
   </tr>
@@ -106,8 +106,8 @@ Pocket проходит компиляцию и тесты протокола. W
     <th width="50%">Монитор · История</th>
   </tr>
   <tr>
-    <td align="center"><a href="docs/images/windows-monitor.png"><img src="docs/images/windows-monitor.png" alt="Монитор Windows — обзор показаний" width="560"></a></td>
-    <td align="center"><a href="docs/images/windows-history.png"><img src="docs/images/windows-history.png" alt="Монитор Windows — история показаний" width="560"></a></td>
+    <td align="center"><a href="docs/images/windows-monitor-ru.png"><img src="docs/images/windows-monitor-ru.png" alt="Монитор Windows — обзор показаний" width="560"></a></td>
+    <td align="center"><a href="docs/images/windows-history-ru.png"><img src="docs/images/windows-history-ru.png" alt="Монитор Windows — история показаний" width="560"></a></td>
   </tr>
 </table>
 

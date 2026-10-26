@@ -8,7 +8,7 @@ Optional experimental integration runs BLE/history in a LocalSystem service and
 reports to a KMDF Battery Class driver. The monitor then uses local IPC only;
 closing a window leaves the service running. Shared history/configuration lives
 under %PROGRAMDATA%/AllpowersMonitor; legacy per-user history is retained/merged.
-The ИБП Windows dialog manages integration. The default embedded package is
+The Windows UPS dialog manages integration. The default embedded package is
 unsigned and installation is restricted to a test VM with a trusted signed payload.
 Native driver behavior and real service BLE have not yet been validated. See
 [Windows UPS status and lab procedure](../../docs/windows-ups.md).

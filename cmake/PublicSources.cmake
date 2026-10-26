@@ -31,9 +31,12 @@ set(AP_PUBLIC_SPECIAL_FILES
   apps/windows/widget.manifest
   apps/windows/assets/allpowers.ico
   apps/windows/assets/logo.png
-  docs/images/windows-monitor.png
-  docs/images/windows-history.png
-  docs/images/windows-widget.png
+  docs/images/windows-monitor-en.png
+  docs/images/windows-monitor-ru.png
+  docs/images/windows-history-en.png
+  docs/images/windows-history-ru.png
+  docs/images/windows-widget-en.png
+  docs/images/windows-widget-ru.png
   docs/images/waveshare-display.png
   docs/images/pocket-display.png
   tests/fixtures/notifications.json

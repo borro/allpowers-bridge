@@ -86,7 +86,7 @@ not validate the driver. Catalog recognition alone does not establish compatibil
     <th width="33%">Pocket · 0.96″</th>
   </tr>
   <tr>
-    <td align="center" valign="middle"><a href="docs/images/windows-widget.png"><img src="docs/images/windows-widget.png" alt="Desktop widget with telemetry and one-hour power history" width="260"></a></td>
+    <td align="center" valign="middle"><a href="docs/images/windows-widget-en.png"><img src="docs/images/windows-widget-en.png" alt="Desktop widget with telemetry and one-hour power history" width="260"></a></td>
     <td align="center" valign="middle"><a href="docs/images/waveshare-display.png"><img src="docs/images/waveshare-display.png" alt="Waveshare display — telemetry overview" width="172"></a></td>
     <td align="center" valign="middle"><a href="docs/images/pocket-display.png"><img src="docs/images/pocket-display.png" alt="Pocket display — telemetry overview" width="240"></a></td>
   </tr>
@@ -98,8 +98,8 @@ not validate the driver. Catalog recognition alone does not establish compatibil
     <th width="50%">Monitor · History</th>
   </tr>
   <tr>
-    <td align="center"><a href="docs/images/windows-monitor.png"><img src="docs/images/windows-monitor.png" alt="Windows Monitor — telemetry overview" width="560"></a></td>
-    <td align="center"><a href="docs/images/windows-history.png"><img src="docs/images/windows-history.png" alt="Windows Monitor — telemetry history" width="560"></a></td>
+    <td align="center"><a href="docs/images/windows-monitor-en.png"><img src="docs/images/windows-monitor-en.png" alt="Windows Monitor — telemetry overview" width="560"></a></td>
+    <td align="center"><a href="docs/images/windows-history-en.png"><img src="docs/images/windows-history-en.png" alt="Windows Monitor — telemetry history" width="560"></a></td>
   </tr>
 </table>
 
@@ -138,11 +138,11 @@ history. Lines join consecutive valid samples; isolated samples have no endpoint
 Run `AllpowersWidget.exe --demo` to preview without hardware; demo uses temporary
 storage and does not change user settings or login startup.
 Diagnostics includes a live event log that follows new entries. Scrolling up
-pauses following; “К новым записям” resumes it. The view retains 2000 lines;
+pauses following; “Latest entries ↓” resumes it. The view retains 2000 lines;
 the disk log rotates independently.
 Current diagnostic state is a grouped parameter/value table; full JSON can still
 be copied for troubleshooting.
-Experimental driver management is inside Diagnostics → **ИБП Windows…**.
+Experimental driver management is inside Diagnostics → **Windows UPS…**.
 On normal startup, the monitor automatically searches for and connects to the
 last saved station, using its Bluetooth address and saved protocol profile.
 If it is unavailable, discovery is retried; Disconnect cancels waiting/retries.

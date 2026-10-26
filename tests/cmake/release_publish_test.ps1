@@ -33,6 +33,7 @@ $state.calls = @($state.calls) + ($Arguments -join ' ')
 function Save-State { $state | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8 }
 Save-State
 if ($Arguments[0] -eq 'api' -and $Arguments[1] -like '*/commits/*') {
+  if ($state.mode -eq 'missing-tag') { Write-Error 'Unknown tag (HTTP 404)' -ErrorAction Continue; exit 1 }
   if ($state.mode -eq 'moved-tag' -and $state.uploaded) { '0000000000000000000000000000000000000000' }
   else { $state.commit }
   exit 0
@@ -73,7 +74,11 @@ if ($endpoint -eq 'repos/example/project/releases' -and $method -eq 'POST') {
   if ($state.exists) { throw 'A retry must resume the existing draft' }
   $inputIndex = [Array]::IndexOf($Arguments, '--input')
   $request = Get-Content -LiteralPath $Arguments[$inputIndex+1] -Raw | ConvertFrom-Json
-  if ($request.tag_name -cne $state.tag -or $request.target_commitish -cne $state.commit -or
+  if ($request.PSObject.Properties.Name -contains 'target_commitish') {
+    Write-Error 'Old workflow target requires unavailable Workflows permission (HTTP 403)' -ErrorAction Continue
+    exit 1
+  }
+  if ($request.tag_name -cne $state.tag -or
       $request.draft -ne $true -or $request.prerelease -ne ($state.tag -split '\+',2)[0].Contains('-') -or
       -not $request.body.Contains("<!-- allpowers-release-commit: $($state.commit) -->") -or
       -not $request.body.Contains('- Synthetic version-specific change.')) {
@@ -139,7 +144,7 @@ throw 'Unexpected fake API invocation'
 '@ | Set-Content -LiteralPath $fake -Encoding utf8
   foreach ($mode in @('stale-list-after-create','success','resume-draft','upload-failure','partial-upload','bad-digest',
       'created-wrong-tag','created-wrong-commit','created-no-id','created-not-draft','changed-id',
-      'moved-tag','lookup-forbidden','foreign-draft','old-draft','duplicate-tag','published-match','published-mismatch',
+      'moved-tag','missing-tag','lookup-forbidden','foreign-draft','old-draft','duplicate-tag','published-match','published-mismatch',
       'missing-notes','empty-notes','wrong-version-notes','no-changes-notes',
       'duplicate-checksum','missing-checksum','checksum-mismatch','redundant-runtime','redundant-sidecar')) {
     $env:ALLPOWERS_RELEASE_TEST_STATE = Join-Path $Work ($mode + '.json')
@@ -185,7 +190,7 @@ throw 'Unexpected fake API invocation'
     }
     $mutations = @($state.calls | Where-Object { $_ -match '--method (POST|DELETE|PATCH)' })
     if ($mode -eq 'published-match' -or $mode -eq 'published-mismatch' -or
-        $mode -in @('lookup-forbidden','foreign-draft','old-draft','duplicate-tag',
+        $mode -in @('missing-tag','lookup-forbidden','foreign-draft','old-draft','duplicate-tag',
           'missing-notes','empty-notes','wrong-version-notes','no-changes-notes',
           'duplicate-checksum','missing-checksum','checksum-mismatch','redundant-runtime','redundant-sidecar')) {
       if ($mutations.Count) { throw "Existing/unknown release was changed: $mode" }

@@ -124,11 +124,15 @@ if (-not $release) {
   $notes = Join-Path $Assets '.stage/release-notes.md'
   $body | Set-Content -LiteralPath $notes -Encoding utf8
   $request = Join-Path $Assets '.stage/create-release.json'
+  # Confirm-RemoteTag requires the tag to exist and match the built commit.
+  # target_commitish is unused for an existing tag, but sending the old SHA
+  # can trigger GitHub's workflow-write permission check after main advances.
   @{
-    tag_name = $Tag; target_commitish = $commit; name = "ALLPOWERS Bridge $Tag"
+    tag_name = $Tag; name = "ALLPOWERS Bridge $Tag"
     draft = $true; prerelease = ($Tag -split '\+', 2)[0].Contains('-')
     body = Get-Content -LiteralPath $notes -Raw
   } | ConvertTo-Json | Set-Content -LiteralPath $request -Encoding utf8
+  Confirm-RemoteTag
   # The release list can lag behind creation. Keep the ID returned by POST;
   # never rediscover a newly created draft by tag (including inside gh release).
   $json = Invoke-GitHub @('api', "repos/$Repository/releases", '--method', 'POST', '--input', $request)

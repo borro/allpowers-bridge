@@ -169,10 +169,12 @@ external preservation folders when cleaning build output.
 ## GitHub Actions and publication
 
 `.github/workflows/build.yml` checks all branch pushes, tags, pull requests and
-manual runs. This also verifies the final commit pushed to a working branch
-without requiring a release tag. A PR and its branch push can each produce a run.
-After the audit, a portable tier runs core/ABI/UPS tests, RAM-only firmware
-self-tests and build regressions on Linux, both normally and with ASan/UBSan.
+manual runs. Branches, including `main`, pull requests and manual branch runs
+use the quick audit, portable and maintenance jobs. Full Windows/Linux product
+builds, packaging and publication run only for version tags (`v*`), including
+manual runs against a version tag. A PR and its branch push can each produce a
+quick run. After the audit, a portable tier runs core/ABI/UPS tests, RAM-only
+firmware self-tests and build regressions on Linux, both normally and with ASan/UBSan.
 `-DALLPOWERS_SANITIZERS=ON` adds fatal UBSan (`-fno-sanitize-recover=undefined`)
 and ASan. A deliberate recoverable-UB control must fail under those production
 flags while retaining its diagnostic; ordinary tests must pass. CI leaves
@@ -183,8 +185,8 @@ An independent `maintenance` job runs
 standard library. It installs no HID/serial/esptool backend and performs no
 discovery. This checks synthetic image ranges, schema/checksum, history metadata
 and rollback rejection before device access. It is separate from the Python-free
-CMake product build. Both portable and maintenance jobs gate the complete
-Windows/Linux product matrix and therefore tag publication.
+CMake product build. On version tags, both portable and maintenance jobs gate
+the complete Windows/Linux product matrix and publication.
 New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
 release for the same tag. Shared build commands use Bash with fail-fast behavior
 on both platforms; Windows-specific scripts and the release job use PowerShell.

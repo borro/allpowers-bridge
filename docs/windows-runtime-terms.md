@@ -1,5 +1,7 @@
 # Microsoft runtime components
 
+[Documentation](README.md)
+
 Copyright (c) Microsoft Corporation. All rights reserved.
 
 The Windows EXEs contain unmodified Microsoft C/C++ runtime code linked in

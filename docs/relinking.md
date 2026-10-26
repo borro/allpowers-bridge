@@ -1,5 +1,7 @@
 # Static Qt build and relinking
 
+[Documentation](README.md)
+
 The application source is MIT; the separate adapted driver is MS-PL. Qt Core,
 Gui, Widgets, Bluetooth, Network and Sql 6.12.0 are
 statically linked under LGPLv3. About displays embedded Qt/component notices;

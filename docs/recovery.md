@@ -1,5 +1,7 @@
 # Updating and recovery
 
+[Documentation](README.md)
+
 Building is separate from writing. No build/test/setup command opens USB or BLE.
 The firmware keeps CDC and vendor HID maintenance even if station data is absent.
 The USB descriptor contract and partition offsets are checked against fixtures.

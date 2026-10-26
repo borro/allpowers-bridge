@@ -1,5 +1,7 @@
 # Firmware licenses and corresponding source
 
+[Documentation](README.md)
+
 This firmware statically uses Arduino ESP32 3.3.11 (LGPL-2.1-or-later),
 ESP-IDF and third-party components. The application remains MIT; each dependency
 retains its own license. Modification for your own use and reverse engineering

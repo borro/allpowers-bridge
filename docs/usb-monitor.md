@@ -1,5 +1,7 @@
 # USB telemetry in Windows Monitor
 
+[Documentation](README.md)
+
 Choose **USB · Waveshare / Pocket** at the top, click **Найти платы**, select the
 board and connect. Bluetooth mode remains in the same selector. The app saves
 the last transport, board serial and Bluetooth station/profile separately.

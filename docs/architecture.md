@@ -1,5 +1,25 @@
 # Architecture
 
+[Documentation](README.md)
+
+## Repository layout
+
+| Directory | Responsibility |
+| --- | --- |
+| `core/` | Portable protocol/model state and C ABI v1 |
+| `firmware/` | Common firmware and board/display profiles |
+| `apps/windows/` | Native Qt Monitor, Widget and service |
+| `drivers/windows/` | Optional Windows battery miniclass |
+| `tests/` | C++ tests, build contracts and sanitized fixtures |
+| `cmake/` | Build graph, pinned dependencies and packaging |
+| `tools/` | Explicit device maintenance, identity and image-integrity checks |
+
+Real device identities, ports and rollback paths are ignored local configuration,
+never public defaults. Product versions come from Git tags or the source archive's
+generated `VERSION`; see [Building](building.md#packaging-and-versions).
+
+## Data flow
+
 The purpose is to make a station's energy reserve visible to the computer it
 powers. The firmware path exposes the supported battery state as USB HID UPS,
 independently of the desktop viewer. Monitor and Widget add live readings and

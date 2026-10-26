@@ -1,5 +1,7 @@
 # Experimental Windows UPS integration
 
+[Documentation](README.md)
+
 This is an optional, **lab-only implementation**, not a validated replacement for
 a certified UPS. The standalone monitor still works without any service or
 driver. Native installation and end-to-end tests are deferred until a disposable

@@ -1,6 +1,12 @@
 # Contributing
 
-- Read all four README versions; keep their commands and supported targets aligned.
+- Keep all four README versions aligned in structure, capabilities and limitations.
+  README is the product overview; detailed documentation is maintained in English
+  under [docs](docs/README.md). Link to shared guides instead of copying technical
+  instructions into each translation. Preserve established document URLs/anchors.
+  The Wiki is a navigator, not a second copy of the manuals; see
+  [documentation maintenance](docs/documentation.md) for its reviewed sources
+  and publication order.
 - Use CMake Presets, Ninja, CTest and CPack. Pinned dependency versions/hashes
   live in cmake/Dependencies.cmake. Product versions come from Git tags, never
   a hand-edited package/CMake version. Releases use annotated vX.Y.Z tags.

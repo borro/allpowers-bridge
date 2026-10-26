@@ -1,5 +1,7 @@
 # Building
 
+[Documentation](README.md)
+
 ## Tools and presets
 
 Git, CMake 4.4+, Ninja and a C++23 compiler are required. The pinned build tools
@@ -26,6 +28,14 @@ cmake --preset windows
 cmake --build --preset windows
 ctest --preset windows
 cmake --build --preset release
+```
+
+On Linux, build and test the portable core with:
+
+```sh
+cmake --preset native
+cmake --build --preset native
+ctest --preset native
 ```
 
 `native` configures core/tests plus available firmware targets without a desktop.

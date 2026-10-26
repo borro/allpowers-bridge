@@ -1,5 +1,7 @@
 # Board profiles
 
+[Documentation](README.md)
+
 Both supported variants use ESP32-S3, 16 MiB flash, 8 MiB OPI PSRAM, native
 USB Device and BOOT on GPIO0. Profiles are compile-time and share firmware.
 
@@ -18,3 +20,15 @@ USB Device and BOOT on GPIO0. Profiles are compile-time and share firmware.
 The two original physical units previously passed real second-write tests.
 This cleanup only builds firmware; it does not repeat hardware validation.
 USB serial is generated from the chip MAC. No actual unit identifiers are public.
+
+## Everyday controls
+
+Boards save the selected station in NVS. Without a selection, the device picker
+opens. BOOT changes pages; double BOOT opens the picker. RESET remains a hardware
+reset. The Windows USB viewer reads telemetry but does not change the board's
+station selection.
+
+Read [Updating and recovery](recovery.md) before writing firmware, and
+[Getting started](getting-started.md#use-a-prepared-board) for normal use.
+Historical second-write evidence is distinct from current station/HID validation;
+see [compatibility](BLUETOOTH.md#compatibility-and-evidence).

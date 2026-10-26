@@ -1,5 +1,7 @@
 # Validation
 
+[Documentation](README.md)
+
 ## Client-restart operation collision follow-up: R3 — 2026-10-25
 
 Baseline and fetched remote branch: `17794dc4eff416e162152fcb3020c93a55be2424`,

@@ -1,7 +1,9 @@
 #pragma once
-#include "transport.h"
 #include "TelemetryRecovery.h"
+#include "i18n.h"
+#include "transport.h"
 #include <QBluetoothDeviceDiscoveryAgent>
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QJsonObject>
 #include <QLowEnergyController>
@@ -43,18 +45,20 @@ class BleTransport : public TelemetryTransport {
   std::function<qint64()> clock_;
   qint64 retryAt_ = -1, deadlineAt_ = -1, pollAt_ = -1;
   AllpowersCore::TelemetryRecovery recovery;
-  QString address_, name_, phase_ = "Отключено", error_;
+  QString address_, name_, phase_ = QCoreApplication::translate("Allpowers", "Disconnected"),
+                           error_;
+  QJsonObject phaseMessage_ = uiMessage("ble.disconnected"), errorMessage_;
   int profile = 0, retrySeconds = 2;
   bool active_ = false, connected_ = false, offline_ = false;
   quint64 epoch = 0;
   quint64 discoveries = 0, attempts = 0, connects = 0, drops = 0, polls = 0, packets = 0;
   void connectDevice();
   void discoveryEnded();
-  void fail(const QString &message);
+  void fail(const QString &message, QJsonObject descriptor = {});
   void destroyConnection();
   void readyService(quint64 generation);
   void sendPoll();
-  void setPhase(const QString &phase);
+  void setPhase(const QString &phase, QJsonObject descriptor = {});
   qint64 nowMs() const { return clock_ ? clock_() : elapsed.elapsed(); }
   void acceptReady(quint64 generation);
   void acceptPacket(quint64 generation, quint64 token, const QByteArray &value);

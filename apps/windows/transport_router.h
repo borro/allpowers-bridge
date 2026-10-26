@@ -1,6 +1,7 @@
 #pragma once
 #include "connection_lease.h"
 #include "transport.h"
+#include <QCoreApplication>
 #include <functional>
 class TransportRouter : public TelemetryTransport {
   Q_OBJECT
@@ -30,8 +31,9 @@ public:
     return current->endpoint();
   }
   QString phase() const override {
-    return blocked_ ? QStringLiteral("Подключение занято другим приложением ALLPOWERS. Отключите "
-                                     "его и повторите попытку.")
+    return blocked_ ? QCoreApplication::translate("Allpowers",
+                                                  "Connection in use by another ALLPOWERS "
+                                                  "application. Disconnect it and try again.")
                     : current->phase();
   }
   QJsonObject diagnostics() const override {

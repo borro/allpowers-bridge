@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "usb_transport.h"
 #include "widget.h"
 #include <QApplication>
@@ -764,6 +765,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   QApplication application(argc, argv);
+  UiLanguage language("ru");
   WidgetTests tests;
   return QTest::qExec(&tests, argc, argv);
 }

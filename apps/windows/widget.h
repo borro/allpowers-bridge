@@ -2,6 +2,7 @@
 #include "desktop_surface.h"
 #include "history.h"
 #include "transport_router.h"
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QMenu>
 #include <QPointer>
@@ -21,8 +22,8 @@ class WidgetCard : public DesktopSurface {
   Q_OBJECT
   ap_snapshot snapshot_{};
   HistoryPoints points_;
-  QString phase_ = QStringLiteral("Нет подключения");
-  QString deviceName_ = QStringLiteral("Нет устройства");
+  QString phase_ = QCoreApplication::translate("Allpowers", "No connection");
+  QString deviceName_ = QCoreApplication::translate("Allpowers", "No device");
   qint64 now_ = 0;
   QVariantAnimation graphAnimation_;
   double graphNow_ = 0, graphMaximum_ = 10;
@@ -83,7 +84,7 @@ class WidgetController : public QObject {
   qint64 elapsedNow() const;
   bool offline_, locked = false;
   QPointer<QDialog> settingsDialog;
-  void save();
+  bool save();
   void refresh();
   void refreshHistory();
   void receive(ap_snapshot);

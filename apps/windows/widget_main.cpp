@@ -1,9 +1,11 @@
 #include "connection_lease.h"
-#include "product-version.h"
+#include "i18n.h"
 #include "notices.h"
+#include "product-version.h"
 #include "widget.h"
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
@@ -22,36 +24,45 @@ int main(int argc, char **argv) {
   QCommandLineParser parser;
   parser.addHelpOption();
   parser.addVersionOption();
-  parser.addOptions({{"demo", "Synthetic telemetry; no hardware or user settings"},
+  parser.addOptions({{"language", "Interface language for this run: system, ru, en", "language"},
+                     {"demo", "Synthetic telemetry; no hardware or user settings"},
                      {"self-test", "Offline standalone test"},
                      {"report", "Write diagnostic JSON", "path"},
                      {"screenshot", "Save card screenshot", "path"},
                      {"test-seconds", "Exit after N seconds", "seconds"},
                      {"export-licenses", "Extract embedded notices", "directory"}});
   parser.process(app);
+  if (parser.isSet("language") &&
+      !QStringList{"system", "ru", "en"}.contains(parser.value("language")))
+    return 2;
   if (parser.isSet("export-licenses"))
     return exportEmbeddedLicenses(parser.value("export-licenses")) ? 0 : 4;
   const bool offline = parser.isSet("demo") || parser.isSet("self-test");
+  QTemporaryDir temporary;
+  if (offline && !temporary.isValid())
+    return 2;
+  const QString directory =
+      offline ? temporary.path()
+              : QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                    .absolutePath();
+  UiLanguage language(parser.isSet("language") ? parser.value("language")
+                                               : savedUiLanguage(directory));
+  if (!language.valid())
+    return 3;
   ConnectionLease instance("ALLPOWERS.Widget.Instance.v1");
   if (!offline && !instance.acquire()) {
     QMessageBox::information(
         nullptr, QStringLiteral("ALLPOWERS Widget"),
-        QStringLiteral("Виджет уже запущен. Для запуска этой версии выберите «Выйти» в меню "
-                       "старого виджета рядом с часами и откройте этот файл снова."));
+        QCoreApplication::translate("Allpowers",
+                                    "The widget is already running. Choose Quit in the old "
+                                    "widget's menu near the clock, then open this file again."));
     return 0;
   }
-  QTemporaryDir temporary;
-  if (offline && !temporary.isValid())
-    return 2;
   if (QGuiApplication::platformName() == "offscreen") {
     QDir fonts(qEnvironmentVariable("SystemRoot") + "/Fonts");
     QFontDatabase::addApplicationFont(fonts.filePath("segoeui.ttf"));
     QFontDatabase::addApplicationFont(fonts.filePath("segoeuib.ttf"));
   }
-  const QString directory =
-      offline ? temporary.path()
-              : QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-                    .absolutePath();
   WidgetController widget(directory, offline, QGuiApplication::platformName() != "offscreen");
   widget.start();
   if (offline)

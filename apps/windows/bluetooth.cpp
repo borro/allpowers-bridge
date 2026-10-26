@@ -1,5 +1,6 @@
 #include "bluetooth.h"
 #include <QBluetoothUuid>
+#include <QCoreApplication>
 
 BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
                            BleChannel *channel, std::function<qint64()> clock)
@@ -27,8 +28,10 @@ BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
         return;
       devices[address] = info;
       auto bytes = info.name().toUtf8();
-      emit found(address, info.name().isEmpty() ? "Без имени" : info.name(), info.rssi(),
-                 int(ap_model_hint(bytes.constData())));
+      emit found(address,
+                 info.name().isEmpty() ? QCoreApplication::translate("Allpowers", "Unnamed")
+                                       : info.name(),
+                 info.rssi(), int(ap_model_hint(bytes.constData())));
       if (active_ && address == address_ && !controller)
         connectDevice();
     };
@@ -41,6 +44,7 @@ BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
             &BleTransport::discoveryEnded);
     connect(scanner, &QBluetoothDeviceDiscoveryAgent::errorOccurred, this, [this](auto) {
       error_ = scanner->errorString();
+      errorMessage_ = {};
       discoveryEnded();
     });
   }
@@ -53,13 +57,16 @@ BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
   retry.setSingleShot(true);
   connect(&retry, &QTimer::timeout, this, &BleTransport::connectDevice);
   deadline.setSingleShot(true);
-  connect(&deadline, &QTimer::timeout, this, [this] { fail("Превышено время ожидания BLE"); });
+  connect(&deadline, &QTimer::timeout, this, [this] {
+    fail(QCoreApplication::translate("Allpowers", "BLE timed out"), uiMessage("ble.timeout"));
+  });
 }
 BleTransport::~BleTransport() {
   stop();
 }
-void BleTransport::setPhase(const QString &phase) {
+void BleTransport::setPhase(const QString &phase, QJsonObject descriptor) {
   phase_ = phase;
+  phaseMessage_ = std::move(descriptor);
   emit stateChanged();
 }
 void BleTransport::scan() {
@@ -70,7 +77,8 @@ void BleTransport::scan() {
     return;
   }
   if (!scanner) {
-    error_ = "Автономный тест: Bluetooth не используется";
+    error_ = QCoreApplication::translate("Allpowers", "Offline test: Bluetooth is not used");
+    errorMessage_ = uiMessage("ble.offline");
     emit stateChanged();
     return;
   }
@@ -81,6 +89,7 @@ void BleTransport::scan() {
   if (active_ && current.isValid())
     devices[address_] = current;
   error_.clear();
+  errorMessage_ = {};
   ++discoveries;
   scanner->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
   emit stateChanged();
@@ -107,7 +116,8 @@ void BleTransport::destroyConnection() {
 void BleTransport::start(const QString &address, int model) {
   stop();
   if (!channel_ && !devices.contains(address)) {
-    error_ = "Сначала найдите станцию";
+    error_ = QCoreApplication::translate("Allpowers", "Scan for a station first");
+    errorMessage_ = uiMessage("ble.scan_first");
     emit stateChanged();
     return;
   }
@@ -132,7 +142,9 @@ void BleTransport::resume(const QString &address, const QString &name, int model
 }
 void BleTransport::discoveryEnded() {
   if (active_ && !controller && !retry.isActive()) {
-    setPhase(QString("Станция пока недоступна · поиск через %1 с").arg(retrySeconds));
+    setPhase(QCoreApplication::translate("Allpowers", "Station unavailable · scan in %1 s")
+                 .arg(retrySeconds),
+             uiMessage("ble.unavailable", {retrySeconds}));
     retryAt_ = nowMs() + retrySeconds * 1000;
     if (!clock_) retry.start(retrySeconds * 1000);
     retrySeconds = qMin(20, retrySeconds * 2);
@@ -149,17 +161,22 @@ void BleTransport::stop() {
     scanner->stop();
   destroyConnection();
   session.reset(profile);
-  setPhase("Отключено");
+  setPhase(QCoreApplication::translate("Allpowers", "Disconnected"), uiMessage("ble.disconnected"));
   emit snapshot(session.snapshot(quint32(nowMs())));
 }
-void BleTransport::fail(const QString &message) {
+void BleTransport::fail(const QString &message, QJsonObject descriptor) {
   if (!active_)
     return;
   error_ = message;
+  errorMessage_ = std::move(descriptor);
   drops++;
   ++epoch;
   destroyConnection();
-  setPhase(message + QString(" · повтор через %1 с").arg(retrySeconds));
+  auto errorDescriptor = errorMessage_;
+  errorDescriptor["fallback"] = message;
+  setPhase(QCoreApplication::translate("Allpowers", "%1 · retry in %2 s")
+               .arg(message, QString::number(retrySeconds)),
+           uiMessage("ble.retry", {errorDescriptor, retrySeconds}));
   retryAt_ = nowMs() + retrySeconds * 1000;
   if (!clock_) retry.start(retrySeconds * 1000);
   retrySeconds = qMin(20, retrySeconds * 2);
@@ -170,7 +187,8 @@ void BleTransport::connectDevice() {
   // Offline transports are also injected into UI tests. Never create native
   // discovery/controller objects in this mode, even for explicit requests.
   if (offline_) {
-    setPhase("Автономный тест: Bluetooth не используется");
+    setPhase(QCoreApplication::translate("Allpowers", "Offline test: Bluetooth is not used"),
+             uiMessage("ble.offline"));
     return;
   }
   if (channel_) {
@@ -181,13 +199,14 @@ void BleTransport::connectDevice() {
     emit newSession();
     deadlineAt_=nowMs()+30000;
     ++attempts;
-    setPhase("Подключение…");
+    setPhase(QCoreApplication::translate("Allpowers", "Connecting…"), uiMessage("ble.connecting"));
     channel_->connectToDevice(address_,epoch);
     return;
   }
   const auto info = devices.value(address_);
   if (!info.isValid()) {
-    setPhase("Поиск последней станции…");
+    setPhase(QCoreApplication::translate("Allpowers", "Finding the last station…"),
+             uiMessage("ble.finding"));
     scan();
     return;
   }
@@ -209,7 +228,8 @@ void BleTransport::connectDevice() {
   };
   connect(c, &QLowEnergyController::connected, this, [this, c, current] {
     if (current()) {
-      setPhase("Проверка станции…");
+      setPhase(QCoreApplication::translate("Allpowers", "Verifying station…"),
+               uiMessage("ble.verifying"));
       c->discoverServices();
     }
   });
@@ -219,29 +239,32 @@ void BleTransport::connectDevice() {
   });
   connect(c, &QLowEnergyController::disconnected, this, [this, current] {
     if (current())
-      fail("Соединение потеряно");
+      fail(QCoreApplication::translate("Allpowers", "Connection lost"), uiMessage("ble.lost"));
   });
   connect(c, &QLowEnergyController::discoveryFinished, this, [this, c, current, generation] {
     if (!current())
       return;
     service = c->createServiceObject(QBluetoothUuid(QString::fromLatin1(ap_uuid(0))), this);
     if (!service) {
-      fail("Устройство не передаёт телеметрию ALLPOWERS");
+      fail(QCoreApplication::translate("Allpowers", "Device does not provide ALLPOWERS telemetry"),
+           uiMessage("ble.no_telemetry"));
       return;
     }
     auto *s = service.data();
     connect(s, &QLowEnergyService::errorOccurred, this, [this, s, current](auto error) {
       if (current() && service == s)
-        fail(QString("Ошибка GATT: %1").arg(int(error)));
+        fail(QCoreApplication::translate("Allpowers", "GATT error: %1").arg(int(error)),
+             uiMessage("ble.gatt", {int(error)}));
     });
     connect(s, &QLowEnergyService::stateChanged, this, [this, s, current, generation](auto state) {
       if (current() && service == s && state == QLowEnergyService::RemoteServiceDiscovered)
         readyService(generation);
     });
-    setPhase("Подготовка телеметрии…");
+    setPhase(QCoreApplication::translate("Allpowers", "Preparing telemetry…"),
+             uiMessage("ble.preparing"));
     s->discoverDetails(QLowEnergyService::FullDiscovery);
   });
-  setPhase("Подключение…");
+  setPhase(QCoreApplication::translate("Allpowers", "Connecting…"), uiMessage("ble.connecting"));
   deadlineAt_ = nowMs() + 30000;
   if (!clock_) deadline.start(30000);
   ++attempts;
@@ -256,18 +279,21 @@ void BleTransport::readyService(quint64 generation) {
   auto flags = rx.properties();
   if (!rx.isValid() ||
       !(flags & (QLowEnergyCharacteristic::Notify | QLowEnergyCharacteristic::Indicate))) {
-    fail("Канал уведомлений недоступен");
+    fail(QCoreApplication::translate("Allpowers", "Notification channel unavailable"),
+         uiMessage("ble.no_notify"));
     return;
   }
   if (!session.poll().isEmpty() &&
       (!tx.isValid() || !(tx.properties() & (QLowEnergyCharacteristic::Write |
                                              QLowEnergyCharacteristic::WriteNoResponse)))) {
-    fail("Канал запроса телеметрии недоступен");
+    fail(QCoreApplication::translate("Allpowers", "Telemetry request channel unavailable"),
+         uiMessage("ble.no_request"));
     return;
   }
   auto cccd = rx.clientCharacteristicConfiguration();
   if (!cccd.isValid()) {
-    fail("Нет дескриптора подписки CCCD");
+    fail(QCoreApplication::translate("Allpowers", "CCCD subscription descriptor missing"),
+         uiMessage("ble.no_cccd"));
     return;
   }
   const auto token = session.generation();
@@ -300,7 +326,8 @@ void BleTransport::sendPoll() {
   }
   if (!(tx.properties() &
         (QLowEnergyCharacteristic::Write | QLowEnergyCharacteristic::WriteNoResponse))) {
-    fail("Нет канала запроса");
+    fail(QCoreApplication::translate("Allpowers", "Request channel missing"),
+         uiMessage("ble.no_channel"));
     return;
   }
   service->writeCharacteristic(tx, data,
@@ -318,7 +345,8 @@ void BleTransport::refresh() {
   // Do not run both schedulers: a late native timer could otherwise double-poll.
   if (clock_) {
     if (active_ && retryAt_>=0 && now>=retryAt_) connectDevice();
-    if (active_ && deadlineAt_>=0 && now>=deadlineAt_) fail("Превышено время ожидания BLE");
+    if (active_ && deadlineAt_ >= 0 && now >= deadlineAt_)
+      fail(QCoreApplication::translate("Allpowers", "BLE timed out"), uiMessage("ble.timeout"));
     if (connected_ && pollAt_>=0 && now>=pollAt_) sendPoll();
   }
   auto s=session.snapshot(quint32(now));
@@ -326,7 +354,9 @@ void BleTransport::refresh() {
   emit snapshot(s);
   if (connected_) {
     recovery.observe(quint32(now),s.fresh);
-    if (recovery.reconnectDue(quint32(now))) fail("Полная телеметрия не поступает");
+    if (recovery.reconnectDue(quint32(now)))
+      fail(QCoreApplication::translate("Allpowers", "Full telemetry is not arriving"),
+           uiMessage("ble.incomplete"));
   }
 }
 void BleTransport::acceptPacket(quint64 generation, quint64 token, const QByteArray &value) {
@@ -341,7 +371,9 @@ void BleTransport::acceptReady(quint64 generation) {
   connected_=true;++connects;retrySeconds=2;
   recovery.begin(quint32(nowMs()));
   error_.clear();
-  setPhase("Подключено · получение данных");
+  errorMessage_ = {};
+  setPhase(QCoreApplication::translate("Allpowers", "Connected · receiving data"),
+           uiMessage("ble.connected"));
   if (!clock_) poll.start();
   sendPoll();
 }
@@ -351,6 +383,7 @@ QJsonObject BleTransport::diagnostics() const {
           {"name", name_},
           {"phase", phase_},
           {"error", error_},
+          {"ui_messages", QJsonObject{{"phase", phaseMessage_}, {"error", errorMessage_}}},
           {"active", active_},
           {"connected", connected_},
           {"scanning", scanning()},

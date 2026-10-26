@@ -51,6 +51,19 @@ string(JSON lgpl GET "${report}" lgpl_notice)
 if(NOT status STREQUAL "PASS" OR notices LESS 1 OR NOT lgpl)
   message(FATAL_ERROR "Standalone EXE smoke test failed")
 endif()
+foreach(language ru en)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
+    "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"
+    --self-test --language "${language}" --report "${WORK}/report-${language}.json" -platform offscreen
+    WORKING_DIRECTORY "${WORK}" TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
+  file(READ "${WORK}/report-${language}.json" localized_report)
+  string(JSON localized_status GET "${localized_report}" status)
+  string(JSON resolved_language GET "${localized_report}" ui_language)
+  if(NOT localized_status STREQUAL "PASS" OR NOT resolved_language STREQUAL language)
+    message(FATAL_ERROR "Standalone ${language} interface smoke test failed")
+  endif()
+endforeach()
 execute_process(COMMAND "${WORK}/${exe_name}" --export-licenses "${WORK}/licenses"
   -platform offscreen TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
 foreach(required LICENSE THIRD_PARTY_NOTICES.md relinking.md windows-runtime-terms.md MSVC-STL.md

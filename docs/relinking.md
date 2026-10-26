@@ -11,7 +11,7 @@ No restriction prevents reverse engineering, changing/relinking Qt, rebuilding o
 running a modified executable.
 
 Every release includes a separate sources ZIP with complete application source,
-build instructions and the exact unmodified Qt Base/Connectivity archives used
+build instructions and the exact unmodified Qt Base/Connectivity/Tools archives used
 for that build. The archives retain their original licenses/checksums. Keep this
 source kit available alongside any binary distribution.
 
@@ -25,7 +25,7 @@ source kit available alongside any binary distribution.
 3. In allpowers/, run cmake --preset windows, then cmake --build --preset windows.
    CMake builds static Qt from the supplied verified archives and then the EXE.
 4. For a modified Qt, build/install it with static libraries, /MT, bundled SQLite
-   and the WinRT Bluetooth backend. Configure a fresh build directory with
+   and the WinRT Bluetooth backend; install matching LinguistTools (lrelease/lupdate). Configure a fresh build directory with
    -DALLPOWERS_QT_ROOT=/path/to/modified/qt and rebuild. Use the standalone app
    CMake project if not creating a distribution/source kit. A custom distribution
    must supply the corresponding modified Qt sources as well.

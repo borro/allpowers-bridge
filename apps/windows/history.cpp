@@ -1,4 +1,5 @@
 #include "history.h"
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -225,7 +226,7 @@ bool HistoryStore::importPoints(const HistoryPoints &points, qint64 now) {
 }
 void HistoryWorker::importPoints(HistoryPoints points, qint64 now) {
   if (!store || !store->importPoints(points, now)) {
-    emit problem("Не удалось сохранить архив USB-платы");
+    emit problem(QCoreApplication::translate("Allpowers", "Could not save USB board archive"));
     return;
   }
   if (!points.isEmpty())
@@ -347,7 +348,7 @@ void HistoryWorker::newSession() {
 void HistoryWorker::sample(QString a, ap_snapshot s, qint64 w, qint64 t) {
   if (store && store->valid()) {
     if (!store->record(a, s, w, t))
-      emit problem("Не удалось сохранить точку истории");
+      emit problem(QCoreApplication::translate("Allpowers", "Could not save history point"));
     load(a, w);
   }
   emit sampleFinished();
@@ -377,5 +378,5 @@ void HistoryWorker::saveSettings(QString path, QJsonObject settings) {
   QSaveFile file(path);
   if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(settings).toJson()) < 0 ||
       !file.commit())
-    emit problem("Не удалось сохранить настройки");
+    emit problem(QCoreApplication::translate("Allpowers", "Could not save settings"));
 }

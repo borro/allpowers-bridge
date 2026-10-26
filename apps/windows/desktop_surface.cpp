@@ -1,6 +1,7 @@
 #include "desktop_surface.h"
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
 #include <QMouseEvent>
 #include <QScreen>
 #include <cstring>
@@ -120,7 +121,7 @@ void DesktopSurface::attach() {
   }
   bool changed = false;
   if (!parent) {
-    error_ = QStringLiteral("Рабочий стол Explorer недоступен. Повторяем подключение…");
+    error_ = QCoreApplication::translate("Allpowers", "Explorer desktop unavailable. Retrying…");
   } else {
     if (!handle && surfaceClass()) {
       const auto previous = SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(parent));
@@ -135,7 +136,7 @@ void DesktopSurface::attach() {
       shell = window ? reinterpret_cast<quintptr>(parent) : 0;
       changed = true;
       if (!window)
-        error_ = QStringLiteral("Не удалось создать карточку: %1").arg(error);
+        error_ = QCoreApplication::translate("Allpowers", "Could not create card: %1").arg(error);
     }
     if (handle) {
       auto window = reinterpret_cast<HWND>(handle);
@@ -188,7 +189,7 @@ void DesktopSurface::publish() {
       DeleteObject(dib);
     if (memory)
       DeleteDC(memory);
-    error_ = QStringLiteral("Не удалось выделить изображение карточки");
+    error_ = QCoreApplication::translate("Allpowers", "Could not allocate card image");
     return;
   }
   std::memcpy(pixels, frame_.constBits(), size_t(frame_.sizeInBytes()));
@@ -209,7 +210,7 @@ void DesktopSurface::publish() {
     SetWindowPos(window, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   if (!ok)
-    error_ = QStringLiteral("Не удалось отрисовать карточку: %1").arg(error);
+    error_ = QCoreApplication::translate("Allpowers", "Could not render card: %1").arg(error);
 }
 void DesktopSurface::capturePointer() {
   if (handle)

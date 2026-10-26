@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "usb_transport.h"
 #include "history_operation_fixture.h"
 #include "frozen_b989/usb_transport.h"
@@ -835,5 +836,10 @@ private slots:
     }
   }
 };
-QTEST_GUILESS_MAIN(ArchiveTransportTests)
+int main(int argc, char **argv) {
+  QCoreApplication app(argc, argv);
+  UiLanguage language("ru");
+  ArchiveTransportTests tests;
+  return QTest::qExec(&tests, argc, argv);
+}
 #include "archive_transport_test.moc"

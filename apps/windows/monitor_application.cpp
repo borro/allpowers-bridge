@@ -1,9 +1,10 @@
 #include "monitor_application.h"
-#include "product-version.h"
 #include "battery_probe.h"
 #include "connection_lease.h"
+#include "i18n.h"
 #include "integration.h"
 #include "notices.h"
+#include "product-version.h"
 #include "usb_transport.h"
 #include "window.h"
 #include <QApplication>
@@ -34,7 +35,8 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
   parser.addHelpOption();
   parser.addVersionOption();
   parser.addOptions(
-      {{"self-test", "Run an offline core/UI smoke test"},
+      {{"language", "Interface language for this run: system, ru, en", "language"},
+       {"self-test", "Run an offline core/UI smoke test"},
        {"demo", "Show synthetic data without Bluetooth"},
        {"report", "Write diagnostic JSON", "path"},
        {"screenshot", "Save a UI screenshot", "path"},
@@ -49,6 +51,9 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
        {"battery-probe", "Read native battery IOCTLs/power events without BLE or mutations",
         "seconds"}});
   parser.process(arguments);
+  if (parser.isSet("language") &&
+      !QStringList{"system", "ru", "en"}.contains(parser.value("language")))
+    return 2;
   if (parser.isSet("scan-usb")) {
     if (!parser.isSet("report"))
       return 2;
@@ -208,6 +213,10 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
   }
   if (selfTest || demo)
     qputenv("ALLPOWERS_DATA_DIR", temporary.path().toUtf8());
+  UiLanguage language(parser.isSet("language") ? parser.value("language")
+                                               : savedUiLanguage(monitorDataDirectory()));
+  if (!language.valid())
+    return 3;
   if (!ap_self_test())
     return 2;
   MonitorWindow window(selfTest || demo,nullptr,runtime.makeTransport

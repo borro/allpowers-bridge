@@ -6,6 +6,9 @@ if(ALLPOWERS_QT_ROOT)
   if(NOT EXISTS "${ALLPOWERS_QT_ROOT}/lib/cmake/Qt6Bluetooth/Qt6BluetoothConfig.cmake")
     message(FATAL_ERROR "ALLPOWERS_QT_ROOT must point to a complete static Qt installation")
   endif()
+  if(NOT EXISTS "${ALLPOWERS_QT_ROOT}/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsConfig.cmake")
+    message(FATAL_ERROR "The static Qt SDK must include matching LinguistTools (lrelease/lupdate)")
+  endif()
   add_custom_target(qt-static)
   return()
 endif()
@@ -54,20 +57,39 @@ ExternalProject_Add(qtconnectivity-static
 ExternalProject_Add_Step(qtconnectivity-static compiler-config
   DEPENDEES patch DEPENDERS configure
   DEPENDS "${PROJECT_SOURCE_DIR}/cmake/WindowsCompiler.cmake")
-ExternalProject_Add_Step(qtconnectivity-static source-identity
+# Verify on every use, but seal only after installation. Automatically resealing
+# on every build would silently accept libraries changed since the last build.
+ExternalProject_Add(qttools-static
+  URL "${qt_base_url}/qttools-everywhere-src-${ALLPOWERS_QT_VERSION}.tar.xz"
+  URL_HASH "SHA256=${ALLPOWERS_QTTOOLS_SHA256}" DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  TIMEOUT 180 INACTIVITY_TIMEOUT 30 DOWNLOAD_DIR "${ALLPOWERS_QT_SOURCE_CACHE}"
+  PREFIX "${PROJECT_BINARY_DIR}/deps/qttools"
+  DEPENDS qtconnectivity-static CMAKE_GENERATOR Ninja
+  CMAKE_ARGS ${qt_common} "-DCMAKE_PREFIX_PATH=${ALLPOWERS_QT_ROOT}"
+    -DFEATURE_assistant=OFF -DFEATURE_designer=OFF -DFEATURE_qdoc=OFF
+    -DFEATURE_distancefieldgenerator=OFF -DFEATURE_kmap2qmap=OFF -DFEATURE_pixeltool=OFF
+    -DFEATURE_qdbus=OFF -DFEATURE_qev=OFF -DFEATURE_qtattributionsscanner=OFF
+    -DFEATURE_qtdiag=OFF -DFEATURE_qtplugininfo=OFF
+  BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_QT_JOBS}"
+  INSTALL_BYPRODUCTS "${ALLPOWERS_QT_ROOT}/bin/lrelease.exe" "${ALLPOWERS_QT_ROOT}/bin/lupdate.exe"
+  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON
+  LOG_OUTPUT_ON_FAILURE ON EXCLUDE_FROM_ALL TRUE)
+ExternalProject_Add_Step(qttools-static compiler-config
+  DEPENDEES patch DEPENDERS configure
+  DEPENDS "${PROJECT_SOURCE_DIR}/cmake/WindowsCompiler.cmake")
+ExternalProject_Add_Step(qttools-static source-identity
   COMMAND "${CMAKE_COMMAND}" -DMODE=SEAL "-DPREFIX=${ALLPOWERS_QT_ROOT}"
     "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}"
     "-DWORK=${PROJECT_BINARY_DIR}/qt-source-identity"
     "-Dqtbase_SOURCE=${PROJECT_BINARY_DIR}/deps/qtbase/src/qtbase-static"
+    "-Dqttools_SOURCE=${PROJECT_BINARY_DIR}/deps/qttools/src/qttools-static"
     "-Dqtconnectivity_SOURCE=${PROJECT_BINARY_DIR}/deps/qtconnectivity/src/qtconnectivity-static"
     -P "${PROJECT_SOURCE_DIR}/cmake/QtSourceIdentity.cmake"
   DEPENDEES install
   DEPENDS "${PROJECT_SOURCE_DIR}/cmake/QtSourceIdentity.cmake"
   BYPRODUCTS "${ALLPOWERS_QT_ROOT}/allpowers-source-identity.cmake")
-# Verify on every use, but seal only after installation. Automatically resealing
-# on every build would silently accept libraries changed since the last build.
 add_custom_target(qt-static
   COMMAND "${CMAKE_COMMAND}" -DMODE=VERIFY "-DPREFIX=${ALLPOWERS_QT_ROOT}"
     "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}"
     -P "${PROJECT_SOURCE_DIR}/cmake/QtSourceIdentity.cmake" VERBATIM)
-add_dependencies(qt-static qtconnectivity-static)
+add_dependencies(qt-static qttools-static)

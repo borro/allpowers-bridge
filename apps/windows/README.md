@@ -53,3 +53,25 @@ that. Product version comes from Git tags; --version prints the embedded version
 --verify-station 50 --report <path> explicitly tests the saved station for several
 seconds of fresh telemetry, then disconnects. This is a manual hardware test;
 normal CTest/build/package targets never invoke it or switch BLE connections.
+
+Russian and English are embedded in both EXEs. The monitor's selector beside About
+and the widget's Settings offer Windows language / Русский / English. The choice
+is independent per application (`ui_language`: `system`, `ru`, `en` in its existing
+settings.json), takes effect after restarting, and defaults to Russian on Russian
+Windows or English otherwise. `--language system|ru|en` overrides only this run;
+combine it with --demo or --self-test for offline checks. Changing only the widget
+language does not require a selected device, reconnect, or change startup settings.
+
+Service diagnostics optionally include `ui_messages` with `phase`, `error`,
+`driver_error`, and `ups_reason` descriptors: a stable `id` and positional `args`.
+The client renders known descriptors in its own language; unknown/missing IDs fall
+back to the existing text. Error replies may also carry `ui_message`. This is an
+additive extension of the existing IPC version. OS errors, legacy service text,
+RAW data, historical logs, device names, and license texts retain their original
+language. CSV column names and machine identifiers remain language-independent.
+
+The static Qt SDK must include matching LinguistTools. `update-translations` is
+the explicit catalog extraction target; ordinary builds only compile the checked-in
+catalog with lrelease and embed it. `translation-coverage` extracts into a disposable
+catalog and rejects untranslated additions. Source packages include pinned Qt Tools
+sources for rebuilding the translation tools.

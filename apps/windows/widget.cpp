@@ -1,10 +1,12 @@
 #include "widget.h"
+#include "i18n.h"
 #include "integration.h"
 #include "notices.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -56,17 +58,12 @@ QString WidgetCard::reading(const ap_snapshot &s, quint32 mask, quint32 value, Q
 QString WidgetCard::remainingTime(const ap_snapshot &s) {
   if (!(s.known & 8))
     return QStringLiteral("—");
-  const auto days = s.runtime_s / 86400, hours = s.runtime_s / 3600, minutes = s.runtime_s / 60;
-  if (days)
-    return QStringLiteral("%1 д %2 ч").arg(days).arg(hours % 24);
-  if (hours)
-    return QStringLiteral("%1 ч %2 мин").arg(hours).arg(minutes % 60);
-  return QStringLiteral("%1 мин").arg(minutes);
+  return formatDuration(s.runtime_s, true);
 }
 void WidgetCard::setDeviceName(QString name) {
   name = name.trimmed();
   if (name.isEmpty())
-    name = QStringLiteral("Нет устройства");
+    name = QCoreApplication::translate("Allpowers", "No device");
   if (deviceName_ == name)
     return;
   deviceName_ = std::move(name);
@@ -78,8 +75,9 @@ void WidgetCard::setDeviceName(QString name) {
 void WidgetCard::setTelemetry(ap_snapshot value, QString phase) {
   snapshot_ = value;
   phase_ = std::move(phase);
-  const QString status =
-      !value.fresh && value.known ? QStringLiteral("Данные устарели · ") + phase_ : phase_;
+  const QString status = !value.fresh && value.known
+                             ? QCoreApplication::translate("Allpowers", "Data stale · ") + phase_
+                             : phase_;
   setToolTip(status);
   setAccessibleName(deviceName_ + " " + reading(value, 1, value.soc, "%"));
   setAccessibleDescription(status);
@@ -168,15 +166,22 @@ void WidgetCard::drawCard(QPainter &p) const {
     p.drawEllipse(QPointF(279, 12 + i * 4), 1.2, 1.2);
   p.setBrush(Qt::NoBrush);
   text({12, 29, 136, 48}, reading(s, 1, s.soc, "%"), 30, foreground, true);
-  text({154, 30, 134, 16}, QStringLiteral("осталось"), 9, QColor("#98adc9"));
+  text({154, 30, 134, 16}, QCoreApplication::translate("Allpowers", "remaining"), 9,
+       QColor("#98adc9"));
   text({154, 47, 134, 26}, remainingTime(s), 12, foreground);
-  text({12, 82, 138, 24}, QStringLiteral("Вход  ") + reading(s, 2, s.input_w, " Вт"), 10,
-       QColor("#59d9aa"));
-  text({154, 82, 140, 24}, QStringLiteral("Выход  ") + reading(s, 4, s.output_w, " Вт"), 10,
-       QColor("#6ab4ff"));
+  text({12, 82, 138, 24},
+       QCoreApplication::translate("Allpowers", "Input  ") +
+           reading(s, 2, s.input_w, QCoreApplication::translate("Allpowers", " W")),
+       10, QColor("#59d9aa"));
+  text({154, 82, 140, 24},
+       QCoreApplication::translate("Allpowers", "Output  ") +
+           reading(s, 4, s.output_w, QCoreApplication::translate("Allpowers", " W")),
+       10, QColor("#6ab4ff"));
   const QRectF plot(14, 126, 272, 54);
   const double maximum = graphMaximum_;
-  text({14, 108, 180, 16}, QString::number(maximum, 'f', 0) + " Вт", 8, QColor("#8ea5c4"));
+  text({14, 108, 180, 16},
+       QString::number(maximum, 'f', 0) + QCoreApplication::translate("Allpowers", " W"), 8,
+       QColor("#8ea5c4"));
   p.setPen(QPen(QColor("#2b3b53"), 1));
   p.drawLine(plot.bottomLeft(), plot.bottomRight());
   p.drawLine(plot.topLeft(), plot.topRight());
@@ -197,8 +202,9 @@ void WidgetCard::drawCard(QPainter &p) const {
     }
   }
   p.restore();
-  text({14, 184, 180, 16}, QStringLiteral("−1 час · лог. время"), 8, QColor("#8ea5c4"));
-  text({240, 184, 50, 16}, QStringLiteral("сейчас"), 8, QColor("#8ea5c4"));
+  text({14, 184, 180, 16}, QCoreApplication::translate("Allpowers", "−1 hour · log time"), 8,
+       QColor("#8ea5c4"));
+  text({240, 184, 50, 16}, QCoreApplication::translate("Allpowers", "now"), 8, QColor("#8ea5c4"));
 }
 void WidgetCard::mousePressEvent(QMouseEvent *event) {
   if (event->button() != Qt::LeftButton)
@@ -312,10 +318,13 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   connect(&transport, &TelemetryTransport::historyImported, this, [this](HistoryPoints points) {
     emit importHistory(points, wallNow());
   });
-  menu.addAction(QStringLiteral("Настройки…"), this, &WidgetController::configure);
-  menu.addAction(QStringLiteral("Подключить"), this, &WidgetController::connectStation);
-  menu.addAction(QStringLiteral("Отключить"), this, &WidgetController::disconnectStation);
-  auto *lock = menu.addAction(QStringLiteral("Закрепить положение"));
+  menu.addAction(QCoreApplication::translate("Allpowers", "Settings…"), this,
+                 &WidgetController::configure);
+  menu.addAction(QCoreApplication::translate("Allpowers", "Connect"), this,
+                 &WidgetController::connectStation);
+  menu.addAction(QCoreApplication::translate("Allpowers", "Disconnect"), this,
+                 &WidgetController::disconnectStation);
+  auto *lock = menu.addAction(QCoreApplication::translate("Allpowers", "Lock position"));
   lock->setCheckable(true);
   lock->setChecked(locked);
   connect(lock, &QAction::toggled, this, [this](bool value) {
@@ -323,9 +332,10 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
     card_.setLocked(value);
     save();
   });
-  menu.addAction(QStringLiteral("Лицензии…"), this, [] { showNotices(nullptr); });
+  menu.addAction(QCoreApplication::translate("Allpowers", "Licenses…"), this,
+                 [] { showNotices(nullptr); });
   menu.addSeparator();
-  menu.addAction(QStringLiteral("Выйти"), qApp, &QApplication::quit);
+  menu.addAction(QCoreApplication::translate("Allpowers", "Quit"), qApp, &QApplication::quit);
   tray.setContextMenu(&menu);
   connect(&tray, &QSystemTrayIcon::activated, this, [this](auto reason) {
     if (reason == QSystemTrayIcon::DoubleClick)
@@ -358,7 +368,7 @@ WidgetController::~WidgetController() {
   historyThread.quit();
   historyThread.wait();
 }
-void WidgetController::save() {
+bool WidgetController::save() {
   settings["locked"] = locked;
   settings["screen"] = card_.desktopScreen();
   settings["x"] = card_.desktopOffset().x();
@@ -366,9 +376,11 @@ void WidgetController::save() {
   QSaveFile file(directory + "/settings.json");
   if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(settings).toJson()) < 0 ||
       !file.commit()) {
-    historyError = QStringLiteral("Не удалось сохранить настройки виджета");
+    historyError = QCoreApplication::translate("Allpowers", "Could not save widget settings");
     refresh();
+    return false;
   }
+  return true;
 }
 void WidgetController::start() {
   if (!offline_)
@@ -465,16 +477,23 @@ void WidgetController::configure() {
   settingsDialog = &dialog;
   const auto clearDialog = qScopeGuard([this] { settingsDialog = nullptr; });
   dialog.setObjectName("widgetSettings");
-  dialog.setWindowTitle(QStringLiteral("ALLPOWERS Widget — настройки"));
+  dialog.setWindowTitle(QCoreApplication::translate("Allpowers", "ALLPOWERS Widget — settings"));
   dialog.setMinimumWidth(420);
   auto *layout = new QVBoxLayout(&dialog);
   auto *form = new QFormLayout;
   layout->addLayout(form);
-  QComboBox mode, devices, profile;
+  QComboBox mode, devices, profile, language;
+  populateUiLanguages(language, settings["ui_language"].toString());
+  form->addRow(QCoreApplication::translate("Allpowers", "Interface language"), &language);
+  QLabel languageNote(QCoreApplication::translate(
+      "Allpowers", "Language changes apply after restarting the widget."));
+  languageNote.setWordWrap(true);
+  layout->addWidget(&languageNote);
   mode.addItem("Bluetooth", "bluetooth");
   mode.addItem("USB", "usb");
   mode.setCurrentIndex(transport.usb() ? 1 : 0);
-  profile.addItems({QStringLiteral("Автоматический"), "Old10", "Legacy16", "R2500 V2"});
+  profile.addItems(
+      {QCoreApplication::translate("Allpowers", "Automatic"), "Old10", "Legacy16", "R2500 V2"});
   profile.setCurrentIndex(qBound(0, settings["profile"].toInt(), 3));
   auto addSaved = [&] {
     devices.clear();
@@ -484,25 +503,32 @@ void WidgetController::configure() {
                       settings["endpoint"].toString());
   };
   addSaved();
-  form->addRow(QStringLiteral("Подключение"), &mode);
-  form->addRow(QStringLiteral("Устройство"), &devices);
-  form->addRow(QStringLiteral("Профиль станции"), &profile);
-  QPushButton scan(QStringLiteral("Найти устройства"));
+  const auto initialMode = mode.currentData().toString();
+  const auto initialEndpoint = devices.currentData().toString();
+  const int initialProfile = profile.currentIndex();
+  form->addRow(QCoreApplication::translate("Allpowers", "Connection"), &mode);
+  form->addRow(QCoreApplication::translate("Allpowers", "Device"), &devices);
+  form->addRow(QCoreApplication::translate("Allpowers", "Station profile"), &profile);
+  QPushButton scan(QCoreApplication::translate("Allpowers", "Find devices"));
   layout->addWidget(&scan);
-  QCheckBox autostart(QStringLiteral("Запускать при входе в Windows"));
+  QCheckBox autostart(QCoreApplication::translate("Allpowers", "Start when signing in to Windows"));
   const QString registryPath =
       "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
   QSettings registry(registryPath, QSettings::NativeFormat);
-  autostart.setChecked(registry.contains("AllpowersWidget"));
+  const bool initialStartup = registry.contains("AllpowersWidget");
+  autostart.setChecked(initialStartup);
   autostart.setEnabled(!offline_);
   layout->addWidget(&autostart);
   QLabel note(
       transport.remote()
-          ? QStringLiteral("Bluetooth обслуживает служба ИБП. Виджет только читает её данные.")
-          : QStringLiteral("Перед подключением отключите станцию в основном мониторе."));
+          ? QCoreApplication::translate(
+                "Allpowers", "The UPS service handles Bluetooth. The widget only reads its data.")
+          : QCoreApplication::translate(
+                "Allpowers", "Disconnect the station in the main monitor before connecting."));
   note.setWordWrap(true);
   layout->addWidget(&note);
   QDialogButtonBox buttons(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+  translateDialogButtons(buttons);
   layout->addWidget(&buttons);
   connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
   connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
@@ -523,18 +549,42 @@ void WidgetController::configure() {
   connect(&scan, &QPushButton::clicked, &discovery, &TelemetryTransport::scan);
   if (dialog.exec() != QDialog::Accepted)
     return;
-  if (devices.currentData().toString().isEmpty() &&
-      !(mode.currentIndex() == 0 && integrationInstalled())) {
+  const bool languageChanged =
+      language.currentData().toString() != normalizedUiLanguage(settings["ui_language"].toString());
+  if (languageChanged) {
+    const auto previousLanguage = settings["ui_language"];
+    settings["ui_language"] = language.currentData().toString();
+    if (!save()) {
+      settings["ui_language"] = previousLanguage;
+      tray.showMessage("ALLPOWERS Widget", historyError);
+      return;
+    }
     tray.showMessage(
         "ALLPOWERS Widget",
-        QStringLiteral("Устройство не выбрано. Откройте настройки и выполните поиск."));
+        QCoreApplication::translate(
+            "Allpowers", "Language saved. Close and reopen the application to apply it."));
+  }
+  const bool connectionChanged = mode.currentData().toString() != initialMode ||
+                                 devices.currentData().toString() != initialEndpoint ||
+                                 profile.currentIndex() != initialProfile;
+  const bool startupChanged = autostart.isChecked() != initialStartup;
+  if (!connectionChanged && !startupChanged)
+    return;
+  if (connectionChanged && devices.currentData().toString().isEmpty() &&
+      !(mode.currentIndex() == 0 && integrationInstalled())) {
+    tray.showMessage("ALLPOWERS Widget",
+                     QCoreApplication::translate(
+                         "Allpowers", "No device selected. Open settings and scan for devices."));
     return;
   }
-  if (!offline_ &&
+  if (startupChanged && !offline_ &&
       !setWidgetStartup(registry, autostart.isChecked(), QCoreApplication::applicationFilePath())) {
-    tray.showMessage("ALLPOWERS Widget", QStringLiteral("Не удалось изменить автозапуск."));
+    tray.showMessage("ALLPOWERS Widget",
+                     QCoreApplication::translate("Allpowers", "Could not change startup setting."));
     return;
   }
+  if (!connectionChanged)
+    return;
   disconnectStation();
   settings["transport"] = mode.currentData().toString();
   settings["endpoint"] = devices.currentData().toString();
@@ -572,23 +622,22 @@ void WidgetController::loadDemo() {
   plotted = stored;
   card_.setDeviceName("AP R2500 V2.0");
   card_.setHistory(stored, now);
-  card_.setTelemetry(latest, QStringLiteral("Демонстрационные данные"));
+  card_.setTelemetry(latest, QCoreApplication::translate("Allpowers", "Demo data"));
   timer.stop();
 }
 QJsonObject WidgetController::diagnostics() const {
   auto result = card_.nativeDiagnostics();
-  const QJsonObject values{
-      {"history_error", historyError},
-      {"history_worker_busy", sampleQueue.busy()},
-      {"history_sample_pending", sampleQueue.waiting()},
-      {"desktop_attached", card_.attached()},
-      {"desktop_error", card_.attachmentError()},
-      {"points", plotted.size()},
-      {"usb_history_points", usbPoints.size()},
-      {"input_segments", WidgetCard::graphSegments(plotted, 2, wallNow())},
-      {"output_segments",
-       WidgetCard::graphSegments(plotted, 4, wallNow())},
-      {"bluetooth_used", transport.diagnostics()["bluetooth_used"].toBool()}};
+  const QJsonObject values{{"history_error", historyError},
+                           {"ui_language", qApp->property("ui_language").toString()},
+                           {"history_worker_busy", sampleQueue.busy()},
+                           {"history_sample_pending", sampleQueue.waiting()},
+                           {"desktop_attached", card_.attached()},
+                           {"desktop_error", card_.attachmentError()},
+                           {"points", plotted.size()},
+                           {"usb_history_points", usbPoints.size()},
+                           {"input_segments", WidgetCard::graphSegments(plotted, 2, wallNow())},
+                           {"output_segments", WidgetCard::graphSegments(plotted, 4, wallNow())},
+                           {"bluetooth_used", transport.diagnostics()["bluetooth_used"].toBool()}};
   for (auto it = values.begin(); it != values.end(); ++it)
     result[it.key()] = it.value();
   return result;

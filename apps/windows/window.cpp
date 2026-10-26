@@ -1,14 +1,16 @@
 #include "window.h"
-#include "product-version.h"
 #include "AllpowersModels.h"
+#include "i18n.h"
 #include "integration.h"
 #include "notices.h"
+#include "product-version.h"
 #include "service_client.h"
 #include "transport_router.h"
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDialog>
 #include <QDir>
@@ -46,11 +48,6 @@ static QLabel *text(const QString &s, int size = 14, const QString &color = "#b0
 static void setText(QLabel *label, const QString &value) {
   if (label->text() != value)
     label->setText(value);
-}
-static QString duration(quint32 seconds) {
-  auto minutes = seconds / 60, days = minutes / 1440, hours = minutes / 60 % 24;
-  return days ? QString("%1 д %2 ч").arg(days).arg(hours)
-              : QString("%1 ч %2 мин").arg(hours).arg(minutes % 60);
 }
 
 class Check : public QCheckBox {
@@ -139,50 +136,57 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   auto *sourceRow = new QHBoxLayout;
   transportMode = new Select;
   transportMode->setObjectName("transportMode");
-  transportMode->addItem("Bluetooth компьютера", "bluetooth");
+  transportMode->addItem(QCoreApplication::translate("Allpowers", "Computer Bluetooth"),
+                         "bluetooth");
   transportMode->addItem("USB · Waveshare / Pocket", "usb");
   transportMode->setCurrentIndex(settings["transport"] == "usb" ? 1 : 0);
   sourceRow->addWidget(transportMode);
-  transportNote = text("Выберите источник телеметрии", 13, "#8ca6cb");
+  transportNote =
+      text(QCoreApplication::translate("Allpowers", "Select telemetry source"), 13, "#8ca6cb");
   sourceRow->addWidget(transportNote, 1);
   layout->addLayout(sourceRow);
   auto *connection = new QHBoxLayout;
   devices = new Select;
   devices->setObjectName("devices");
-  devices->setPlaceholderText("Найдите и выберите станцию");
+  devices->setPlaceholderText(
+      QCoreApplication::translate("Allpowers", "Find and select a station"));
   devices->setMinimumWidth(360);
   connect(static_cast<Select *>(devices), &Select::popupClosed, this, [this] {
     if (deviceListPending)
       rebuildDevices();
   });
   connection->addWidget(devices, 1);
-  scanButton = new QPushButton("Найти станции");
+  scanButton = new QPushButton(QCoreApplication::translate("Allpowers", "Find stations"));
   scanButton->setObjectName("scan");
   connection->addWidget(scanButton);
-  connectButton = new QPushButton("Подключить");
+  connectButton = new QPushButton(QCoreApplication::translate("Allpowers", "Connect"));
   connectButton->setObjectName("primary");
   connection->addWidget(connectButton);
   layout->addLayout(connection);
   auto *options = new QHBoxLayout;
-  stationsOnly = new Check("Только станции");
+  stationsOnly = new Check(QCoreApplication::translate("Allpowers", "Stations only"));
   stationsOnly->setChecked(true);
   options->addWidget(stationsOnly);
   options->addStretch();
   profile = new Select;
   profile->setObjectName("profile");
-  profile->addItems(
-      {"Авто по имени станции", "Старый протокол · Old10", "Протокол V2 · Legacy16", "R2500 V2"});
+  profile->addItems({QCoreApplication::translate("Allpowers", "Auto by station name"),
+                     QCoreApplication::translate("Allpowers", "Old protocol · Old10"),
+                     QCoreApplication::translate("Allpowers", "V2 protocol · Legacy16"),
+                     "R2500 V2"});
   profile->setCurrentIndex(qBound(0, settings["profile"].toInt(), 3));
   options->addWidget(profile);
   layout->addLayout(options);
-  status = text("Отключено", 14, "#9eb6d7");
+  status = text(QCoreApplication::translate("Allpowers", "Disconnected"), 14, "#9eb6d7");
   status->setWordWrap(true);
   layout->addWidget(status);
   auto *navigation = new QHBoxLayout;
   auto *group = new QButtonGroup(this);
   pages = new QStackedWidget;
   int pageIndex = 0;
-  for (const QString &name : {QString("Показания"), QString("История"), QString("Диагностика")}) {
+  for (const QString &name : {QCoreApplication::translate("Allpowers", "Overview"),
+                              QCoreApplication::translate("Allpowers", "History"),
+                              QCoreApplication::translate("Allpowers", "Diagnostics")}) {
     auto *button = new QPushButton(name);
     button->setCheckable(true);
     group->addButton(button, pageIndex);
@@ -192,15 +196,30 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
     ++pageIndex;
   }
   navigation->addStretch();
-  auto *about = new QPushButton("О программе");
+  auto *about = new QPushButton(QCoreApplication::translate("Allpowers", "About"));
   connect(about, &QPushButton::clicked, this, [this] { showNotices(this); });
+  auto *language = new Select;
+  populateUiLanguages(*language, settings["ui_language"].toString());
+  language->setToolTip(
+      QCoreApplication::translate("Allpowers", "Interface language · applies after restart"));
+  navigation->addWidget(language);
+  connect(language, &QComboBox::currentIndexChanged, this, [this, language] {
+    settings["ui_language"] = language->currentData().toString();
+    saveSettings();
+    QMessageBox::information(
+        this, QCoreApplication::translate("Allpowers", "Interface language"),
+        QCoreApplication::translate(
+            "Allpowers", "Language saved. Close and reopen the application to apply it."));
+  });
   navigation->addWidget(about);
   layout->addLayout(navigation);
   pages->addWidget(overviewPage());
   pages->addWidget(historyPage());
   pages->addWidget(diagnosticPage());
   layout->addWidget(pages, 1);
-  footer = text("Только просмотр · История сохраняется на компьютере", 12, "#7d96b9");
+  footer =
+      text(QCoreApplication::translate("Allpowers", "Read only · History saved on this computer"),
+           12, "#7d96b9");
   layout->addWidget(footer);
   ble = transport ? transport
                   : new TransportRouter(this, offline, integrationInstalled(),
@@ -210,20 +229,25 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   if (ble->usb())
     transportMode->setCurrentIndex(1);
   if (ble->remote())
-    footer->setText("Только просмотр  ·  Служба Windows  ·  Общая история компьютера");
+    footer->setText(QCoreApplication::translate(
+        "Allpowers", "Read only  ·  Windows service  ·  Shared computer history"));
   connect(transportMode, &QComboBox::currentIndexChanged, this, &MonitorWindow::changeTransport);
   connect(group, &QButtonGroup::idClicked, this, [this, group](int id) {
     pages->setCurrentIndex(id);
     group->button(id)->setChecked(true);
-    settings["page"] = QStringList{"Показания", "История", "Диагностика"}.value(id);
+    settings["page"] = QStringList{"overview", "history", "diagnostics"}.value(id);
     saveSettings();
     if (id == 1)
       chart->update();
     if (id == 2)
       refreshDiagnostics();
   });
-  int savedPage =
-      QStringList{"Показания", "История", "Диагностика"}.indexOf(settings["page"].toString());
+  const QString savedPageId = settings["page"].toString();
+  int savedPage = QStringList{"overview", "history", "diagnostics"}.indexOf(savedPageId);
+  if (savedPage < 0)
+    savedPage = QStringList{QString::fromUtf8("Показания"), QString::fromUtf8("История"),
+                            QString::fromUtf8("Диагностика")}
+                    .indexOf(savedPageId);
   group->button(qMax(0, savedPage))->click();
   connect(scanButton, &QPushButton::clicked, ble, &TelemetryTransport::scan);
   connect(new QShortcut(QKeySequence("F5"), this), &QShortcut::activated, scanButton,
@@ -383,11 +407,12 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   });
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
     historyError = message;
-    appendLog("Ошибка истории · " + message);
+    appendLog(QCoreApplication::translate("Allpowers", "History error · ") + message);
     refreshDiagnostics();
   });
   connect(history, &HistoryWorker::exported, this, [this](QString path, bool ok) {
-    status->setText(ok ? "История сохранена: " + path : "Не удалось сохранить CSV");
+    status->setText(ok ? QCoreApplication::translate("Allpowers", "History saved: ") + path
+                       : QCoreApplication::translate("Allpowers", "Could not save CSV"));
   });
   historyThread.start();
   historyStarted = true;
@@ -396,7 +421,9 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
   updateControls();
   appendLog(QString("ALLPOWERS Monitor %1 · %2")
-                .arg(APP_VERSION, offline ? "демонстрация без Bluetooth" : "готов к подключению"));
+                .arg(APP_VERSION,
+                     offline ? QCoreApplication::translate("Allpowers", "demo without Bluetooth")
+                             : QCoreApplication::translate("Allpowers", "ready to connect")));
   if (!selectedAddress.isEmpty()) {
     const QString name = settings["name"].toString();
     discovered[selectedAddress] = {{"name", name.isEmpty() ? selectedAddress : name},
@@ -412,7 +439,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   if (ble->usb()) {
     const auto id = settings["usb_serial"].toString();
     if (!id.isEmpty())
-      discovered[id] = {{"name", QString("Сохранённая USB-плата · %1").arg(id)}};
+      discovered[id] = {
+          {"name", QCoreApplication::translate("Allpowers", "Saved USB board · %1").arg(id)}};
     rebuildDevices();
     QTimer::singleShot(0, this, [this, id] {
       if (!offline) {
@@ -440,7 +468,8 @@ void MonitorWindow::refreshHistory() {
   exportButton->setEnabled(!points.isEmpty());
   usbHistoryNote->setVisible(ble->usb());
   usbHistoryNote->setText(
-      QString("Архив USB: %1 точек · станция в архиве не указана").arg(usbPoints.size()));
+      QCoreApplication::translate("Allpowers", "USB archive: %1 points · station unspecified")
+          .arg(usbPoints.size()));
 }
 void MonitorWindow::changeTransport() {
   auto *router = qobject_cast<TransportRouter *>(ble);
@@ -468,8 +497,9 @@ void MonitorWindow::changeTransport() {
   emit historySession();
   emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
   const auto endpoint = router->usb() ? settings["usb_serial"].toString() : selectedAddress;
-  const auto name = router->usb() ? QString("Сохранённая USB-плата · %1").arg(endpoint)
-                                  : settings["name"].toString();
+  const auto name =
+      router->usb() ? QCoreApplication::translate("Allpowers", "Saved USB board · %1").arg(endpoint)
+                    : settings["name"].toString();
   if (!endpoint.isEmpty())
     discovered[endpoint] = {{"name", name},
                             {"model", int(ap_model_hint(name.toUtf8().constData()))}};
@@ -514,15 +544,15 @@ QWidget *MonitorWindow::overviewPage() {
     l->addWidget(value, 3);
     row->addWidget(frame, 1);
   };
-  card(cards, "Заряд", soc);
-  card(cards, "Вход / заряд", input);
-  card(cards, "Выход", output);
+  card(cards, QCoreApplication::translate("Allpowers", "Charge"), soc);
+  card(cards, QCoreApplication::translate("Allpowers", "Input / charging"), input);
+  card(cards, QCoreApplication::translate("Allpowers", "Output"), output);
   soc->setObjectName("chargeValue");
   layout->addLayout(cards, 3);
   auto *details = new QHBoxLayout;
   details->setSpacing(12);
-  card(details, "Источник питания", source);
-  card(details, "Оставшееся время", runtime);
+  card(details, QCoreApplication::translate("Allpowers", "Power source"), source);
+  card(details, QCoreApplication::translate("Allpowers", "Time remaining"), runtime);
   source->setObjectName("powerSource");
   runtime->setObjectName("remainingTime");
   layout->addLayout(details, 3);
@@ -539,7 +569,7 @@ QWidget *MonitorWindow::overviewPage() {
     outputs->addWidget(f, 1);
   }
   layout->addLayout(outputs, 1);
-  freshness = text("Ожидание данных", 13, "#8ca6cb");
+  freshness = text(QCoreApplication::translate("Allpowers", "Waiting for data"), 13, "#8ca6cb");
   layout->addWidget(freshness);
   return page;
 }
@@ -550,23 +580,25 @@ QWidget *MonitorWindow::historyPage() {
   auto *toolbar = new QHBoxLayout;
   horizon = new Select;
   horizon->setObjectName("horizon");
-  horizon->addItem("Последний час", 3600);
-  horizon->addItem("24 часа", 86400);
-  horizon->addItem("48 часов", 172800);
+  horizon->addItem(QCoreApplication::translate("Allpowers", "Last hour"), 3600);
+  horizon->addItem(QCoreApplication::translate("Allpowers", "24 hours"), 86400);
+  horizon->addItem(QCoreApplication::translate("Allpowers", "48 hours"), 172800);
   int saved = settings["horizon"].toInt(86400);
   int index = horizon->findData(saved);
   horizon->setCurrentIndex(qMax(0, index));
   toolbar->addWidget(horizon);
-  logScale = new Check("Лог. время");
-  logScale->setToolTip("Больше места недавним секундам; колёсико меняет масштаб");
+  logScale = new Check(QCoreApplication::translate("Allpowers", "Log time"));
+  logScale->setToolTip(QCoreApplication::translate(
+      "Allpowers", "More space for recent seconds; use the wheel to zoom"));
   logScale->setChecked(settings["log_time"].toBool(false));
   toolbar->addWidget(logScale);
   toolbar->addStretch();
-  liveButton = new QPushButton("К текущему моменту");
+  liveButton = new QPushButton(QCoreApplication::translate("Allpowers", "Back to live"));
   toolbar->addWidget(liveButton);
-  exportButton = new QPushButton("Экспорт CSV");
+  exportButton = new QPushButton(QCoreApplication::translate("Allpowers", "Export CSV"));
   exportButton->setEnabled(false);
-  exportButton->setToolTip("Для экспорта нужна история выбранной станции");
+  exportButton->setToolTip(QCoreApplication::translate(
+      "Allpowers", "History for the selected station is required to export"));
   toolbar->addWidget(exportButton);
   layout->addLayout(toolbar);
   usbHistoryControls = new QWidget;
@@ -574,15 +606,18 @@ QWidget *MonitorWindow::historyPage() {
   usbTools->setContentsMargins(0, 0, 0, 0);
   historySource = new Select;
   historySource->setObjectName("historySource");
-  historySource->addItems({"История станции + USB", "Только архив USB-платы"});
+  historySource->addItems({QCoreApplication::translate("Allpowers", "Station history + USB"),
+                           QCoreApplication::translate("Allpowers", "USB board archive only")});
   usbTools->addWidget(historySource, 1);
-  auto *readBoard = new QPushButton("Считать с платы");
+  auto *readBoard = new QPushButton(QCoreApplication::translate("Allpowers", "Read from board"));
   readBoard->setObjectName("usbHistoryRead");
   usbTools->addWidget(readBoard);
   layout->addWidget(usbHistoryControls);
   usbHistoryControls->hide();
-  historySource->setToolTip("Архив платы автоматически дополняет основной график. При пересечении "
-                            "приоритет у записей приложения. Адрес станции в архиве не хранится.");
+  historySource->setToolTip(QCoreApplication::translate(
+      "Allpowers",
+      "The board archive automatically supplements the main chart. Application records take "
+      "priority where they overlap. The archive does not store the station address."));
   usbHistoryNote = text("", 12, "#819cc1");
   usbHistoryNote->setObjectName("usbHistoryNote");
   usbHistoryNote->setWordWrap(true);
@@ -595,7 +630,9 @@ QWidget *MonitorWindow::historyPage() {
   connect(readBoard, &QPushButton::clicked, this, [this] { ble->requestHistory(); });
   auto *legend = new QHBoxLayout;
   int series = 0;
-  for (const QString &name : {QString("Заряд, %"), QString("Вход, Вт"), QString("Выход, Вт")}) {
+  for (const QString &name : {QCoreApplication::translate("Allpowers", "Charge, %"),
+                              QCoreApplication::translate("Allpowers", "Input, W"),
+                              QCoreApplication::translate("Allpowers", "Output, W")}) {
     auto *check = new Check(name);
     check->setChecked(true);
     legend->addWidget(check);
@@ -606,15 +643,16 @@ QWidget *MonitorWindow::historyPage() {
             [this, id](bool enabled) { chart->setSeries(id, enabled); });
   }
   legend->addStretch();
-  legend->addWidget(text("Батарея", 12, "#ff6f7c"));
-  legend->addWidget(text("Сеть", 12, "#54e0aa"));
+  legend->addWidget(text(QCoreApplication::translate("Allpowers", "Battery"), 12, "#ff6f7c"));
+  legend->addWidget(text(QCoreApplication::translate("Allpowers", "Mains"), 12, "#54e0aa"));
   layout->addLayout(legend);
   chart = new HistoryChart;
   layout->addWidget(chart, 1);
   chart->setHorizon(saved);
   chart->setLogarithmic(logScale->isChecked());
   layout->addWidget(text(
-      "Колёсико — масштаб · Перетаскивание — время · Наведение — точные значения", 12, "#819cc1"));
+      QCoreApplication::translate("Allpowers", "Wheel — zoom · Drag — time · Hover — exact values"),
+      12, "#819cc1"));
   connect(horizon, &QComboBox::currentIndexChanged, this, [this] {
     settings["horizon"] = horizon->currentData().toInt();
     saveSettings();
@@ -628,7 +666,8 @@ QWidget *MonitorWindow::historyPage() {
   connect(liveButton, &QPushButton::clicked, chart, &HistoryChart::followLive);
   connect(exportButton, &QPushButton::clicked, this, [this] {
     auto path = QFileDialog::getSaveFileName(
-        this, "Экспорт истории", QDir::homePath() + "/allpowers-history.csv", "CSV (*.csv)");
+        this, QCoreApplication::translate("Allpowers", "Export history"),
+        QDir::homePath() + "/allpowers-history.csv", "CSV (*.csv)");
     if (!path.isEmpty()) {
       emit historyExportPoints(points, path);
     }
@@ -640,17 +679,19 @@ QWidget *MonitorWindow::diagnosticPage() {
   auto *l = new QVBoxLayout(page);
   l->setContentsMargins(0, 0, 0, 0);
   auto *row = new QHBoxLayout;
-  row->addWidget(text("Диагностика", 16, "#d6e5f8", true));
+  row->addWidget(
+      text(QCoreApplication::translate("Allpowers", "Diagnostics"), 16, "#d6e5f8", true));
   row->addStretch();
-  auto *integration = new QPushButton("ИБП Windows…");
+  auto *integration = new QPushButton(QCoreApplication::translate("Allpowers", "Windows UPS…"));
   integration->setObjectName("integrationManagement");
-  integration->setToolTip("Экспериментальная интеграция со службой и драйвером Windows");
+  integration->setToolTip(QCoreApplication::translate(
+      "Allpowers", "Experimental Windows service and driver integration"));
   connect(integration, &QPushButton::clicked, this, &MonitorWindow::showIntegration);
   row->addWidget(integration);
-  auto *follow = new QPushButton("К новым записям ↓");
+  auto *follow = new QPushButton(QCoreApplication::translate("Allpowers", "Latest entries ↓"));
   follow->setObjectName("logFollow");
   row->addWidget(follow);
-  auto *copy = new QPushButton("Скопировать");
+  auto *copy = new QPushButton(QCoreApplication::translate("Allpowers", "Copy"));
   copy->setObjectName("diagnosticCopy");
   row->addWidget(copy);
   l->addLayout(row);
@@ -658,10 +699,11 @@ QWidget *MonitorWindow::diagnosticPage() {
   tabs->setObjectName("diagnosticTabs");
   eventLog = new LiveLog;
   eventLog->setObjectName("eventLog");
-  tabs->addTab(eventLog, "Журнал событий");
+  tabs->addTab(eventLog, QCoreApplication::translate("Allpowers", "Event log"));
   technical = new QTableWidget(0, 2);
   technical->setObjectName("diagnosticState");
-  technical->setHorizontalHeaderLabels({"Параметр", "Значение"});
+  technical->setHorizontalHeaderLabels({QCoreApplication::translate("Allpowers", "Parameter"),
+                                        QCoreApplication::translate("Allpowers", "Value")});
   technical->verticalHeader()->hide();
   technical->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
   technical->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
@@ -676,62 +718,63 @@ QWidget *MonitorWindow::diagnosticPage() {
   connect(technical->horizontalHeader(), &QHeaderView::sectionResized, technical,
           &QTableWidget::resizeRowsToContents);
   const QPair<QString, QString> fields[] = {
-      {"", "Соединение"},
-      {"phase", "Состояние"},
-      {"name", "Название станции"},
-      {"address", "Адрес Bluetooth"},
-      {"active", "Соединение запрошено"},
-      {"connected", "Телеметрия подключена"},
-      {"scanning", "Поиск устройств"},
-      {"error", "Ошибка соединения"},
-      {"connections", "Успешных подключений"},
-      {"drops", "Обрывов соединения"},
-      {"polls", "Запросов отправлено"},
-      {"packets", "Пакетов получено"},
-      {"mtu", "Размер BLE MTU"},
-      {"transport", "Транспорт"},
-      {"service", "UUID сервиса"},
-      {"notify", "UUID уведомлений"},
-      {"write", "UUID записи"},
-      {"service", "Служба Windows"},
-      {"ups_present", "Системный ИБП доступен"},
-      {"ups_reason", "Причина недоступности ИБП"},
-      {"driver_error", "Ошибка драйвера"},
-      {"", "USB-плата"},
-      {"usb_port", "USB-порт"},
-      {"usb_serial", "Серийный номер платы"},
-      {"usb_board", "Модель платы"},
-      {"usb_verified", "Прошивка подтверждена"},
-      {"usb_bad_lines", "Некорректных строк USB"},
-      {"usb_history_busy", "Архив загружается"},
-      {"usb_history_imported", "Точек архива принято"},
-      {"usb_history_undated", "Пропущено без достоверной даты"},
-      {"usb_history_bad", "Повреждённых записей архива"},
-      {"usb_history_error", "Ошибка чтения архива"},
-      {"", "Телеметрия"},
-      {"fresh", "Данные актуальны"},
-      {"model", "Профиль протокола"},
-      {"valid_frames", "Корректных кадров"},
-      {"invalid_frames", "Ошибочных кадров"},
-      {"main_age_ms", "Возраст показаний"},
-      {"settings_age_ms", "Возраст настроек"},
-      {"source_raw", "Код источника питания"},
-      {"known", "Маска известных полей"},
-      {"last_packet", "Последний пакет"},
-      {"", "История и график"},
-      {"history.live", "Точек посекундной истории"},
-      {"history.minutes", "Минутных точек"},
-      {"history_worker_busy", "Сохранение истории"},
-      {"history_error", "Ошибка истории"},
-      {"history_path", "Файл истории"},
-      {"chart_render_ms", "Время отрисовки графика"},
-      {"chart_vertices", "Вершин на графике"},
-      {"", "Приложение"},
-      {"application", "Версия"},
-      {"uptime_seconds", "Время работы"},
+      {"", QCoreApplication::translate("Allpowers", "Connection")},
+      {"phase", QCoreApplication::translate("Allpowers", "Status")},
+      {"name", QCoreApplication::translate("Allpowers", "Station name")},
+      {"address", QCoreApplication::translate("Allpowers", "Bluetooth address")},
+      {"active", QCoreApplication::translate("Allpowers", "Connection requested")},
+      {"connected", QCoreApplication::translate("Allpowers", "Telemetry connected")},
+      {"scanning", QCoreApplication::translate("Allpowers", "Scanning for devices")},
+      {"error", QCoreApplication::translate("Allpowers", "Connection error")},
+      {"connections", QCoreApplication::translate("Allpowers", "Successful connections")},
+      {"drops", QCoreApplication::translate("Allpowers", "Connection drops")},
+      {"polls", QCoreApplication::translate("Allpowers", "Requests sent")},
+      {"packets", QCoreApplication::translate("Allpowers", "Packets received")},
+      {"mtu", QCoreApplication::translate("Allpowers", "BLE MTU size")},
+      {"transport", QCoreApplication::translate("Allpowers", "Transport")},
+      {"service", QCoreApplication::translate("Allpowers", "Service UUID")},
+      {"notify", QCoreApplication::translate("Allpowers", "Notification UUID")},
+      {"write", QCoreApplication::translate("Allpowers", "Write UUID")},
+      {"service", QCoreApplication::translate("Allpowers", "Windows service")},
+      {"ups_present", QCoreApplication::translate("Allpowers", "System UPS available")},
+      {"ups_reason", QCoreApplication::translate("Allpowers", "Why UPS is unavailable")},
+      {"driver_error", QCoreApplication::translate("Allpowers", "Driver error")},
+      {"", QCoreApplication::translate("Allpowers", "USB board")},
+      {"usb_port", QCoreApplication::translate("Allpowers", "USB port")},
+      {"usb_serial", QCoreApplication::translate("Allpowers", "Board serial number")},
+      {"usb_board", QCoreApplication::translate("Allpowers", "Board model")},
+      {"usb_verified", QCoreApplication::translate("Allpowers", "Firmware verified")},
+      {"usb_bad_lines", QCoreApplication::translate("Allpowers", "Invalid USB lines")},
+      {"usb_history_busy", QCoreApplication::translate("Allpowers", "Archive loading")},
+      {"usb_history_imported", QCoreApplication::translate("Allpowers", "Archive points received")},
+      {"usb_history_undated",
+       QCoreApplication::translate("Allpowers", "Skipped without reliable date")},
+      {"usb_history_bad", QCoreApplication::translate("Allpowers", "Corrupt archive records")},
+      {"usb_history_error", QCoreApplication::translate("Allpowers", "Archive read error")},
+      {"", QCoreApplication::translate("Allpowers", "Telemetry")},
+      {"fresh", QCoreApplication::translate("Allpowers", "Data fresh")},
+      {"model", QCoreApplication::translate("Allpowers", "Protocol profile")},
+      {"valid_frames", QCoreApplication::translate("Allpowers", "Valid frames")},
+      {"invalid_frames", QCoreApplication::translate("Allpowers", "Invalid frames")},
+      {"main_age_ms", QCoreApplication::translate("Allpowers", "Reading age")},
+      {"settings_age_ms", QCoreApplication::translate("Allpowers", "Settings age")},
+      {"source_raw", QCoreApplication::translate("Allpowers", "Power source code")},
+      {"known", QCoreApplication::translate("Allpowers", "Known fields mask")},
+      {"last_packet", QCoreApplication::translate("Allpowers", "Last packet")},
+      {"", QCoreApplication::translate("Allpowers", "History and chart")},
+      {"history.live", QCoreApplication::translate("Allpowers", "Live history points")},
+      {"history.minutes", QCoreApplication::translate("Allpowers", "Minute points")},
+      {"history_worker_busy", QCoreApplication::translate("Allpowers", "Saving history")},
+      {"history_error", QCoreApplication::translate("Allpowers", "History error")},
+      {"history_path", QCoreApplication::translate("Allpowers", "History file")},
+      {"chart_render_ms", QCoreApplication::translate("Allpowers", "Chart rendering time")},
+      {"chart_vertices", QCoreApplication::translate("Allpowers", "Chart vertices")},
+      {"", QCoreApplication::translate("Allpowers", "Application")},
+      {"application", QCoreApplication::translate("Allpowers", "Version")},
+      {"uptime_seconds", QCoreApplication::translate("Allpowers", "Uptime")},
       {"qt", "Qt"},
-      {"language", "Язык ядра"},
-      {"core_abi", "Версия ABI ядра"}};
+      {"language", QCoreApplication::translate("Allpowers", "Core language")},
+      {"core_abi", QCoreApplication::translate("Allpowers", "Core ABI version")}};
   for (const auto &field : fields) {
     const int row = technical->rowCount();
     technical->insertRow(row);
@@ -752,22 +795,27 @@ QWidget *MonitorWindow::diagnosticPage() {
     }
     technical->setRowHeight(row, 36);
   }
-  tabs->addTab(technical, "Текущее состояние");
+  tabs->addTab(technical, QCoreApplication::translate("Allpowers", "Current state"));
   l->addWidget(tabs, 1);
-  auto *hint =
-      text("Новые записи внизу · прокрутите вверх, чтобы приостановить слежение", 12, "#819cc1");
+  auto *hint = text(
+      QCoreApplication::translate("Allpowers", "New entries below · scroll up to pause following"),
+      12, "#819cc1");
   l->addWidget(hint);
   follow->setEnabled(false);
   connect(follow, &QPushButton::clicked, eventLog, &LiveLog::followTail);
   connect(eventLog, &LiveLog::followingChanged, this, [follow, hint](bool following) {
     follow->setEnabled(!following);
-    hint->setText(following ? "Новые записи внизу · прокрутите вверх, чтобы приостановить слежение"
-                            : "Просмотр старых записей · новые продолжают поступать");
+    hint->setText(following
+                      ? QCoreApplication::translate(
+                            "Allpowers", "New entries below · scroll up to pause following")
+                      : QCoreApplication::translate(
+                            "Allpowers", "Viewing older entries · new entries keep arriving"));
   });
   connect(tabs, &QTabWidget::currentChanged, this, [this, follow, hint, copy](int index) {
     follow->setVisible(index == 0);
     hint->setVisible(index == 0);
-    copy->setText(index == 0 ? "Скопировать" : "Скопировать JSON");
+    copy->setText(index == 0 ? QCoreApplication::translate("Allpowers", "Copy")
+                             : QCoreApplication::translate("Allpowers", "Copy JSON"));
     copy->setMinimumWidth(index == 0 ? 135 : 190);
     refreshDiagnostics();
   });
@@ -802,8 +850,9 @@ void MonitorWindow::rebuildDevices() {
     if (!ble->usb() && stationsOnly->isChecked() && !d["model"].toInt() &&
         address != selectedAddress)
       continue;
-    const QString signal =
-        d.contains("rssi") ? QString("%1 dBm").arg(d["rssi"].toInt()) : "сохранённая станция";
+    const QString signal = d.contains("rssi")
+                               ? QString("%1 dBm").arg(d["rssi"].toInt())
+                               : QCoreApplication::translate("Allpowers", "saved station");
     devices->addItem(ble->usb()
                          ? d["name"].toString()
                          : QString("%1  ·  %2  ·  %3").arg(d["name"].toString(), address, signal),
@@ -818,44 +867,65 @@ void MonitorWindow::updateControls() {
   profile->setVisible(!usb);
   stationsOnly->setVisible(!usb);
   usbHistoryControls->setVisible(usb);
-  transportNote->setText(usb ? "Плата получает BLE · компьютер читает USB"
-                         : ble->remote() ? "Bluetooth обслуживает служба Windows"
-                                         : "Телеметрия через Bluetooth компьютера");
-  footer->setText(usb ? "Только чтение USB · BLE-соединением управляет плата"
-                  : ble->remote() ? "Только просмотр · Служба Windows · Общая история"
-                                  : "Только просмотр · Bluetooth компьютера · Локальная история");
-  devices->setPlaceholderText(usb ? "Найдите и выберите USB-плату" : "Найдите и выберите станцию");
+  transportNote->setText(
+      usb ? QCoreApplication::translate("Allpowers", "Board receives BLE · computer reads USB")
+      : ble->remote()
+          ? QCoreApplication::translate("Allpowers", "Windows service handles Bluetooth")
+          : QCoreApplication::translate("Allpowers", "Telemetry via computer Bluetooth"));
+  footer->setText(
+      usb ? QCoreApplication::translate("Allpowers", "USB read only · board manages BLE connection")
+      : ble->remote()
+          ? QCoreApplication::translate("Allpowers", "Read only · Windows service · Shared history")
+          : QCoreApplication::translate("Allpowers",
+                                        "Read only · Computer Bluetooth · Local history"));
+  devices->setPlaceholderText(
+      usb ? QCoreApplication::translate("Allpowers", "Find and select a USB board")
+          : QCoreApplication::translate("Allpowers", "Find and select a station"));
   bool active = ble->active(), scanning = ble->scanning();
   scanButton->setEnabled(!active && !scanning && !offline && ble->available());
-  scanButton->setToolTip(!ble->available() ? "Запустите службу через «ИБП Windows»"
-                         : active ? "Для нового поиска сначала отключитесь от станции"
-                         : usb ? "Найти подключённые Waveshare и Pocket"
-                               : "Найти доступные станции Bluetooth");
-  scanButton->setText(scanning ? "Поиск…" : usb ? "Найти платы" : "Найти станции");
+  scanButton->setToolTip(
+      !ble->available()
+          ? QCoreApplication::translate("Allpowers", "Start the service through Windows UPS")
+      : active
+          ? QCoreApplication::translate("Allpowers", "Disconnect the station before scanning again")
+      : usb ? QCoreApplication::translate("Allpowers", "Find connected Waveshare and Pocket boards")
+            : QCoreApplication::translate("Allpowers", "Find available Bluetooth stations"));
+  scanButton->setText(scanning ? QCoreApplication::translate("Allpowers", "Scanning…")
+                      : usb    ? QCoreApplication::translate("Allpowers", "Find boards")
+                               : QCoreApplication::translate("Allpowers", "Find stations"));
   bool canConnect =
       ble->available() && (active || (!scanning && devices->currentIndex() >= 0 && !offline));
   connectButton->setEnabled(canConnect);
-  connectButton->setText(active ? "Отключить" : "Подключить");
-  connectButton->setToolTip(!ble->available() ? "Запустите службу через «ИБП Windows»"
-                            : offline ? "Демонстрация: Bluetooth не используется"
-                            : active ? usb ? "Закрыть USB-порт; плата продолжит работать"
-                                           : "Завершить соединение со станцией"
-                            : scanning ? "Дождитесь завершения поиска"
-                            : devices->count() == 0 ? "Сначала найдите и выберите станцию"
-                                                    : "Подключиться к выбранной станции");
+  connectButton->setText(active ? QCoreApplication::translate("Allpowers", "Disconnect")
+                                : QCoreApplication::translate("Allpowers", "Connect"));
+  connectButton->setToolTip(
+      !ble->available()
+          ? QCoreApplication::translate("Allpowers", "Start the service through Windows UPS")
+      : offline  ? QCoreApplication::translate("Allpowers", "Demo: Bluetooth is not used")
+      : active   ? usb ? QCoreApplication::translate("Allpowers",
+                                                     "Close USB port; the board will keep running")
+                       : QCoreApplication::translate("Allpowers", "Disconnect from the station")
+      : scanning ? QCoreApplication::translate("Allpowers", "Wait for the scan to finish")
+      : devices->count() == 0
+          ? QCoreApplication::translate("Allpowers", "Find and select a station first")
+          : QCoreApplication::translate("Allpowers", "Connect to selected station"));
   devices->setEnabled(!active && !scanning);
   profile->setEnabled(!active);
   stationsOnly->setEnabled(!active);
-  devices->setToolTip(active ? "Для смены станции сначала отключитесь"
-                             : "Выберите доступную станцию");
-  profile->setToolTip(active ? "Профиль меняется после отключения"
-                             : "Обычно достаточно автоматического определения");
-  stationsOnly->setToolTip(active ? "Фильтр меняется после отключения"
-                                  : "Скрыть неизвестные устройства из списка");
+  devices->setToolTip(
+      active ? QCoreApplication::translate("Allpowers", "Disconnect before switching stations")
+             : QCoreApplication::translate("Allpowers", "Select an available station"));
+  profile->setToolTip(
+      active
+          ? QCoreApplication::translate("Allpowers", "Disconnect before changing the profile")
+          : QCoreApplication::translate("Allpowers", "Automatic detection is usually sufficient"));
+  stationsOnly->setToolTip(
+      active ? QCoreApplication::translate("Allpowers", "Disconnect before changing the filter")
+             : QCoreApplication::translate("Allpowers", "Hide unknown devices from the list"));
   auto info = ble->diagnostics();
   QString phase = ble->phase();
   if (scanning)
-    phase += " · поиск устройств…";
+    phase += QCoreApplication::translate("Allpowers", " · scanning for devices…");
   if (!info["error"].toString().isEmpty() && !active)
     phase += " · " + info["error"].toString();
   setText(status, phase);
@@ -867,21 +937,26 @@ void MonitorWindow::updateSnapshot(ap_snapshot s) {
     return s.known & mask ? QString::number(n) + unit : QString("—");
   };
   setText(soc, value(1, s.soc, "%"));
-  setText(input, value(2, s.input_w, " Вт"));
-  setText(output, value(4, s.output_w, " Вт"));
-  setText(source, s.source == 2 ? "Розетка" : s.source == 1 ? "Аккумулятор" : "Не определён");
-  setText(runtime, value(8, s.runtime_s, "") == "—" ? "—" : duration(s.runtime_s));
+  setText(input, value(2, s.input_w, QCoreApplication::translate("Allpowers", " W")));
+  setText(output, value(4, s.output_w, QCoreApplication::translate("Allpowers", " W")));
+  setText(source, s.source == 2   ? QCoreApplication::translate("Allpowers", "Mains")
+                  : s.source == 1 ? QCoreApplication::translate("Allpowers", "Battery")
+                                  : QCoreApplication::translate("Allpowers", "Unknown"));
+  setText(runtime, value(8, s.runtime_s, "") == "—" ? "—" : formatDuration(s.runtime_s));
   auto state = [](QLabel *label, const QString &name, quint32 known, bool enabled) {
-    setText(label, name + (!known ? "  —" : enabled ? "  ВКЛ" : "  ВЫКЛ"));
+    setText(label, name + (!known    ? "  —"
+                           : enabled ? QCoreApplication::translate("Allpowers", "  ON")
+                                     : QCoreApplication::translate("Allpowers", "  OFF")));
     label->setStyleSheet(labelStyle(known && enabled ? "#54e0aa" : "#91a6c3", 19, true));
   };
   state(outputAC, "AC", s.known & AllpowersModels::AcOutput, s.ac_output);
   state(outputUSB, "USB", s.known & AllpowersModels::UsbOutput, s.usb_output);
   state(outputDC, "DC", s.known & AllpowersModels::DcOutput, s.dc_output);
-  setText(freshness, s.fresh
-                         ? QString("Данные актуальны · обновление %1 с назад")
-                               .arg(s.main_age_ms / 1000., 0, 'f', 1)
-                         : "Нет актуальной телеметрии · последнее значение может быть устаревшим");
+  setText(freshness,
+          s.fresh ? QCoreApplication::translate("Allpowers", "Data fresh · updated %1 s ago")
+                        .arg(s.main_age_ms / 1000., 0, 'f', 1)
+                  : QCoreApplication::translate("Allpowers",
+                                                "No fresh telemetry · last value may be stale"));
   auto now = QDateTime::currentSecsSinceEpoch();
   if (!offline && !ble->remote() && ble->active() && s.main_seen && now != lastSample &&
       !historyBusy) {
@@ -896,6 +971,7 @@ QJsonObject MonitorWindow::diagnostics() const {
   auto info = ble->diagnostics();
   info["application"] = APP_VERSION;
   info["language"] = "C++23";
+  info["ui_language"] = qApp->property("ui_language").toString();
   info["qt"] = qVersion();
   info["core_abi"] = int(ap_abi_version());
   info["valid_frames"] = int(last.valid_frames);
@@ -937,7 +1013,9 @@ void MonitorWindow::refreshDiagnostics() {
     if (!found) {
       int row = technical->rowCount();
       technical->insertRow(row);
-      technical->setItem(row, 0, new QTableWidgetItem("Плата · " + it.key()));
+      technical->setItem(
+          row, 0,
+          new QTableWidgetItem(QCoreApplication::translate("Allpowers", "Board · ") + it.key()));
       auto *v = new QTableWidgetItem;
       v->setData(Qt::UserRole, key);
       technical->setItem(row, 1, v);
@@ -956,16 +1034,20 @@ void MonitorWindow::refreshDiagnostics() {
         value = value.toObject().value(part);
     QString display = "—";
     if (value.isBool())
-      display = value.toBool() ? "Да" : "Нет";
+      display = value.toBool() ? QCoreApplication::translate("Allpowers", "Yes")
+                               : QCoreApplication::translate("Allpowers", "No");
     else if (value.isString() && !value.toString().isEmpty())
       display = value.toString();
     else if (value.isDouble())
       display = QString::number(value.toDouble(), 'f', 0);
     if (key == "main_age_ms" || key == "settings_age_ms") {
       const bool seen = key == "main_age_ms" ? last.main_seen : last.settings_seen;
-      display = seen ? QString::number(value.toDouble() / 1000., 'f', 1) + " с" : "—";
+      display = seen ? QString::number(value.toDouble() / 1000., 'f', 1) +
+                           QCoreApplication::translate("Allpowers", " s")
+                     : "—";
     } else if (key == "chart_render_ms")
-      display = QString::number(value.toDouble(), 'f', 2) + " мс";
+      display = QString::number(value.toDouble(), 'f', 2) +
+                QCoreApplication::translate("Allpowers", " ms");
     else if (key == "uptime_seconds") {
       const auto seconds = qint64(value.toDouble());
       display = QString("%1:%2:%3")
@@ -975,8 +1057,9 @@ void MonitorWindow::refreshDiagnostics() {
     } else if (key == "mtu" && value.toInt() == 0)
       display = "—";
     else if (key == "model")
-      display = QStringList{"Автоматический", "Old10", "Legacy16", "R2500 V2"}.value(
-          value.toInt(), QString::number(value.toInt()));
+      display = QStringList{QCoreApplication::translate("Allpowers", "Automatic"), "Old10",
+                            "Legacy16", "R2500 V2"}
+                    .value(value.toInt(), QString::number(value.toInt()));
     else if (key == "known" || key == "source_raw")
       display = "0x" + QString::number(value.toInteger(), 16).toUpper();
     if (key == "source_raw" && !(last.known & AllpowersModels::SourceRaw))
@@ -1005,43 +1088,53 @@ void MonitorWindow::closeEvent(QCloseEvent *event) {
 void MonitorWindow::showIntegration() {
   auto *dialog = new QDialog(this);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
-  dialog->setWindowTitle("ИБП Windows");
+  dialog->setWindowTitle(QCoreApplication::translate("Allpowers", "Windows UPS"));
   dialog->resize(600, 300);
   dialog->setStyleSheet("QDialog{background:#0e1727;color:#ecf3ff;}QLabel{color:#bdcce2;font-"
                         "family:'Segoe UI';font-size:14px;}");
   auto *layout = new QVBoxLayout(dialog);
   auto *description = new QLabel(
-      ble->usb() ? "USB-плата уже может представляться Windows как ИБП. Для чтения её показаний в "
-                   "мониторе дополнительный драйвер не нужен."
-                 : "Необязательная интеграция: служба получает BLE-данные, а драйвер передаёт их "
-                   "системе питания Windows. Без неё монитор работает самостоятельно.");
+      ble->usb()
+          ? QCoreApplication::translate(
+                "Allpowers", "The USB board can already appear as a UPS in Windows. No additional "
+                             "driver is needed to read its telemetry in the monitor.")
+          : QCoreApplication::translate(
+                "Allpowers",
+                "Optional integration: a service receives BLE data and a driver reports it to "
+                "Windows power management. The monitor also works independently."));
   description->setWordWrap(true);
   layout->addWidget(description);
   const auto info = integrationStatus();
-  auto *status = new QLabel(info["installed"].toBool()
-                                ? "Служба установлена. Монитор использует её данные."
-                                : "Служба не установлена. Монитор использует прямое BLE.");
+  auto *status =
+      new QLabel(info["installed"].toBool()
+                     ? QCoreApplication::translate("Allpowers",
+                                                   "Service installed. The monitor uses its data.")
+                     : QCoreApplication::translate(
+                           "Allpowers", "Service not installed. The monitor uses direct BLE."));
   status->setWordWrap(true);
   layout->addWidget(status);
-  auto *notice = new QLabel(
-      "Экспериментальная версия: установка и удаление доступны только в тестовой VM. Нужен "
-      "подписанный пакет драйвера. Secure Boot и параметры загрузки эта программа не меняет.");
+  auto *notice = new QLabel(QCoreApplication::translate(
+      "Allpowers",
+      "Experimental version: install and removal are available only in a test VM. A signed driver "
+      "package is required. This program does not change Secure Boot or boot settings."));
   notice->setWordWrap(true);
   layout->addWidget(notice);
   auto *row = new QHBoxLayout;
   layout->addLayout(row);
-  for (auto action : {qMakePair(QString("Установить / обновить"), QString("install")),
-                      qMakePair(QString("Запустить"), QString("start")),
-                      qMakePair(QString("Остановить"), QString("stop")),
-                      qMakePair(QString("Удалить"), QString("remove"))}) {
+  for (auto action :
+       {qMakePair(QCoreApplication::translate("Allpowers", "Install / update"), QString("install")),
+        qMakePair(QCoreApplication::translate("Allpowers", "Start"), QString("start")),
+        qMakePair(QCoreApplication::translate("Allpowers", "Stop"), QString("stop")),
+        qMakePair(QCoreApplication::translate("Allpowers", "Remove"), QString("remove"))}) {
     auto *button = new QPushButton(action.first);
     row->addWidget(button);
     button->setEnabled(!offline && info["virtual_machine"].toBool());
-    button->setToolTip("Потребуются права администратора; история и настройки сохраняются");
+    button->setToolTip(QCoreApplication::translate(
+        "Allpowers", "Administrator rights required; history and settings are preserved"));
     connect(button, &QPushButton::clicked, dialog, [dialog, status, operation = action.second] {
       for (auto *b : dialog->findChildren<QPushButton *>())
         b->setEnabled(false);
-      status->setText("Выполняется операция Windows…");
+      status->setText(QCoreApplication::translate("Allpowers", "Windows operation in progress…"));
       auto result = std::make_shared<bool>(false);
       auto *thread =
           QThread::create([result, operation] { *result = elevateIntegrationAction(operation); });
@@ -1049,9 +1142,11 @@ void MonitorWindow::showIntegration() {
       // while UAC or installation is running. The worker never touches widgets.
       connect(thread, &QThread::finished, dialog, [result, status, dialog] {
         status->setText(
-            *result ? "Готово. Перезапустите монитор, чтобы применить режим работы."
-                    : "Операция не выполнена. Проверьте подпись пакета, тестовый режим гостевой "
-                      "Windows и права администратора.");
+            *result ? QCoreApplication::translate(
+                          "Allpowers", "Done. Restart the monitor to apply the operating mode.")
+                    : QCoreApplication::translate(
+                          "Allpowers", "Operation failed. Check the package signature, guest "
+                                       "Windows test mode, and administrator rights."));
         for (auto *b : dialog->findChildren<QPushButton *>())
           b->setEnabled(true);
       });
@@ -1091,6 +1186,7 @@ void MonitorWindow::loadDemo() {
   chart->setHorizon(3600);
   if (auto *tabs = findChild<QButtonGroup *>())
     tabs->button(1)->click();
-  status->setText("Демонстрация интерфейса · Bluetooth не используется");
+  status->setText(
+      QCoreApplication::translate("Allpowers", "Interface demo · Bluetooth is not used"));
   refreshDiagnostics();
 }

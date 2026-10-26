@@ -103,6 +103,13 @@ not validate the driver. Catalog recognition alone does not establish compatibil
   </tr>
 </table>
 
+Both Windows applications support Russian and English. Select **Windows language**,
+**Русский**, or **English** next to **About** in the monitor, or in the widget's
+**Settings**. Each application saves its own choice and applies it after you close
+and reopen it. By default Russian Windows uses Russian; other Windows languages
+use English. Translations are embedded in each EXE. For an isolated preview, use
+`--demo --language ru` or `--demo --language en`; the command-line choice is not saved.
+
 The Windows package includes **AllpowersMonitor.exe** and **AllpowersWidget.exe**.
 Each application runs from its own EXE: Qt, SQLite, platform plugins, the protocol core
 and the C++ runtime are statically linked. No Qt/Python installation is needed.
@@ -173,7 +180,7 @@ ctest --preset native
 
 The first Windows build downloads checksum-pinned Qt 6.12.0 source and builds the
 static MSVC/WinRT SDK with ExternalProject. Later builds reuse it. Existing static
-Qt can be selected with `-DALLPOWERS_QT_ROOT=/path/to/qt`.
+Qt (including matching LinguistTools) can be selected with `-DALLPOWERS_QT_ROOT=/path/to/qt`.
 GitHub Actions also caches the installed static SDK with an exact compatibility
 key covering Qt/build inputs, MSVC, Windows SDK, architecture, tools and install
 path. Restored SDKs must pass a compile/link and offline runtime check; a missing
@@ -258,3 +265,7 @@ flash partitions and the existing maintenance command remain compatible.
 Original project code is MIT; the adapted Windows driver is MS-PL.
 [Third-party notices](THIRD_PARTY_NOTICES.md) retain their
 licenses. Factory images, raw captures and user data are kept outside Git.
+
+Translation maintenance: `cmake --build build/windows/windows-monitor --target update-translations`
+updates the Russian Qt Linguist catalog explicitly. Normal builds compile and embed it
+without editing sources; `translation-coverage` checks missing translations.

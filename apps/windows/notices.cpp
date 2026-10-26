@@ -1,5 +1,7 @@
 #include "notices.h"
+#include "i18n.h"
 #include "product-version.h"
+#include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -40,14 +42,15 @@ bool exportEmbeddedLicenses(const QString &directory) {
 }
 void showNotices(QWidget *parent) {
   QDialog dialog(parent);
-  dialog.setWindowTitle("О программе · ALLPOWERS Monitor");
+  dialog.setWindowTitle(QCoreApplication::translate("Allpowers", "About · ALLPOWERS Monitor"));
   dialog.resize(900, 620);
   auto *layout = new QVBoxLayout(&dialog);
-  auto *title = new QLabel(QString("ALLPOWERS Monitor %1 · C++23\n"
-                                   "Использует Qt %2, статическая линковка, LGPLv3.\n"
-                                   "Qt © The Qt Company Ltd. and other contributors.\n"
-                                   "Исходники и инструкции замены Qt доступны в пакете sources.")
-                               .arg(APP_VERSION, qVersion()));
+  auto *title = new QLabel(
+      QCoreApplication::translate(
+          "Allpowers", "ALLPOWERS Monitor %1 · C++23\nUses Qt %2, static linking, LGPLv3.\nQt © "
+                       "The Qt Company Ltd. and other contributors.\nSource code and Qt "
+                       "replacement instructions are in the sources package.")
+          .arg(APP_VERSION, qVersion()));
   title->setWordWrap(true);
   layout->addWidget(title);
   auto *row = new QHBoxLayout;
@@ -66,6 +69,7 @@ void showNotices(QWidget *parent) {
   if (!matches.isEmpty())
     list->setCurrentItem(matches.first());
   auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+  translateDialogButtons(*buttons);
   QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
   layout->addWidget(buttons);
   dialog.exec();

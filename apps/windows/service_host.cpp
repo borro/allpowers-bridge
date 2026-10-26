@@ -1,10 +1,11 @@
 #include "service_host.h"
-#include "product-version.h"
 #include "../../drivers/windows/bridge.h"
 #include "bluetooth.h"
 #include "history.h"
+#include "i18n.h"
 #include "integration.h"
 #include "ipc.h"
+#include "product-version.h"
 #include "ups_state.h"
 #include <QBluetoothAddress>
 #include <QCoreApplication>
@@ -27,6 +28,7 @@ namespace {
 struct Publisher {
   HANDLE handle = INVALID_HANDLE_VALUE;
   QString error;
+  QJsonObject errorMessage;
   ~Publisher() {
     if (handle != INVALID_HANDLE_VALUE)
       CloseHandle(handle);
@@ -36,17 +38,23 @@ struct Publisher {
       handle = CreateFileW(UpsDevicePath, GENERIC_READ | GENERIC_WRITE,
                            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
-      error = QString("Driver unavailable (%1)").arg(GetLastError());
+      const auto code = GetLastError();
+      error = QString("Driver unavailable (%1)").arg(code);
+      errorMessage = uiMessage("driver.unavailable", {int(code)});
       return;
     }
     DWORD bytes = 0;
     if (!DeviceIoControl(handle, UpsSetState, const_cast<AllpowersUps::State *>(&state),
                          sizeof(state), nullptr, 0, &bytes, nullptr)) {
-      error = QString("Driver update failed (%1)").arg(GetLastError());
+      const auto code = GetLastError();
+      error = QString("Driver update failed (%1)").arg(code);
+      errorMessage = uiMessage("driver.update_failed", {int(code)});
       CloseHandle(handle);
       handle = INVALID_HANDLE_VALUE;
-    } else
+    } else {
       error.clear();
+      errorMessage = {};
+    }
   }
 };
 struct Client {
@@ -115,9 +123,16 @@ struct ServiceHost::Impl {
     const auto ups = makeUpsState(last, generation, sequence + 1);
     info["ups_present"] = bool(ups.flags & AllpowersUps::Present) && publisher.error.isEmpty() &&
                           options.publishDriver;
-    info["ups_reason"] = publisher.error.isEmpty() && !(ups.flags & AllpowersUps::Present)
-                             ? "Нет свежего подтверждённого заряда и источника питания"
-                             : publisher.error;
+    info["ups_reason"] =
+        publisher.error.isEmpty() && !(ups.flags & AllpowersUps::Present)
+            ? QCoreApplication::translate("Allpowers", "No fresh confirmed charge and power source")
+            : publisher.error;
+    auto messages = info["ui_messages"].toObject();
+    messages["driver_error"] = publisher.errorMessage;
+    messages["ups_reason"] = publisher.error.isEmpty() && !(ups.flags & AllpowersUps::Present)
+                                 ? uiMessage("ups.no_fresh_data")
+                                 : publisher.errorMessage;
+    info["ui_messages"] = messages;
     info["history"] = stats;
     info["history_error"] = error;
     info["history_path"] = QDir(options.directory).filePath("history.sqlite3");
@@ -161,7 +176,9 @@ struct ServiceHost::Impl {
       const auto name = o["name"].toString();
       const int profile = o["profile"].toInt(-1);
       if (address.isNull() || name.size() > 128 || profile < 0 || profile > 3) {
-        send(socket, {{"op", "error"}, {"message", "Invalid station selection"}});
+        send(socket, {{"op", "error"},
+                      {"message", "Invalid station selection"},
+                      {"ui_message", uiMessage("service.invalid_selection")}});
         return;
       }
       const QJsonObject selected{
@@ -170,7 +187,9 @@ struct ServiceHost::Impl {
       const auto bytes = QJsonDocument(selected).toJson();
       if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
         error = "Could not save station selection";
-        send(socket, {{"op", "error"}, {"message", error}});
+        send(socket, {{"op", "error"},
+                      {"message", error},
+                      {"ui_message", uiMessage("service.save_failed")}});
         return;
       }
       ble.stop();
@@ -205,7 +224,9 @@ struct ServiceHost::Impl {
                     {"address", client.historyAddress},
                     {"points", rows}});
     } else
-      send(socket, {{"op", "error"}, {"message", "Unknown operation"}});
+      send(socket, {{"op", "error"},
+                    {"message", "Unknown operation"},
+                    {"ui_message", uiMessage("service.unknown_operation")}});
   }
 };
 ServiceHost::ServiceHost(const ServiceOptions &options, QObject *parent)

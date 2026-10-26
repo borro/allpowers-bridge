@@ -1,3 +1,4 @@
+#include "i18n.h"
 #include "integration.h"
 #include "ipc.h"
 #include "service_client.h"
@@ -1287,7 +1288,9 @@ private slots:
     QVERIFY(QFile::rename(settings, settings + ".saved"));
     QVERIFY(QDir().mkdir(settings)); // An unwritable target must not interrupt the working UPS.
     client.resume("02:00:00:00:00:02", "Other station", 1);
-    QTRY_VERIFY(client.diagnostics()["error"].toString().contains("Could not save"));
+    QTRY_COMPARE(client.diagnostics()["ui_messages"].toObject()["error"].toObject()["id"].toString(),
+                 QString("service.save_failed"));
+    QCOMPARE(client.diagnostics()["error"].toString(), QString::fromUtf8("Не удалось сохранить выбранную станцию"));
     QVERIFY(client.active());
     QCOMPARE(client.address(), QString("02:00:00:00:00:01"));
   }
@@ -1370,7 +1373,7 @@ private slots:
     QFile file(data.filePath("settings.json"));
     QVERIFY(file.open(QIODevice::ReadOnly));
     auto settings = QJsonDocument::fromJson(file.readAll()).object();
-    QCOMPARE(settings["page"].toString(), QString("История"));
+    QCOMPARE(settings["page"].toString(), QString("history"));
     QCOMPARE(settings["horizon"].toInt(), 3600);
   }
   void f11RestoresPreviousWindowMode() {
@@ -1845,5 +1848,10 @@ private slots:
     QVERIFY(chart->following());
   }
 };
-QTEST_MAIN(MonitorTests)
+int main(int argc, char **argv) {
+  QApplication app(argc, argv);
+  UiLanguage language("ru");
+  MonitorTests tests;
+  return QTest::qExec(&tests, argc, argv);
+}
 #include "monitor_test.moc"

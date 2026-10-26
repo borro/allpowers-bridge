@@ -1,6 +1,8 @@
 #include "service_client.h"
+#include "i18n.h"
 #include "integration.h"
 #include "ipc.h"
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QJsonArray>
 
@@ -72,13 +74,18 @@ void ServiceTransport::send(QJsonObject message) {
 }
 QString ServiceTransport::phase() const {
   return socket.state() == QLocalSocket::ConnectedState
-             ? info["phase"].toString("Подключение к службе…")
-             : "Служба ИБП недоступна";
+             ? uiMessageText(info["ui_messages"].toObject()["phase"].toObject(),
+                             info["phase"].toString(QCoreApplication::translate(
+                                 "Allpowers", "Connecting to service…")))
+             : QCoreApplication::translate("Allpowers", "UPS service unavailable");
 }
 QJsonObject ServiceTransport::diagnostics() const {
   auto result = info;
+  const auto messages = info["ui_messages"].toObject();
+  for (const auto &key : {"phase", "error", "driver_error", "ups_reason"})
+    result[key] = uiMessageText(messages[key].toObject(), info[key].toString());
   result["service"] = true;
-  result["transport"] = "Служба Windows / локальный IPC";
+  result["transport"] = QCoreApplication::translate("Allpowers", "Windows service / local IPC");
   if (socket.state() != QLocalSocket::ConnectedState)
     result["error"] = socket.errorString();
   return result;
@@ -112,7 +119,7 @@ void ServiceTransport::receive() {
       }
       bool changed = previous.isEmpty();
       for (const auto &key : {"address", "name", "phase", "error", "active", "connected",
-                              "scanning", "profile", "driver_error"})
+                              "scanning", "profile", "driver_error", "ui_messages"})
         changed = changed || previous[key] != info[key];
       if (changed)
         emit stateChanged();
@@ -126,6 +133,9 @@ void ServiceTransport::receive() {
       emit logReceived(message["message"].toString());
     else if (op == "error") {
       info["error"] = message["message"];
+      auto descriptors = info["ui_messages"].toObject();
+      descriptors["error"] = message["ui_message"];
+      info["ui_messages"] = descriptors;
       emit stateChanged();
     } else if (op == "sample") {
       HistoryPoint point;

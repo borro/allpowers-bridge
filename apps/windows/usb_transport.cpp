@@ -1,8 +1,9 @@
 #include "usb_transport.h"
-#include "AllpowersModels.h"
-#include "../../firmware/R2500Adapter/HistoryWire.h"
 #include "../../firmware/R2500Adapter/HistoryOperation.h"
+#include "../../firmware/R2500Adapter/HistoryWire.h"
+#include "AllpowersModels.h"
 #include <QBluetoothAddress>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -137,14 +138,19 @@ UsbTransport::~UsbTransport() {
 }
 QString UsbTransport::phase() const {
   if (!active_)
-    return "USB отключён";
+    return QCoreApplication::translate("Allpowers", "USB disconnected");
   if (!opened_)
-    return error_.isEmpty() ? "Ожидание USB-платы" : "USB: " + error_ + " · повторное подключение";
+    return error_.isEmpty()
+               ? QCoreApplication::translate("Allpowers", "Waiting for USB board")
+               : "USB: " + error_ + QCoreApplication::translate("Allpowers", " · reconnecting");
   if (!verified_)
-    return "Проверка прошивки USB-платы…";
-  return station_.isEmpty() ? "USB подключён · выберите станцию кнопкой BOOT на плате"
-         : !last.fresh ? "USB подключён · нет свежих данных станции"
-                       : "USB подключён · получение данных";
+    return QCoreApplication::translate("Allpowers", "Verifying USB board firmware…");
+  return station_.isEmpty()
+             ? QCoreApplication::translate(
+                   "Allpowers", "USB connected · select a station with the board's BOOT button")
+         : !last.fresh
+             ? QCoreApplication::translate("Allpowers", "USB connected · no fresh station data")
+             : QCoreApplication::translate("Allpowers", "USB connected · receiving data");
 }
 QJsonObject UsbTransport::diagnostics() const {
   auto info = details_;
@@ -190,7 +196,7 @@ void UsbTransport::resume(const QString &id, const QString &, int) {
 void UsbTransport::connectPort() {
   retryAt = elapsedMs() + 2000;
   if (!channel) {
-    error_ = "Автономный тест: USB не используется";
+    error_ = QCoreApplication::translate("Allpowers", "Offline test: USB is not used");
     return;
   }
   for (const auto &p : ports())
@@ -212,7 +218,7 @@ void UsbTransport::connectPort() {
       channel->open(port_);
       return;
     }
-  error_ = "Выбранная USB-плата не найдена";
+  error_ = QCoreApplication::translate("Allpowers", "Selected USB board not found");
 }
 void UsbTransport::stop() {
   active_ = opened_ = verified_ = pending = importing = historyAttempted = false;
@@ -241,7 +247,9 @@ void UsbTransport::fail(QString error) {
   if (channel)
     channel->close();
   opened_ = verified_ = pending = false;
-  if(importing)finishImport("error","Соединение USB прервано во время чтения архива");
+  if (importing)
+    finishImport("error", QCoreApplication::translate(
+                              "Allpowers", "USB connection interrupted while reading archive"));
   buffer.clear();
   last.fresh = 0;
   error_ = std::move(error);
@@ -268,12 +276,13 @@ void UsbTransport::tick() {
     return;
   }
   if (!importing && ((statusAt < 0 && now - openedAt > 5000) || (statusAt >= 0 && now - statusAt > 6000))) {
-    fail("Нет корректного ответа прошивки по USB");
+    fail(QCoreApplication::translate("Allpowers", "No valid firmware response over USB"));
     return;
   }
   if (verified_) {
     if (importing && now >= importDeadline)
-      finishImport("error", "Время ожидания архива истекло; данные могут быть неполными");
+      finishImport("error", QCoreApplication::translate(
+                                "Allpowers", "Archive timed out; data may be incomplete"));
     auto copy = last;
     const auto age = frameAt < 0 ? 15000 : qMin<qint64>(UINT32_MAX, now - frameAt);
     copy.main_age_ms = copy.settings_age_ms = quint32(age);
@@ -382,7 +391,9 @@ void UsbTransport::row(const QJsonObject &o) {
     }
     auto id = address.toString();
     if (id != station_) {
-      if(importing)finishImport("partial","Станция изменилась во время чтения USB-архива");
+      if (importing)
+        finishImport("partial", QCoreApplication::translate(
+                                    "Allpowers", "Station changed while reading USB archive"));
       station_ = id;
       historyAttempted = false;
       importing = false;
@@ -407,7 +418,7 @@ void UsbTransport::row(const QJsonObject &o) {
   } else if (o.contains("board")) {
     const auto board = o["board"].toString();
     if (board != "waveshare-147" && board != "pocket-096") {
-      fail("Неизвестный профиль USB-платы");
+      fail(QCoreApplication::translate("Allpowers", "Unknown USB board profile"));
       return;
     }
     board_ = board;
@@ -439,7 +450,8 @@ void UsbTransport::row(const QJsonObject &o) {
        !number(o,"generation",generation)||!number(o,"count",count,2880)||
        !number(o,"oldest",oldest)||!number(o,"latest",latest)||
        (count?(!oldest||!latest):(oldest||latest))){
-      finishImport("error","Некорректное начало USB-архива");return;
+      finishImport("error", QCoreApplication::translate("Allpowers", "Invalid USB archive start"));
+      return;
     }
     importBegun=true;importCompromised=false;
     importGeneration=generation;importExpected=count;importOldest=oldest;importLatest=latest;
@@ -454,7 +466,7 @@ void UsbTransport::row(const QJsonObject &o) {
          (!number(o,"history_oldest",oldestInventory)||((count==0)!=(oldestInventory==0))))) {
       badLines++;
       details_["history_ready"]=false;
-      const QString reason="Некорректное состояние USB-архива";
+      const QString reason = QCoreApplication::translate("Allpowers", "Invalid USB archive state");
       if(importing)finishImport("error",reason);
       else {
         details_["usb_history_result"]="error";details_["usb_history_complete"]=false;
@@ -463,13 +475,17 @@ void UsbTransport::row(const QJsonObject &o) {
       return;
     }
     if(importing && !o["history_ready"].toBool())
-      finishImport("error","Архив платы недоступен во время чтения");
+      finishImport("error", QCoreApplication::translate("Allpowers",
+                                                        "Board archive unavailable during read"));
     else if(importing && (session!=importSession ||
        (importVersion!=3 && (count!=importExpected||latest!=importLatest))))
-      finishImport("partial","Архив изменился во время чтения; повторите импорт");
+      finishImport("partial", QCoreApplication::translate(
+                                  "Allpowers", "Archive changed during read; import again"));
     else if(importing && legacyVerification){
-      finishImport(importCompromised?"partial":"complete",
-                   importCompromised?"Некоторые строки USB-архива повреждены":QString{});
+      finishImport(importCompromised ? "partial" : "complete",
+                   importCompromised ? QCoreApplication::translate(
+                                           "Allpowers", "Some USB archive rows are corrupt")
+                                     : QString{});
     }
     if (currentSession && session != currentSession) {
       historyAttempted = false;
@@ -555,7 +571,10 @@ void UsbTransport::row(const QJsonObject &o) {
     if(importVersion!=3 && o.contains("history_legacy_status")){
       quint32 sent=0;
       if(o["history_legacy_status"]!="complete"){
-        finishImport(o["history_legacy_status"]=="error"?"error":"partial","Прошивка не завершила чтение страницы архива");return;
+        finishImport(o["history_legacy_status"] == "error" ? "error" : "partial",
+                     QCoreApplication::translate("Allpowers",
+                                                 "Firmware did not finish reading archive page"));
+        return;
       }
       if(importVersion==0 && (!number(o,"history_sent",sent,2880)||sent!=legacyReceivedPage))importCompromised=true;
     }
@@ -567,15 +586,22 @@ void UsbTransport::row(const QJsonObject &o) {
         number(o,"sent",sent,2880)&&sent==quint32(importSequences.size())&&number(o,"cursor",cursor)&&cursor==importCursor&&
         number(o,"digest",digest)&&digest==importDigest&&number(o,"oldest",oldest)&&oldest==importOldest&&
         number(o,"latest",latest)&&latest==importLatest;
-      if(o["status"]=="error")finishImport("error","Прошивка не смогла завершить чтение архива");
+      if (o["status"] == "error")
+        finishImport("error", QCoreApplication::translate(
+                                  "Allpowers", "Firmware could not finish reading archive"));
       else if(!valid||importCompromised||o["status"]!="complete"||quint32(importSequences.size())!=importExpected||
               (importExpected&&importCursor!=importLatest))
-        finishImport("partial","Целостность или полнота USB-архива не подтверждена");
+        finishImport("partial",
+                     QCoreApplication::translate(
+                         "Allpowers", "USB archive integrity or completeness unconfirmed"));
       else finishImport("complete");
     }else if(importVersion==2){
-      finishImport("partial","Старая версия экспорта не подтверждает полноту архива");
+      finishImport("partial",
+                   QCoreApplication::translate(
+                       "Allpowers", "Legacy export does not confirm archive completeness"));
     }else if(quint32(importSequences.size())>importExpected){
-      finishImport("partial","Число записей старого архива изменилось во время чтения");
+      finishImport("partial", QCoreApplication::translate(
+                                  "Allpowers", "Legacy archive record count changed during read"));
     }else if(quint32(importSequences.size())==importExpected&&importSequences.contains(importLatest)){
       // The legacy completion has no session, count or checksum. Verify the
       // advertised inventory again before calling the import complete.
@@ -652,8 +678,12 @@ void UsbTransport::finishImport(const QString &result,const QString &reason) {
   else details_["usb_history_error"]=reason;
   emit historyImported(importPoints);importPoints.clear();
   emit stateChanged();
-  emit logReceived(QString("История USB: %1 точек; %2; без даты %3; повреждённых %4")
-    .arg(details_["usb_history_imported"].toInt()).arg(result).arg(historyUndated).arg(historyBad));
+  emit logReceived(
+      QCoreApplication::translate("Allpowers", "USB history: %1 points; %2; undated %3; corrupt %4")
+          .arg(details_["usb_history_imported"].toInt())
+          .arg(result)
+          .arg(historyUndated)
+          .arg(historyBad));
   command("STATUS\n");
 }
 void UsbTransport::nextLegacyPage() {
@@ -662,7 +692,13 @@ void UsbTransport::nextLegacyPage() {
   // contiguous; a failed append disables recording until reboot. A recovered
   // RAM record can survive <kKeep more appends: 2*kKeep+128 is conservative.
   constexpr quint32 maxSpan=2*2880+128;
-  if(legacyScanned>=maxSpan){finishImport("partial","Полнота старого USB-архива не подтверждена в допустимом диапазоне");return;}
+  if (legacyScanned >= maxSpan) {
+    finishImport(
+        "partial",
+        QCoreApplication::translate(
+            "Allpowers", "Legacy USB archive completeness unconfirmed within allowed range"));
+    return;
+  }
   if(legacyPages)legacyFirst=HistoryFormat::previous(legacyFirst);
   else legacyFirst=importLatest;
   legacySpan=qMin<quint32>(2880,maxSpan-legacyScanned);legacyScanned+=legacySpan;
@@ -692,13 +728,17 @@ void UsbTransport::requestHistory() {
     quint32 bits=0;
     if(details_.contains("history_nonce_bits")){
       if(!number(details_,"history_nonce_bits",bits)||bits!=HistoryFormat::kHistoryNonceBits){
-        finishImport("error","Неподдерживаемая защита идентификатора USB-архива");return;
+        finishImport("error", QCoreApplication::translate(
+                                  "Allpowers", "Unsupported USB archive operation ID protection"));
+        return;
       }
       importNonceRequired=true;
     }
     const auto raw=operationEntropy();
     if(raw.size()!=16||(!importNonceRequired&&!HistoryOperationIds::fallbackRequest(raw))){
-      finishImport("error","Не удалось создать идентификатор USB-архива");return;
+      finishImport("error", QCoreApplication::translate(
+                                "Allpowers", "Could not create USB archive operation ID"));
+      return;
     }
     if(importNonceRequired)importNonce=raw.toHex();
     else importRequest=HistoryOperationIds::fallbackRequest(raw);
@@ -707,7 +747,9 @@ void UsbTransport::requestHistory() {
     command("HISTORY-EXPORT "+QByteArray::number(importRequest)+(importNonceRequired?" "+importNonce:QByteArray{})+"\n");
   }
   else if(!importExpected){
-    if(importVersion==2)finishImport("partial","Старая версия экспорта не подтверждает пустой архив");
+    if (importVersion == 2)
+      finishImport("partial", QCoreApplication::translate(
+                                  "Allpowers", "Legacy export does not confirm an empty archive"));
     else {importVersion=0;legacyVerification=true;command("STATUS\n");}
   }
   else if(importVersion==2&&importOldest)

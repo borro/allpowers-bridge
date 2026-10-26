@@ -1,4 +1,5 @@
 #include "chart.h"
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QMouseEvent>
 #include <QPainter>
@@ -201,7 +202,9 @@ void HistoryChart::renderBase(QPainter &painter) {
   painter.restore();
   if (points_.isEmpty()) {
     painter.setPen(QColor("#a5b5cf"));
-    painter.drawText(r, Qt::AlignCenter, "История появится после подключения к станции");
+    painter.drawText(r, Qt::AlignCenter,
+                     QCoreApplication::translate(
+                         "Allpowers", "History will appear after connecting to a station"));
   }
 }
 void HistoryChart::paintEvent(QPaintEvent *) {
@@ -239,16 +242,19 @@ void HistoryChart::paintEvent(QPaintEvent *) {
           QDateTime::fromSecsSinceEpoch(it->wall, displayTimeZone())
               .toString("dd.MM.yyyy HH:mm:ss") +
           "\n" +
-          QString("Заряд %1%   Вход %2 Вт   Выход %3 Вт\n%4 · %5")
+          QCoreApplication::translate("Allpowers", "Charge %1%   Input %2 W   Output %3 W\n%4 · %5")
               .arg(value(it->data, 1, it->data.soc), value(it->data, 2, it->data.input_w),
                    value(it->data, 4, it->data.output_w),
-                   it->data.source == 2   ? "Розетка"
-                   : it->data.source == 1 ? "Аккумулятор"
-                                          : "Источник неизвестен",
-                   it->data.fresh ? "Актуальные данные" : "Разрыв данных");
+                   it->data.source == 2 ? QCoreApplication::translate("Allpowers", "Mains")
+                   : it->data.source == 1
+                       ? QCoreApplication::translate("Allpowers", "Battery")
+                       : QCoreApplication::translate("Allpowers", "Unknown power source"),
+                   it->data.fresh ? QCoreApplication::translate("Allpowers", "Fresh data")
+                                  : QCoreApplication::translate("Allpowers", "Data gap"));
       const bool archive = it->address.startsWith("usb-board:");
       if (archive)
-        text += "\nАрхив USB-платы · станция не указана";
+        text +=
+            QCoreApplication::translate("Allpowers", "\nUSB board archive · station unspecified");
       QRectF box(r.left() + 12, r.top() + 12, qMin(420., r.width() - 24), archive ? 90 : 70);
       painter.fillRect(box, QColor("#23344c"));
       painter.setPen(QColor("#eff5ff"));

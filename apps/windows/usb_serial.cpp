@@ -1,4 +1,5 @@
 #include "usb_serial.h"
+#include <QCoreApplication>
 #include <QRegularExpression>
 #include <QSet>
 #include <QThread>
@@ -90,14 +91,14 @@ public:
     generation = token;
     awaitingRead = false;
     if (!QRegularExpression("^COM[1-9][0-9]{0,4}$").match(port).hasMatch()) {
-      emit failed(generation, "Некорректный USB-порт");
+      emit failed(generation, QCoreApplication::translate("Allpowers", "Invalid USB port"));
       return;
     }
     auto path = ("\\\\.\\" + port).toStdWString();
     handle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0,
                          nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
-      fail("Не удалось открыть USB-порт (возможно, он занят)");
+      fail(QCoreApplication::translate("Allpowers", "Could not open USB port (it may be in use)"));
       return;
     }
     DCB state{};
@@ -123,7 +124,7 @@ public:
     // Never use 1200 baud: that value is the firmware's bootloader trigger.
     COMMTIMEOUTS timeouts{MAXDWORD, 0, 0, 0, 100};
     if (!SetCommState(handle, &state) || !SetCommTimeouts(handle, &timeouts)) {
-      fail("Настройка USB");
+      fail(QCoreApplication::translate("Allpowers", "USB setup"));
       return;
     }
     if (!timer) {
@@ -135,7 +136,7 @@ public:
         char data[16384];
         DWORD count = 0;
         if (!ReadFile(handle, data, sizeof(data), &count, nullptr)) {
-          fail("Чтение USB");
+          fail(QCoreApplication::translate("Allpowers", "USB read"));
           return;
         }
         if (count) {
@@ -153,7 +154,7 @@ public:
     DWORD sent = 0;
     if (!WriteFile(handle, bytes.constData(), DWORD(bytes.size()), &sent, nullptr) ||
         sent != DWORD(bytes.size()))
-      fail("Запись USB-запроса");
+      fail(QCoreApplication::translate("Allpowers", "USB request write"));
   }
   void acknowledge(quint64 token) {
     if (token == generation)

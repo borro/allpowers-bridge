@@ -12,7 +12,7 @@ if(NOT ALLPOWERS_QT_SOURCE_CACHE)
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
-find_package(Qt6 ${ALLPOWERS_QT_VERSION} EXACT REQUIRED COMPONENTS Widgets Bluetooth Sql Network)
+find_package(Qt6 ${ALLPOWERS_QT_VERSION} EXACT REQUIRED COMPONENTS Widgets Bluetooth Sql Network LinguistTools)
 if(BUILD_TESTING)
   find_package(Qt6 ${ALLPOWERS_QT_VERSION} EXACT REQUIRED COMPONENTS Test)
 endif()
@@ -32,13 +32,13 @@ file(READ "${bluetooth_config}" bluetooth_features)
 if(NOT bluetooth_features MATCHES "#define QT_FEATURE_winrt_bt 1")
   message(FATAL_ERROR "Qt Bluetooth must contain the real WinRT backend")
 endif()
-add_library(monitor_backend STATIC session.cpp history.cpp bluetooth.cpp ipc.cpp service_host.cpp service_client.cpp integration.cpp battery_probe.cpp
+add_library(monitor_backend STATIC i18n.cpp session.cpp history.cpp bluetooth.cpp ipc.cpp service_host.cpp service_client.cpp integration.cpp battery_probe.cpp
   transport.h transport_router.cpp connection_lease.cpp usb_serial.cpp usb_transport.cpp)
 target_include_directories(monitor_backend PUBLIC . ../../core/native ../../core/src)
 target_compile_definitions(monitor_backend PUBLIC NOMINMAX)
 target_link_libraries(monitor_backend PUBLIC Qt6::Core Qt6::Bluetooth Qt6::Sql Qt6::Network
   advapi32 bcrypt setupapi cfgmgr32 newdev shell32 wintrust crypt32 ole32 user32)
-add_library(monitor_lib STATIC chart.cpp controls.cpp window.cpp notices.cpp monitor_application.cpp)
+add_library(monitor_lib STATIC chart.cpp controls.cpp window.cpp notices.cpp monitor_application.cpp i18n_controls.cpp)
 target_include_directories(monitor_lib PUBLIC . ../../core/native)
 target_link_libraries(monitor_lib PUBLIC Qt6::Widgets monitor_backend)
 add_library(widget_lib STATIC desktop_surface.cpp widget.cpp)
@@ -113,6 +113,17 @@ if(WIN32)
   endforeach()
 endif()
 target_link_libraries(AllpowersMonitor PRIVATE monitor_lib)
+file(GLOB allpowers_i18n_headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
+qt_add_lupdate(SOURCE_TARGETS monitor_lib widget_lib monitor_backend AllpowersMonitor AllpowersWidget
+  SOURCES ${allpowers_i18n_headers}
+  TS_FILES translations/allpowers_ru.ts LUPDATE_TARGET update-translations
+  OPTIONS -no-obsolete)
+qt_add_lrelease(TS_FILES translations/allpowers_ru.ts
+  OPTIONS -fail-on-unfinished
+  QM_FILES_OUTPUT_VARIABLE allpowers_qm_files)
+# Attach resources to the EXEs explicitly: static-library dead stripping must
+# never discard the catalogs. Tests use the identical embedded resource.
+set(i18n_targets AllpowersMonitor AllpowersWidget)
 if(BUILD_TESTING)
   add_executable(history_operation_id_probe ../../tests/desktop/history_operation_id_probe.cpp)
   set_target_properties(history_operation_id_probe PROPERTIES AUTOMOC OFF)
@@ -148,6 +159,19 @@ if(BUILD_TESTING)
   qt_add_executable(widget_tests ../../tests/desktop/widget_test.cpp)
   target_sources(widget_tests PRIVATE widget.manifest)
   target_link_libraries(widget_tests PRIVATE widget_lib Qt6::Test)
+  qt_add_executable(language_tests ../../tests/desktop/i18n_test.cpp)
+  target_link_libraries(language_tests PRIVATE widget_lib Qt6::Test)
+  target_compile_definitions(language_tests PRIVATE
+    TRANSLATION_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/translations/allpowers_ru.ts")
+  if(MSVC)
+    target_compile_options(language_tests PRIVATE /utf-8 /UNDEBUG)
+  endif()
+  add_test(NAME languages COMMAND language_tests -platform offscreen)
+  add_test(NAME translation-coverage COMMAND "${CMAKE_COMMAND}"
+    "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/translation-coverage"
+    "-DLUPDATE=$<TARGET_FILE:Qt6::lupdate>" "-DLRELEASE=$<TARGET_FILE:Qt6::lrelease>"
+    -P "${ALLPOWERS_ROOT}/cmake/CheckTranslations.cmake")
+  set_tests_properties(languages PROPERTIES TIMEOUT 60)
   if(MSVC)
     target_compile_options(widget_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
@@ -180,9 +204,16 @@ if(BUILD_TESTING)
   set_tests_properties(widget widget-native desktop dropdown-native single-exe widget-single-exe
     PROPERTIES TIMEOUT 120)
 endif()
+if(BUILD_TESTING)
+  list(APPEND i18n_targets monitor_tests widget_tests archive_transport_tests language_tests)
+endif()
+foreach(target IN LISTS i18n_targets)
+  qt_add_resources(${target} "${target}_translations" PREFIX "/i18n"
+    BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${allpowers_qm_files})
+endforeach()
 set(plugin_targets AllpowersMonitor AllpowersWidget)
 if(BUILD_TESTING)
-  list(APPEND plugin_targets monitor_tests widget_tests archive_transport_tests)
+  list(APPEND plugin_targets monitor_tests widget_tests archive_transport_tests language_tests)
 endif()
 foreach(target ${plugin_targets})
   qt_import_plugins(${target} NO_DEFAULT INCLUDE

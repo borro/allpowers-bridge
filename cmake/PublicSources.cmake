@@ -27,6 +27,7 @@ set(AP_PUBLIC_SPECIAL_FILES
   tools/image_contract.py
   tools/manage_board.py
   firmware/R2500Adapter/partitions.csv
+  apps/windows/translations/allpowers_ru.ts
   apps/windows/widget.manifest
   apps/windows/assets/allpowers.ico
   apps/windows/assets/logo.png

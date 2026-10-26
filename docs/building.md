@@ -125,6 +125,17 @@ CPack. It creates a runtime ZIP and complete application/Qt source ZIP with SHA2
 files. See relinking.md for library replacement/rebuild instructions. CPack never
 includes user settings/history or local device configuration.
 
+Application and managed Qt Release builds optimize size without IPO/LTO, keeping
+ordinary relinks fast. CPack compresses only its staged copies of the two Windows
+EXEs with checksum-pinned UPX 5.2.1 `-9`; normal build/install outputs remain raw.
+The UPX archive is cached in `ALLPOWERS_DEPS_DIR/downloads`, and the executable is
+restored from that verified archive for each packaging run. Packed files must
+pass UPX integrity, PE/CLI version, system-only import and isolated offline
+UI/SQLite/language/license checks, plus exact embedded driver extraction for the
+monitor. Failure stops packaging. Compression adds roughly nine seconds per EXE
+on the development machine; it never runs after an ordinary relink. UPX packing
+must precede any future executable signing. Antivirus false positives are possible.
+
 Version comes from git describe --tags --match v[0-9]* --dirty. Fetch tags in CI.
 A clean tagged build displays that tag's numeric version; intermediate builds
 carry commit/dirty metadata. The source ZIP receives a generated VERSION fallback,

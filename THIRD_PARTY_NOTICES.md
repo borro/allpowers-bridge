@@ -16,6 +16,7 @@ Qt, Python build tools, compiler runtimes or the Arduino/Espressif SDK.
 | FreeType in Qt | FreeType Project License; portions of this software are copyright (c) 2026 The FreeType Project (https://freetype.org). All rights reserved. Original notices are embedded. |
 | PCRE2, HarfBuzz, libpng, zlib and other Qt components | Original copyright and license files, including those referenced by Qt attribution metadata, are embedded and exportable. |
 | CMake and Ninja | Build/test/package tools only; not embedded in the application |
+| UPX 5.2.1 / UCL | Release EXEs contain the unmodified UPX decompression stub. GPL-2.0-or-later with the upstream special exception for compressed executables; docs/licenses/UPX.md is embedded and exportable. UPX is used only when packaging release copies. |
 | Python, hidapi, pyserial, esptool | Optional explicit board maintenance; not required by the project build/test/package commands or the Windows monitor. Upstream Arduino tools may use their own Python internally. |
 
 The release's separate sources ZIP contains the exact unmodified Qt Base and

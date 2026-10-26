@@ -15,6 +15,14 @@ build instructions and the exact unmodified Qt Base/Connectivity/Tools archives 
 for that build. The archives retain their original licenses/checksums. Keep this
 source kit available alongside any binary distribution.
 
+Release ZIPs contain copies compressed with the official unmodified UPX 5.2.1
+using `-9`. Ordinary build/install outputs remain uncompressed. To inspect or
+replace a packed EXE, run `upx -d <executable>` or rebuild from the source kit;
+rebuilt uncompressed executables run normally. The UPX license/special exception
+and GPL text are embedded as `UPX.md` and exported with the other notices.
+Packing is a separate CPack step after source-kit verification and checks both
+packed applications before creating the runtime ZIP.
+
 ## Rebuild or replace Qt
 
 1. Extract allpowers/ from the source ZIP. Install Git, CMake 4.4+, Ninja, licensed
@@ -24,6 +32,11 @@ source kit available alongside any binary distribution.
 2. Copy qt-source/*.tar.xz to allpowers/build/deps/downloads/.
 3. In allpowers/, run cmake --preset windows, then cmake --build --preset windows.
    CMake builds static Qt from the supplied verified archives and then the EXE.
+   The managed Release SDK uses `FEATURE_optimize_size=ON`,
+   `FEATURE_optimize_full=OFF`, `FEATURE_ltcg=OFF` and CMake IPO disabled.
+   The application uses `/O1 /Gy /Gw` and `/OPT:REF /OPT:ICF` in Release
+   and MinSizeRel, without `/GL` or `/LTCG`, keeping ordinary relinks fast.
+   These settings retain all application features and embedded languages.
 4. For a modified Qt, build/install it with static libraries, /MT, bundled SQLite
    and the WinRT Bluetooth backend; install matching LinguistTools (lrelease/lupdate). Configure a fresh build directory with
    -DALLPOWERS_QT_ROOT=/path/to/modified/qt and rebuild. Use the standalone app

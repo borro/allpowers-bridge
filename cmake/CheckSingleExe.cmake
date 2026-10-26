@@ -66,7 +66,7 @@ foreach(language ru en zh-CN zh-TW)
 endforeach()
 execute_process(COMMAND "${WORK}/${exe_name}" --export-licenses "${WORK}/licenses"
   -platform offscreen TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
-foreach(required LICENSE THIRD_PARTY_NOTICES.md relinking.md windows-runtime-terms.md MSVC-STL.md
+foreach(required LICENSE THIRD_PARTY_NOTICES.md relinking.md windows-runtime-terms.md MSVC-STL.md UPX.md
     Qt/qtbase/LICENSES/LGPL-3.0-only.txt Qt/qtbase/LICENSES/GPL-3.0-only.txt
     Qt/qtbase/src/3rdparty/pcre2/LICENCE.md Qt/qtbase/src/3rdparty/freetype/BDF-LICENSE.txt
     Qt/qtbase/src/3rdparty/libjpeg/COPYRIGHT.txt Qt/qtbase/src/3rdparty/libjpeg/ijg-license.txt)

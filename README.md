@@ -184,6 +184,11 @@ ctest --preset native
 The first Windows build downloads checksum-pinned Qt 6.12.0 source and builds the
 static MSVC/WinRT SDK with ExternalProject. Later builds reuse it. Existing static
 Qt (including matching LinguistTools) can be selected with `-DALLPOWERS_QT_ROOT=/path/to/qt`.
+Release builds optimize both applications and the managed Qt SDK for size with
+ordinary linking, without LTO. Each EXE remains self-contained; no functionality or
+languages are removed. Debug keeps its normal compiler settings. The standalone
+`apps/windows` project accepts `-DALLPOWERS_OPTIMIZE_SIZE=OFF` for application-only
+comparisons with the same Qt SDK; this does not change how that SDK was built.
 GitHub Actions also caches the installed static SDK with an exact compatibility
 key covering Qt/build inputs, MSVC, Windows SDK, architecture, tools and install
 path. Restored SDKs must pass a compile/link and offline runtime check; a missing
@@ -207,7 +212,12 @@ CTest and packaging never flash devices or connect a station.
 Outputs: `build/` for intermediate files, `dist/firmware/<board>/` for images,
 `dist/windows/AllpowersMonitor/` for `AllpowersMonitor.exe` and `AllpowersWidget.exe`.
 The `release` target uses CPack to create runtime and corresponding-source ZIPs
-with SHA256 files. The source ZIP includes complete Qt archives and relinking
+with SHA256 files. Runtime ZIPs contain UPX `-9` compressed copies of both EXEs;
+the ordinary build/install outputs stay uncompressed for fast development.
+UPX 5.2.1 is downloaded with a pinned SHA256 only during release packaging.
+Packed EXEs pass integrity, version and isolated offline checks before archiving.
+Some antivirus products may flag packed executables; `upx -d` unpacks them.
+The source ZIP includes complete Qt archives and relinking
 instructions; keep it with binary distributions.
 Each firmware package also contains its LGPL corresponding sources, license
 notices and a tested object kit for relinking. See [firmware licenses](docs/firmware-licenses.md).

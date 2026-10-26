@@ -5,7 +5,7 @@ Set-StrictMode -Version Latest
 $scratch = Join-Path $Work ([guid]::NewGuid().ToString('N'))
 $source = Join-Path $scratch 'source'
 New-Item -ItemType Directory -Path "$source/cmake" -Force | Out-Null
-foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake',
+foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
                   'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     Copy-Item -LiteralPath "$Root/cmake/$file" -Destination "$source/cmake/$file"
 }
@@ -32,6 +32,9 @@ try {
     $env:WindowsSDKVersion = $savedSdk
     Add-Content -LiteralPath "$source/cmake/QtStatic.cmake" -Value '# changed build recipe'
     if ((Get-Key) -ceq $baseline) { throw 'Qt build recipe did not invalidate the key' }
+    $recipeKey = Get-Key
+    Add-Content -LiteralPath "$source/cmake/SizeOptimization.cmake" -Value '# changed size policy'
+    if ((Get-Key) -ceq $recipeKey) { throw 'Size policy did not invalidate the key' }
     $output = Invoke-Cache Restore
     if ('root=' -notin $output) { throw 'An absent SDK must request a source build' }
     $install = Join-Path $source 'build/windows/deps/qt/install'

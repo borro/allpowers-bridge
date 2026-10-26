@@ -136,6 +136,7 @@ ctest --preset native
 
 首次 Windows 构建会下载经校验和固定的 Qt 6.12.0 源代码，通过 ExternalProject 构建静态 MSVC/WinRT SDK，后续复用。
 可使用 `-DALLPOWERS_QT_ROOT=/path/to/qt` 指定已有的静态 Qt，需包含匹配版本的 LinguistTools。
+Release 应用程序和受管理的 Qt SDK 使用体积优化及普通链接，不启用 LTO；Debug 设置保持不变。
 GitHub Actions 也会缓存已安装 SDK；严格的兼容性键包含 Qt/构建输入、MSVC、Windows SDK、架构、工具和安装路径。
 恢复的 SDK 必须通过编译、链接和离线运行检查；缓存缺失或被拒绝时从源代码构建。
 Windows 目标还使用固定校验和的 WDK 10.0.26100.6584（KMDF 1.31）构建并内嵌驱动程序，检查 INF、目录和内核 PE。
@@ -154,6 +155,9 @@ Linux 使用 `build/native`。环境固定为 Arduino CLI 1.5.1 和 ESP32 Core 3
 
 输出：中间文件位于 `build/`，固件位于 `dist/firmware/<board>/`，Windows EXE 位于 `dist/windows/AllpowersMonitor/`。
 `release` 目标使用 CPack 生成运行包和对应源代码 ZIP 及 SHA256 文件。
+运行包中的 EXE 副本使用 UPX `-9` 压缩，普通构建及安装输出保持未压缩，以便快速开发。
+仅在发布打包时下载 UPX 5.2.1，并验证固定的 SHA256；归档前检查压缩文件的完整性、版本与离线独立运行。
+某些杀毒软件可能误报压缩文件；可用 `upx -d` 解压 EXE。
 源代码 ZIP 包含完整 Qt 源码归档和重新链接说明，应随二进制发行包一并提供。
 每个固件包也包含 LGPL 对应源代码、许可证声明和经过测试的重新链接对象文件包，见[固件许可证](docs/firmware-licenses.md)。
 Windows 发布者需要有效的 Visual Studio 许可证；符合条件的个人和开源开发可使用 Community，见[运行时条款](docs/windows-runtime-terms.md)。

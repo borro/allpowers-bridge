@@ -46,6 +46,14 @@ MTU, last packet/error, history state and chart rendering time.
 The monitor and desktop widget each run as an independent EXE. Qt, SQLite,
 plugins and the C++ runtime are statically
 linked. About displays embedded notices; --export-licenses extracts them.
+Release and MinSizeRel application targets use size optimization with ordinary
+linking; the managed Release Qt SDK also optimizes size without IPO/LTO. Debug is unchanged.
+For an application-only baseline, configure this standalone project with
+`-DALLPOWERS_OPTIMIZE_SIZE=OFF` and the same SDK. Qt's own build settings remain
+those of the selected SDK.
+The root `release` target compresses only CPack's staged EXE copies with pinned
+UPX `-9` and verifies their offline behavior. Normal builds and installed development
+EXEs stay uncompressed. `upx -d` reverses packing; the UPX license is embedded.
 The separate sources ZIP contains corresponding application/Qt source and
 docs/relinking.md. Users can replace/relink Qt; the application does not restrict
 that. Product version comes from Git tags; --version prints the embedded version.

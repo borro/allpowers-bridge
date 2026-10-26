@@ -1,0 +1,53 @@
+cmake_minimum_required(VERSION 4.4)
+# Exercise real compiler/linker commands, including an ordinary static-library
+# consumer. Size optimization must not reintroduce expensive IPO relinks.
+file(MAKE_DIRECTORY "${WORK}/source")
+file(CONFIGURE OUTPUT "${WORK}/source/CMakeLists.txt" CONTENT [=[
+cmake_minimum_required(VERSION 4.4)
+project(SizePolicy LANGUAGES CXX)
+include("@ROOT@/cmake/SizeOptimization.cmake")
+add_library(values STATIC values.cpp)
+add_executable(optimized main.cpp)
+add_executable(ordinary main.cpp)
+target_link_libraries(optimized PRIVATE values)
+target_link_libraries(ordinary PRIVATE values)
+ap_optimize_size(values)
+ap_optimize_size(optimized)
+]=] @ONLY)
+file(WRITE "${WORK}/source/values.cpp" "int value() { return 42; }\n")
+file(WRITE "${WORK}/source/main.cpp" "int value(); int main() { return value() == 42 ? 0 : 1; }\n")
+foreach(config Release MinSizeRel Debug)
+  set(binary "${WORK}/${config}")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -S "${WORK}/source" -B "${binary}" -G Ninja
+    "-DCMAKE_BUILD_TYPE=${config}" "-DCMAKE_CXX_COMPILER=${CXX}" "-DCMAKE_MAKE_PROGRAM=${NINJA}"
+    COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND "${CMAKE_COMMAND}" --build "${binary}" COMMAND_ERROR_IS_FATAL ANY)
+  foreach(name optimized ordinary)
+    execute_process(COMMAND "${binary}/${name}.exe" COMMAND_ERROR_IS_FATAL ANY)
+  endforeach()
+  # Query the actual commands rather than CMake properties: this catches flags
+  # lost during generation or incorrectly applied to unrelated targets.
+  execute_process(COMMAND "${NINJA}" -C "${binary}" -t commands optimized
+    OUTPUT_VARIABLE optimized COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(COMMAND "${NINJA}" -C "${binary}" -t commands CMakeFiles/ordinary.dir/main.cpp.obj
+    OUTPUT_VARIABLE ordinary COMMAND_ERROR_IS_FATAL ANY)
+  if(ordinary MATCHES "/(GL|Gw|Gy)( |$)")
+    message(FATAL_ERROR "Size flags leaked into an unrelated target")
+  endif()
+  if(optimized MATCHES "/(GL|LTCG)([: ]|$)")
+    message(FATAL_ERROR "Size optimization enabled expensive IPO relinks")
+  endif()
+  if(config STREQUAL "Debug")
+    if(optimized MATCHES "/(O1|GL|Gw|Gy|OPT:REF|OPT:ICF)( |$)")
+      message(FATAL_ERROR "Size optimization changed Debug commands")
+    endif()
+  else()
+    foreach(flag /O1 /Gw /Gy /OPT:REF /OPT:ICF /INCREMENTAL:NO)
+      string(FIND "${optimized}" "${flag}" found)
+      if(found LESS 0)
+        message(FATAL_ERROR "${config} is missing ${flag}")
+      endif()
+    endforeach()
+  endif()
+endforeach()
+message(STATUS "Release/MinSizeRel size flags, non-IPO relinks and Debug isolation passed")

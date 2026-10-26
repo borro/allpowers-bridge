@@ -40,7 +40,7 @@ $inputs = [ordered]@{
     cmake = $cmakeVersion[0]
     ninja = "$ninjaVersion"
 }
-foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake',
+foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
                   'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     $inputs[$file] = (Get-FileHash -LiteralPath (Join-Path $Root "cmake/$file") -Algorithm SHA256).Hash
 }

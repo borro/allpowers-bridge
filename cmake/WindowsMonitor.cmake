@@ -40,6 +40,7 @@ ExternalProject_Add_Step(windows-monitor prepare-notices
     "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
     "${PROJECT_SOURCE_DIR}/docs/relinking.md" "${PROJECT_SOURCE_DIR}/core/src/AllpowersModels.LICENSE.txt"
     "${PROJECT_SOURCE_DIR}/docs/windows-runtime-terms.md" "${PROJECT_SOURCE_DIR}/docs/licenses/MSVC-STL.md"
+    "${PROJECT_SOURCE_DIR}/docs/licenses/UPX.md"
     "${PROJECT_SOURCE_DIR}/drivers/windows/LICENSE.MS-PL.txt"
   LOG ON)
 add_custom_target(windows ALL)
@@ -79,7 +80,15 @@ set(ALLPOWERS_RELEASE_COMMIT "@ALLPOWERS_RELEASE_COMMIT@")
 set(EXPECTED_VERSION "@ALLPOWERS_VERSION@")
 include("@PROJECT_SOURCE_DIR@/cmake/CheckPackageIdentity.cmake")
 ]=] @ONLY)
-set(CPACK_PRE_BUILD_SCRIPTS "${PROJECT_BINARY_DIR}/check-package-identity.cmake")
+file(CONFIGURE OUTPUT "${PROJECT_BINARY_DIR}/pack-windows.cmake" CONTENT [=[
+set(ALLPOWERS_ROOT "@PROJECT_SOURCE_DIR@")
+set(ALLPOWERS_BUILD_ROOT "@PROJECT_BINARY_DIR@")
+set(ALLPOWERS_DEPS_DIR "@ALLPOWERS_DEPS_DIR@")
+set(ALLPOWERS_DRIVER_PACKAGE_DIR "@ALLPOWERS_DRIVER_PACKAGE_DIR@")
+include("@PROJECT_SOURCE_DIR@/cmake/PackWindows.cmake")
+]=] @ONLY)
+set(CPACK_PRE_BUILD_SCRIPTS "${PROJECT_BINARY_DIR}/check-package-identity.cmake"
+  "${PROJECT_BINARY_DIR}/pack-windows.cmake")
 include(CPack)
 add_custom_target(source-package
   COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/check-package-identity.cmake"

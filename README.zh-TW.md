@@ -136,6 +136,7 @@ ctest --preset native
 
 首次 Windows 建置會下載以檢查碼固定的 Qt 6.12.0 原始碼，透過 ExternalProject 建置靜態 MSVC/WinRT SDK，後續重複使用。
 可使用 `-DALLPOWERS_QT_ROOT=/path/to/qt` 指定現有的靜態 Qt，需包含相符版本的 LinguistTools。
+Release 應用程式與受管理的 Qt SDK 使用體積最佳化及一般連結，不啟用 LTO；Debug 設定維持不變。
 GitHub Actions 也會快取已安裝的 SDK；嚴格的相容性索引鍵包含 Qt/建置輸入、MSVC、Windows SDK、架構、工具與安裝路徑。
 還原的 SDK 必須通過編譯、連結與離線執行檢查；快取缺少或遭拒絕時，會從原始碼建置。
 Windows 目標還使用固定檢查碼的 WDK 10.0.26100.6584（KMDF 1.31）建置並內嵌驅動程式，檢查 INF、目錄與核心 PE。
@@ -154,6 +155,9 @@ Linux 使用 `build/native`。環境固定為 Arduino CLI 1.5.1 與 ESP32 Core 3
 
 輸出：中間檔案位於 `build/`，韌體位於 `dist/firmware/<board>/`，Windows EXE 位於 `dist/windows/AllpowersMonitor/`。
 `release` 目標使用 CPack 產生執行套件與對應原始碼 ZIP 及 SHA256 檔案。
+執行套件中的 EXE 副本使用 UPX `-9` 壓縮，一般建置及安裝輸出保持未壓縮，以便快速開發。
+僅在發布封裝時下載 UPX 5.2.1，並驗證固定的 SHA256；歸檔前檢查壓縮檔案的完整性、版本與離線獨立執行。
+部分防毒軟體可能誤報壓縮檔案；可用 `upx -d` 解壓縮 EXE。
 原始碼 ZIP 包含完整 Qt 原始碼封存檔與重新連結說明，應隨二進位發行套件一併提供。
 每個韌體套件也包含 LGPL 對應原始碼、授權聲明及經過測試的重新連結目的檔套件，見[韌體授權條款](docs/firmware-licenses.md)。
 Windows 發布者需要有效的 Visual Studio 授權；符合條件的個人與開源開發可使用 Community，見[執行階段條款](docs/windows-runtime-terms.md)。

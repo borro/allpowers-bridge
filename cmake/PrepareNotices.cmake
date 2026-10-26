@@ -26,7 +26,7 @@ foreach(module qtbase qtconnectivity)
   ap_collect_qt_notices("${source}" "${WORK}/notices/Qt/${module}")
 endforeach()
 foreach(relative LICENSE THIRD_PARTY_NOTICES.md docs/relinking.md docs/windows-runtime-terms.md
-    docs/licenses/MSVC-STL.md core/src/AllpowersModels.LICENSE.txt drivers/windows/LICENSE.MS-PL.txt)
+    docs/licenses/MSVC-STL.md docs/licenses/UPX.md core/src/AllpowersModels.LICENSE.txt drivers/windows/LICENSE.MS-PL.txt)
   get_filename_component(name "${relative}" NAME)
   file(COPY_FILE "${ROOT}/${relative}" "${WORK}/notices/${name}" ONLY_IF_DIFFERENT)
 endforeach()

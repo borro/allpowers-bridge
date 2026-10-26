@@ -222,6 +222,13 @@ the checked files as described below. No build installs a driver/service or acce
 
 ## Tagged releases
 
+Before creating a release tag, write `docs/releases/<tag>.md` with the exact first
+line `# ALLPOWERS Bridge <tag>`, a bullet list of changes since the previous
+release and a GitHub comparison link. The publisher uses this reviewed text above
+the shared download information and refuses to create or publish a draft if the
+notes are missing, empty or identify another version. A draft retry uses the current
+notes; an already published release and its assets remain unchanged on a rerun.
+
 A push of a SemVer tag (`v1.2.3`, `v1.2.3-alpha.1`) containing this workflow
 publishes a GitHub Release after the audit and both platform builds/tests pass.
 Manual workflow dispatch against such a tag uses the same checks. Branch/PR

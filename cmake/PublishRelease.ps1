@@ -2,6 +2,7 @@ param(
   [Parameter(Mandatory)][string]$Repository,
   [Parameter(Mandatory)][string]$Tag,
   [Parameter(Mandatory)][string]$Assets,
+  [string]$NotesFile,
   [string]$GitHubCli = 'gh'
 )
 $ErrorActionPreference = 'Stop'
@@ -86,9 +87,20 @@ if ($release) {
     Write-Output "Release already published with matching assets: $Tag"
     return
   }
-} else {
-  $notes = Join-Path $Assets '.stage/release-notes.md'
-  @"
+  Assert-Draft $release
+}
+if (-not $NotesFile) { $NotesFile = Join-Path $PSScriptRoot "../docs/releases/$Tag.md" }
+$changes = (Get-Content -LiteralPath $NotesFile -Raw -Encoding utf8).Trim()
+if (-not $changes.StartsWith("# ALLPOWERS Bridge $Tag`n") -and
+    -not $changes.StartsWith("# ALLPOWERS Bridge $Tag`r`n")) {
+  throw 'Release notes must start with a heading matching the exact tag'
+}
+if ($changes -notmatch '(?m)^- \S') { throw 'Release notes must describe the changes in this version' }
+$body = @"
+$changes
+
+## Downloads
+
 Built and tested from **$Tag** on Windows and Ubuntu.
 $marker
 
@@ -100,7 +112,10 @@ $marker
 The applications work without the optional Windows UPS driver. That integration remains
 experimental, unsigned and unverified in a VM. Firmware updates require the matching
 board profile; settings and private recovery images are not part of these assets.
-"@ | Set-Content -LiteralPath $notes -Encoding utf8
+"@
+if (-not $release) {
+  $notes = Join-Path $Assets '.stage/release-notes.md'
+  $body | Set-Content -LiteralPath $notes -Encoding utf8
   $request = Join-Path $Assets '.stage/create-release.json'
   @{
     tag_name = $Tag; target_commitish = $commit; name = "ALLPOWERS Bridge $Tag"
@@ -136,10 +151,11 @@ Assert-UploadedAssets $uploaded
 Confirm-RemoteTag
 $prerelease = ($Tag -split '\+', 2)[0].Contains('-')
 $json = Invoke-GitHub @('api', "repos/$Repository/releases/$releaseId", '--method', 'PATCH',
+  '-f', ('body=' + $body),
   '-F', 'draft=false', '-F', ('prerelease=' + $prerelease.ToString().ToLowerInvariant()),
   '-f', ('make_latest=' + (-not $prerelease).ToString().ToLowerInvariant()))
 $published = $json -join "`n" | ConvertFrom-Json
 if ($published.id -ne $releaseId -or $published.tag_name -cne $Tag -or $published.draft -or
-    $published.prerelease -ne $prerelease) { throw 'Release publication was not confirmed' }
+    $published.prerelease -ne $prerelease -or $published.body -cne $body) { throw 'Release publication was not confirmed' }
 Assert-UploadedAssets $published
 Write-Output "Published verified release: $Tag"

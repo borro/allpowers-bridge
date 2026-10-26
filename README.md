@@ -245,6 +245,7 @@ The application and Windows EXE properties use the tag version without `v`.
 Prerelease tags produce GitHub prereleases. Ordinary branch/PR builds produce
 artifacts. Builds never install or flash anything; no personal tokens are required.
 See [release safeguards and reruns](docs/building.md#tagged-releases).
+Version-specific changes come from `docs/releases/<tag>.md`; add this file before tagging a release.
 
 Before committing, run `audit-worktree`; after reviewing/staging files, run
 `audit`, `audit-history` and `audit-secrets` in the configured build directory.

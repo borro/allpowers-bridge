@@ -75,7 +75,8 @@ if ($endpoint -eq 'repos/example/project/releases' -and $method -eq 'POST') {
   $request = Get-Content -LiteralPath $Arguments[$inputIndex+1] -Raw | ConvertFrom-Json
   if ($request.tag_name -cne $state.tag -or $request.target_commitish -cne $state.commit -or
       $request.draft -ne $true -or $request.prerelease -ne ($state.tag -split '\+',2)[0].Contains('-') -or
-      -not $request.body.Contains("<!-- allpowers-release-commit: $($state.commit) -->")) {
+      -not $request.body.Contains("<!-- allpowers-release-commit: $($state.commit) -->") -or
+      -not $request.body.Contains('- Synthetic version-specific change.')) {
     throw 'Invalid draft creation payload'
   }
   $state.exists=$true; $state.draft=$true; $state.body=$request.body
@@ -121,6 +122,11 @@ if ($endpoint -eq 'repos/example/project/releases/42') {
         ('make_latest='+(-not $prerelease).ToString().ToLowerInvariant()))) {
       if ($Arguments -notcontains $field) { throw 'Incorrect publication flags' }
     }
+    $bodyField = @($Arguments | Where-Object { $_.StartsWith('body=') })
+    if ($bodyField.Count -ne 1 -or -not $bodyField[0].Contains('- Synthetic version-specific change.')) {
+      throw 'Publication must include version-specific notes, including on draft resume'
+    }
+    $state.body=$bodyField[0].Substring(5)
     $state.draft=$false; $state.published=$true
     Save-State
   } elseif ($method -ne 'GET') { throw 'Unexpected release method' }
@@ -133,7 +139,8 @@ throw 'Unexpected fake API invocation'
 '@ | Set-Content -LiteralPath $fake -Encoding utf8
   foreach ($mode in @('stale-list-after-create','success','resume-draft','upload-failure','partial-upload','bad-digest',
       'created-wrong-tag','created-wrong-commit','created-no-id','created-not-draft','changed-id',
-      'moved-tag','lookup-forbidden','foreign-draft','old-draft','duplicate-tag','published-match','published-mismatch')) {
+      'moved-tag','lookup-forbidden','foreign-draft','old-draft','duplicate-tag','published-match','published-mismatch',
+      'missing-notes','empty-notes','wrong-version-notes','no-changes-notes')) {
     $env:ALLPOWERS_RELEASE_TEST_STATE = Join-Path $Work ($mode + '.json')
     $published = $mode.StartsWith('published-')
     @{
@@ -144,8 +151,16 @@ throw 'Unexpected fake API invocation'
         elseif ($mode -eq 'resume-draft') { (Get-ChildItem -LiteralPath $Assets -File | Sort-Object Name | Select-Object -First 2).Name })
       body=('<!-- allpowers-release-commit: ' + $(if($mode -eq 'old-draft') {'0000000000000000000000000000000000000000'} else {$commit}) + ' -->')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $env:ALLPOWERS_RELEASE_TEST_STATE -Encoding utf8
+    $notes = Join-Path $Work ($mode + '-notes.md')
+    $content = "# ALLPOWERS Bridge $Tag`n`n- Synthetic version-specific change.`n"
+    switch ($mode) {
+      'empty-notes' { $content = '' }
+      'wrong-version-notes' { $content = "# ALLPOWERS Bridge v9.9.9`n`n- Unrelated changes.`n" }
+      'no-changes-notes' { $content = "# ALLPOWERS Bridge $Tag`n`n" }
+    }
+    if ($mode -ne 'missing-notes') { $content | Set-Content -LiteralPath $notes -Encoding utf8 }
     & pwsh -NoProfile -File (Join-Path $Root 'cmake/PublishRelease.ps1') -Repository 'example/project' `
-      -Tag $Tag -Assets $Assets -GitHubCli $fake *> (Join-Path $Work ($mode + '.log'))
+      -Tag $Tag -Assets $Assets -NotesFile $notes -GitHubCli $fake *> (Join-Path $Work ($mode + '.log'))
     $code = $LASTEXITCODE
     $state = Get-Content -LiteralPath $env:ALLPOWERS_RELEASE_TEST_STATE -Raw | ConvertFrom-Json
     $pass = $mode -in @('stale-list-after-create','success','resume-draft','published-match')
@@ -154,7 +169,8 @@ throw 'Unexpected fake API invocation'
     }
     $mutations = @($state.calls | Where-Object { $_ -match '--method (POST|DELETE|PATCH)' })
     if ($mode -eq 'published-match' -or $mode -eq 'published-mismatch' -or
-        $mode -in @('lookup-forbidden','foreign-draft','old-draft','duplicate-tag')) {
+        $mode -in @('lookup-forbidden','foreign-draft','old-draft','duplicate-tag',
+          'missing-notes','empty-notes','wrong-version-notes','no-changes-notes')) {
       if ($mutations.Count) { throw "Existing/unknown release was changed: $mode" }
     }
     if ($mode -in @('stale-list-after-create','success','resume-draft')) {
@@ -168,7 +184,7 @@ throw 'Unexpected fake API invocation'
       if ($mutations.Count -ne 1) { throw 'An invalid creation response must stop before upload' }
     } elseif ($state.published) { throw "Incomplete/mismatched release was published: $mode" }
   }
-  Write-Output 'Stale-list creation, ID-based upload/publication, draft resume and release guards passed (mock API only)'
+  Write-Output 'Version-specific notes, missing/mismatched note guards, draft resume and publication guards passed (mock API only)'
 } finally {
   $env:ALLPOWERS_RELEASE_TEST_STATE = $previousState
   Pop-Location

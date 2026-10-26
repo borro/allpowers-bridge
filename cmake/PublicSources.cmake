@@ -5,7 +5,7 @@ function(ap_check_public_path name)
       name MATCHES "[;\n\r\\\\]" OR IS_ABSOLUTE "${name}")
     message(FATAL_ERROR "Non-public source path: ${name}")
   endif()
-  if(name MATCHES "^(LICENSE|AGENTS\\.md|CONTRIBUTING\\.md|THIRD_PARTY_NOTICES\\.md|README(\\.ru)?\\.md|CMakeLists\\.txt|CMakePresets\\.json|\\.gitignore|\\.gitattributes|\\.editorconfig|\\.clang-format)$" OR
+  if(name MATCHES "^(LICENSE|AGENTS\\.md|CONTRIBUTING\\.md|THIRD_PARTY_NOTICES\\.md|README(\\.(ru|zh-CN|zh-TW))?\\.md|CMakeLists\\.txt|CMakePresets\\.json|\\.gitignore|\\.gitattributes|\\.editorconfig|\\.clang-format)$" OR
       name MATCHES "^\\.github/(workflows/[a-z-]+\\.yml|dependabot\\.yml)$" OR
       name MATCHES "^config/(arduino|devices)\\.example\\.json$" OR
       name MATCHES "^(core|firmware|apps|drivers|tests|docs|cmake)/[A-Za-z0-9_./-]+\\.(cpp|h|ino|cmake|md|ps1|py|in)$" OR
@@ -28,6 +28,8 @@ set(AP_PUBLIC_SPECIAL_FILES
   tools/manage_board.py
   firmware/R2500Adapter/partitions.csv
   apps/windows/translations/allpowers_ru.ts
+  apps/windows/translations/allpowers_zh_CN.ts
+  apps/windows/translations/allpowers_zh_TW.ts
   apps/windows/widget.manifest
   apps/windows/assets/allpowers.ico
   apps/windows/assets/logo.png
@@ -37,6 +39,12 @@ set(AP_PUBLIC_SPECIAL_FILES
   docs/images/windows-history-ru.png
   docs/images/windows-widget-en.png
   docs/images/windows-widget-ru.png
+  docs/images/windows-monitor-zh-CN.png
+  docs/images/windows-monitor-zh-TW.png
+  docs/images/windows-history-zh-CN.png
+  docs/images/windows-history-zh-TW.png
+  docs/images/windows-widget-zh-CN.png
+  docs/images/windows-widget-zh-TW.png
   docs/images/waveshare-display.png
   docs/images/pocket-display.png
   tests/fixtures/notifications.json

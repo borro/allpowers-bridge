@@ -114,11 +114,13 @@ if(WIN32)
 endif()
 target_link_libraries(AllpowersMonitor PRIVATE monitor_lib)
 file(GLOB allpowers_i18n_headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
+set(allpowers_translation_sources translations/allpowers_ru.ts
+  translations/allpowers_zh_CN.ts translations/allpowers_zh_TW.ts)
 qt_add_lupdate(SOURCE_TARGETS monitor_lib widget_lib monitor_backend AllpowersMonitor AllpowersWidget
   SOURCES ${allpowers_i18n_headers}
-  TS_FILES translations/allpowers_ru.ts LUPDATE_TARGET update-translations
+  TS_FILES ${allpowers_translation_sources} LUPDATE_TARGET update-translations
   OPTIONS -no-obsolete)
-qt_add_lrelease(TS_FILES translations/allpowers_ru.ts
+qt_add_lrelease(TS_FILES ${allpowers_translation_sources}
   OPTIONS -fail-on-unfinished
   QM_FILES_OUTPUT_VARIABLE allpowers_qm_files)
 # Attach resources to the EXEs explicitly: static-library dead stripping must
@@ -162,7 +164,7 @@ if(BUILD_TESTING)
   qt_add_executable(language_tests ../../tests/desktop/i18n_test.cpp)
   target_link_libraries(language_tests PRIVATE widget_lib Qt6::Test)
   target_compile_definitions(language_tests PRIVATE
-    TRANSLATION_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/translations/allpowers_ru.ts")
+    TRANSLATION_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/translations")
   if(MSVC)
     target_compile_options(language_tests PRIVATE /utf-8 /UNDEBUG)
   endif()

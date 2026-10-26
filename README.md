@@ -1,7 +1,7 @@
 # ALLPOWERS
 
 ALLPOWERS BLE telemetry: one portable C++23 core, two USB UPS boards and a
-native Windows monitor. [Русская версия](README.ru.md).
+native Windows monitor. [Русская версия](README.ru.md) · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md).
 
 ## The problem this solves
 
@@ -103,12 +103,15 @@ not validate the driver. Catalog recognition alone does not establish compatibil
   </tr>
 </table>
 
-Both Windows applications support Russian and English. Select **Windows language**,
-**Русский**, or **English** next to **About** in the monitor, or in the widget's
-**Settings**. Each application saves its own choice and applies it after you close
-and reopen it. By default Russian Windows uses Russian; other Windows languages
-use English. Translations are embedded in each EXE. For an isolated preview, use
-`--demo --language ru` or `--demo --language en`; the command-line choice is not saved.
+Both Windows applications support Russian, English, Simplified Chinese and Traditional
+Chinese. Select **Windows language**, **Русский**, **English**, **简体中文**, or
+**繁體中文** beside **About** in the monitor or in the widget's **Settings**.
+Each application saves its own choice and applies it after you close and reopen it.
+By default Russian Windows uses Russian; Chinese Windows uses the appropriate
+Simplified (China/Singapore) or Traditional (Taiwan/Hong Kong/Macao) variant;
+other languages use English. Translations are embedded in each EXE.
+For an isolated preview use `--demo --language zh-CN` or `--demo --language zh-TW`;
+`ru` and `en` remain available. The command-line choice is not saved.
 
 The Windows package includes **AllpowersMonitor.exe** and **AllpowersWidget.exe**.
 Each application runs from its own EXE: Qt, SQLite, platform plugins, the protocol core
@@ -267,5 +270,5 @@ Original project code is MIT; the adapted Windows driver is MS-PL.
 licenses. Factory images, raw captures and user data are kept outside Git.
 
 Translation maintenance: `cmake --build build/windows/windows-monitor --target update-translations`
-updates the Russian Qt Linguist catalog explicitly. Normal builds compile and embed it
+updates the Russian and both Chinese Qt Linguist catalogs explicitly. Normal builds compile and embed it
 without editing sources; `translation-coverage` checks missing translations.

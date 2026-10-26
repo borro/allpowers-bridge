@@ -8,7 +8,6 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
-#include <QFontDatabase>
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QStandardPaths>
@@ -24,16 +23,16 @@ int main(int argc, char **argv) {
   QCommandLineParser parser;
   parser.addHelpOption();
   parser.addVersionOption();
-  parser.addOptions({{"language", "Interface language for this run: system, ru, en", "language"},
-                     {"demo", "Synthetic telemetry; no hardware or user settings"},
-                     {"self-test", "Offline standalone test"},
-                     {"report", "Write diagnostic JSON", "path"},
-                     {"screenshot", "Save card screenshot", "path"},
-                     {"test-seconds", "Exit after N seconds", "seconds"},
-                     {"export-licenses", "Extract embedded notices", "directory"}});
+  parser.addOptions(
+      {{"language", "Interface language for this run: system, ru, en, zh-CN, zh-TW", "language"},
+       {"demo", "Synthetic telemetry; no hardware or user settings"},
+       {"self-test", "Offline standalone test"},
+       {"report", "Write diagnostic JSON", "path"},
+       {"screenshot", "Save card screenshot", "path"},
+       {"test-seconds", "Exit after N seconds", "seconds"},
+       {"export-licenses", "Extract embedded notices", "directory"}});
   parser.process(app);
-  if (parser.isSet("language") &&
-      !QStringList{"system", "ru", "en"}.contains(parser.value("language")))
+  if (parser.isSet("language") && !supportedUiLanguages().contains(parser.value("language")))
     return 2;
   if (parser.isSet("export-licenses"))
     return exportEmbeddedLicenses(parser.value("export-licenses")) ? 0 : 4;
@@ -49,6 +48,7 @@ int main(int argc, char **argv) {
                                                : savedUiLanguage(directory));
   if (!language.valid())
     return 3;
+  initializeUiFonts();
   ConnectionLease instance("ALLPOWERS.Widget.Instance.v1");
   if (!offline && !instance.acquire()) {
     QMessageBox::information(
@@ -58,11 +58,7 @@ int main(int argc, char **argv) {
                                     "widget's menu near the clock, then open this file again."));
     return 0;
   }
-  if (QGuiApplication::platformName() == "offscreen") {
-    QDir fonts(qEnvironmentVariable("SystemRoot") + "/Fonts");
-    QFontDatabase::addApplicationFont(fonts.filePath("segoeui.ttf"));
-    QFontDatabase::addApplicationFont(fonts.filePath("segoeuib.ttf"));
-  }
+
   WidgetController widget(directory, offline, QGuiApplication::platformName() != "offscreen");
   widget.start();
   if (offline)

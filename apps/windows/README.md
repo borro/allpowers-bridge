@@ -54,11 +54,13 @@ that. Product version comes from Git tags; --version prints the embedded version
 seconds of fresh telemetry, then disconnects. This is a manual hardware test;
 normal CTest/build/package targets never invoke it or switch BLE connections.
 
-Russian and English are embedded in both EXEs. The monitor's selector beside About
-and the widget's Settings offer Windows language / Русский / English. The choice
-is independent per application (`ui_language`: `system`, `ru`, `en` in its existing
+Russian, English, Simplified Chinese and Traditional Chinese are embedded in both EXEs. The monitor's selector beside About
+and the widget's Settings offer Windows language / Русский / English / 简体中文 / 繁體中文. The choice
+is independent per application (`ui_language`: `system`, `ru`, `en`, `zh-CN`, `zh-TW` in its existing
 settings.json), takes effect after restarting, and defaults to Russian on Russian
-Windows or English otherwise. `--language system|ru|en` overrides only this run;
+Windows, Simplified Chinese on Chinese/Singapore Windows, Traditional Chinese on
+Taiwan/Hong Kong/Macao Windows, or English otherwise.
+`--language system|ru|en|zh-CN|zh-TW` overrides only this run;
 combine it with --demo or --self-test for offline checks. Changing only the widget
 language does not require a selected device, reconnect, or change startup settings.
 
@@ -72,6 +74,12 @@ language. CSV column names and machine identifiers remain language-independent.
 
 The static Qt SDK must include matching LinguistTools. `update-translations` is
 the explicit catalog extraction target; ordinary builds only compile the checked-in
-catalog with lrelease and embed it. `translation-coverage` extracts into a disposable
+catalogs with lrelease and embed it. `translation-coverage` extracts into a disposable
 catalog and rejects untranslated additions. Source packages include pinned Qt Tools
 sources for rebuilding the translation tools.
+
+Chinese text uses the installed Microsoft YaHei / Microsoft JhengHei font families.
+The offscreen renderer registers these Windows fonts too, so offline screenshots
+and glyph tests exercise the same Chinese scripts. No font files are bundled.
+Glyph cases report a skip on server images without those optional fonts; catalog,
+locale, preference, IPC and standalone-EXE checks still run for both variants.

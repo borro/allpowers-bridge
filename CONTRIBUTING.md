@@ -1,6 +1,6 @@
 # Contributing
 
-- Read both README versions; keep their commands and supported targets aligned.
+- Read all four README versions; keep their commands and supported targets aligned.
 - Use CMake Presets, Ninja, CTest and CPack. Pinned dependency versions/hashes
   live in cmake/Dependencies.cmake. Product versions come from Git tags, never
   a hand-edited package/CMake version. Releases use annotated vX.Y.Z tags.

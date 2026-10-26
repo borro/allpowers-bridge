@@ -51,7 +51,7 @@ string(JSON lgpl GET "${report}" lgpl_notice)
 if(NOT status STREQUAL "PASS" OR notices LESS 1 OR NOT lgpl)
   message(FATAL_ERROR "Standalone EXE smoke test failed")
 endif()
-foreach(language ru en)
+foreach(language ru en zh-CN zh-TW)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E env
     --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
     "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"

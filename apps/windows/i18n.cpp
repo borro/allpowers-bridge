@@ -5,13 +5,21 @@
 #include <QJsonDocument>
 #include <QVariant>
 
+QStringList supportedUiLanguages() {
+  return {"system", "ru", "en", "zh-CN", "zh-TW"};
+}
 QString normalizedUiLanguage(const QString &value) {
-  return value == "ru" || value == "en" ? value : QString("system");
+  return supportedUiLanguages().contains(value) ? value : QString("system");
 }
 QString resolvedUiLanguage(const QString &value, const QLocale &system) {
   const auto normalized = normalizedUiLanguage(value);
-  return normalized == "system" ? (system.language() == QLocale::Russian ? "ru" : "en")
-                                : normalized;
+  if (normalized != "system")
+    return normalized;
+  if (system.language() == QLocale::Russian)
+    return "ru";
+  if (system.language() == QLocale::Chinese)
+    return system.script() == QLocale::TraditionalHanScript ? "zh-TW" : "zh-CN";
+  return "en";
 }
 QString savedUiLanguage(const QString &directory) {
   QFile file(QDir(directory).filePath("settings.json"));
@@ -30,7 +38,9 @@ UiLanguage::UiLanguage(const QString &selection) {
     QCoreApplication::removeTranslator(&previous->translator);
   activeLanguage = this;
   const auto language = resolvedUiLanguage(selection);
-  if (language == "ru" && translator.load(":/i18n/allpowers_ru.qm"))
+  auto catalog = language;
+  catalog.replace('-', '_');
+  if (language != "en" && translator.load(":/i18n/allpowers_" + catalog + ".qm"))
     QCoreApplication::installTranslator(&translator);
   QCoreApplication::instance()->setProperty("ui_language", language);
 }
@@ -42,7 +52,7 @@ UiLanguage::~UiLanguage() {
   QCoreApplication::instance()->setProperty("ui_language", previousLanguage);
 }
 bool UiLanguage::valid() const {
-  return QCoreApplication::instance()->property("ui_language").toString() != "ru" ||
+  return QCoreApplication::instance()->property("ui_language").toString() == "en" ||
          !translator.isEmpty();
 }
 QString formatDuration(quint32 seconds, bool compactMinutes) {

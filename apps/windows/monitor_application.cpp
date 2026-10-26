@@ -11,7 +11,6 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QFile>
-#include <QFontDatabase>
 #include <QIcon>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -25,17 +24,12 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
   app.setApplicationVersion(APP_VERSION);
   app.setStyle("Fusion");
   app.setWindowIcon(QIcon(":/assets/allpowers.ico"));
-  // The offscreen Qt platform does not discover Windows fonts automatically.
-  if (QGuiApplication::platformName() == "offscreen") {
-    auto fonts = QDir(qEnvironmentVariable("SystemRoot") + "/Fonts");
-    for (const QString &name : {QString("segoeui.ttf"), QString("segoeuib.ttf")})
-      QFontDatabase::addApplicationFont(fonts.filePath(name));
-  }
+
   QCommandLineParser parser;
   parser.addHelpOption();
   parser.addVersionOption();
   parser.addOptions(
-      {{"language", "Interface language for this run: system, ru, en", "language"},
+      {{"language", "Interface language for this run: system, ru, en, zh-CN, zh-TW", "language"},
        {"self-test", "Run an offline core/UI smoke test"},
        {"demo", "Show synthetic data without Bluetooth"},
        {"report", "Write diagnostic JSON", "path"},
@@ -51,8 +45,7 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
        {"battery-probe", "Read native battery IOCTLs/power events without BLE or mutations",
         "seconds"}});
   parser.process(arguments);
-  if (parser.isSet("language") &&
-      !QStringList{"system", "ru", "en"}.contains(parser.value("language")))
+  if (parser.isSet("language") && !supportedUiLanguages().contains(parser.value("language")))
     return 2;
   if (parser.isSet("scan-usb")) {
     if (!parser.isSet("report"))
@@ -217,10 +210,12 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
                                                : savedUiLanguage(monitorDataDirectory()));
   if (!language.valid())
     return 3;
+  initializeUiFonts();
   if (!ap_self_test())
     return 2;
-  MonitorWindow window(selfTest || demo,nullptr,runtime.makeTransport
-      ? runtime.makeTransport(nullptr,selfTest || demo) : nullptr);
+  MonitorWindow window(selfTest || demo, nullptr,
+                       runtime.makeTransport ? runtime.makeTransport(nullptr, selfTest || demo)
+                                             : nullptr);
   window.show();
   if (demo || selfTest)
     window.loadDemo();

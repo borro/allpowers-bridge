@@ -172,11 +172,11 @@ void WidgetCard::drawCard(QPainter &p) const {
   text({12, 82, 138, 24},
        QCoreApplication::translate("Allpowers", "Input  ") +
            reading(s, 2, s.input_w, QCoreApplication::translate("Allpowers", " W")),
-       10, QColor("#59d9aa"));
+       10, QColor("#65baff"));
   text({154, 82, 140, 24},
        QCoreApplication::translate("Allpowers", "Output  ") +
            reading(s, 4, s.output_w, QCoreApplication::translate("Allpowers", " W")),
-       10, QColor("#6ab4ff"));
+       10, QColor("#eff5ff"));
   const QRectF plot(14, 126, 272, 54);
   const double maximum = graphMaximum_;
   text({14, 108, 180, 16},
@@ -188,7 +188,7 @@ void WidgetCard::drawCard(QPainter &p) const {
   p.save();
   p.setClipRect(plot.adjusted(-3, -1, 3, 3));
   for (quint32 mask : {2u, 4u}) {
-    p.setPen(QPen(QColor(mask == 2 ? "#59d9aa" : "#6ab4ff"), 1.6));
+    p.setPen(QPen(QColor(mask == 2 ? "#65baff" : "#eff5ff"), 1.6));
     auto point = [&](const HistoryPoint &v) {
       double watts = mask == 2 ? v.data.input_w : v.data.output_w;
       return QPointF(plot.left() + graphPosition(graphNow_ - double(v.wall)) * plot.width(),

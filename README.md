@@ -217,8 +217,9 @@ the ordinary build/install outputs stay uncompressed for fast development.
 UPX 5.2.1 is downloaded with a pinned SHA256 only during release packaging.
 Packed EXEs pass integrity, version and isolated offline checks before archiving.
 Some antivirus products may flag packed executables; `upx -d` unpacks them.
-The source ZIP includes complete Qt archives and relinking
-instructions; keep it with binary distributions.
+`AllpowersMonitor-<version>-sources-with-qt.zip` contains complete application and
+Qt sources for rebuilding, including relinking instructions; keep it with binary
+distributions. GitHub's automatic Source code downloads contain only the repository.
 Each firmware package also contains its LGPL corresponding sources, license
 notices and a tested object kit for relinking. See [firmware licenses](docs/firmware-licenses.md).
 Windows publishers need a valid Visual Studio license; qualifying personal and

@@ -158,7 +158,7 @@ Linux 使用 `build/native`。環境固定為 Arduino CLI 1.5.1 與 ESP32 Core 3
 執行套件中的 EXE 副本使用 UPX `-9` 壓縮，一般建置及安裝輸出保持未壓縮，以便快速開發。
 僅在發布封裝時下載 UPX 5.2.1，並驗證固定的 SHA256；歸檔前檢查壓縮檔案的完整性、版本與離線獨立執行。
 部分防毒軟體可能誤報壓縮檔案；可用 `upx -d` 解壓縮 EXE。
-原始碼 ZIP 包含完整 Qt 原始碼封存檔與重新連結說明，應隨二進位發行套件一併提供。
+`AllpowersMonitor-<版本>-sources-with-qt.zip` 包含用於重新建置的完整應用程式與 Qt 原始碼以及重新連結說明，應隨二進位發行套件一併提供。GitHub 自動產生的 Source code 下載僅包含儲存庫內容。
 每個韌體套件也包含 LGPL 對應原始碼、授權聲明及經過測試的重新連結目的檔套件，見[韌體授權條款](docs/firmware-licenses.md)。
 Windows 發布者需要有效的 Visual Studio 授權；符合條件的個人與開源開發可使用 Community，見[執行階段條款](docs/windows-runtime-terms.md)。
 

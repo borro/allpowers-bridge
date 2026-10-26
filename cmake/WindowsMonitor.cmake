@@ -107,7 +107,7 @@ endif()
 add_custom_target(source-package-check
   COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/source-kit-check"
     "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
-    "-DARCHIVE=${ALLPOWERS_RELEASE_DIR}/AllpowersMonitor-${ALLPOWERS_VERSION}-sources.zip"
+    "-DARCHIVE=${ALLPOWERS_RELEASE_DIR}/AllpowersMonitor-${ALLPOWERS_VERSION}-sources-with-qt.zip"
     "-DQT_ROOT=${ALLPOWERS_QT_ROOT}"
     "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}"
     "-DVERSION=${ALLPOWERS_VERSION}" -P "${PROJECT_SOURCE_DIR}/cmake/CheckSourcePackage.cmake"

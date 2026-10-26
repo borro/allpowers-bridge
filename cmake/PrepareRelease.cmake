@@ -28,7 +28,7 @@ function(checked_copy archive directory)
   file(COPY_FILE "${INPUT}/${archive}" "${directory}/${destination}")
 endfunction()
 set(runtime "AllpowersMonitor-${version}-win-x64.zip")
-set(sources "AllpowersMonitor-${version}-sources.zip")
+set(sources "AllpowersMonitor-${version}-sources-with-qt.zip")
 # The runtime ZIP is a checked CI transport, not an additional public download.
 checked_copy("${runtime}" "${OUTPUT}/.stage")
 checked_copy("${sources}" "${OUTPUT}")

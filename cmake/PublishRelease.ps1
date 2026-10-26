@@ -13,7 +13,7 @@ if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
 $Assets = (Resolve-Path -LiteralPath $Assets).Path
 $files = @(Get-ChildItem -LiteralPath $Assets -File | Sort-Object Name)
 $assetVersion = $Tag.Substring(1).Replace('+', '_')
-$payloads = @("AllpowersMonitor-$assetVersion-sources.zip",
+$payloads = @("AllpowersMonitor-$assetVersion-sources-with-qt.zip",
   "AllpowersMonitor-$assetVersion-win-x64.exe", "AllpowersWidget-$assetVersion-win-x64.exe",
   "AllpowersFirmware-$assetVersion-waveshare-147.zip", "AllpowersFirmware-$assetVersion-pocket-096.zip")
 $names = @()
@@ -111,8 +111,10 @@ $marker
 - Windows Monitor and desktop Widget: two standalone EXEs.
 - Separate Waveshare 1.47 and Pocket 0.96 firmware packages, with matching board manifests.
 - Each firmware package includes license notices, corresponding sources and a tested relinking kit.
-- Complete application and Qt corresponding sources.
+- Complete sources for rebuilding (application + Qt): AllpowersMonitor-$assetVersion-sources-with-qt.zip.
 - One SHA256SUMS file covering all five downloads.
+
+GitHub's automatic Source code archives contain only the repository.
 
 The applications work without the optional Windows UPS driver. That integration remains
 experimental, unsigned and unverified in a VM. Firmware updates require the matching

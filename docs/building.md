@@ -121,9 +121,10 @@ reads; Windows and Linux build/SDK directories are separate.
 ## Packaging and versions
 
 The local `release` target builds/stages Windows, runs its enabled tests and invokes
-CPack. It creates a runtime ZIP and complete application/Qt source ZIP with SHA256
-files. See relinking.md for library replacement/rebuild instructions. CPack never
-includes user settings/history or local device configuration.
+CPack. It creates a runtime ZIP and `AllpowersMonitor-<version>-sources-with-qt.zip`
+with complete application/Qt sources and SHA256 files. See relinking.md for library
+replacement/rebuild instructions. CPack never includes user settings/history or
+local device configuration.
 
 Application and managed Qt Release builds optimize size without IPO/LTO, keeping
 ordinary relinks fast. CPack compresses only its staged copies of the two Windows
@@ -248,7 +249,8 @@ both EXEs' complete prerelease strings/numeric versions, source VERSION, both
 board manifests, maintenance/partition contracts and all artifact hashes are checked.
 
 Public assets include two standalone EXEs, separate board firmware ZIPs and the
-complete application/Qt source ZIP. One `SHA256SUMS` file covers these five payloads.
+complete application/Qt source ZIP (`AllpowersMonitor-<version>-sources-with-qt.zip`).
+One `SHA256SUMS` file covers these five payloads.
 The runtime ZIP and checksum sidecars remain internal build/CI artifacts; they
 are not uploaded alongside the EXEs and consolidated checksums.
 GitHub also provides its own source-code ZIP/tarball from the tag. Those do not

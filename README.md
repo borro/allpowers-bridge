@@ -239,8 +239,8 @@ CTest presets run the full suite with four parallel jobs; use `--parallel 1`
 for a sequential run. Tagged builds use the same packaging checks as other builds.
 Pushing a version tag such as `v1.2.3` or `v1.2.3-alpha.1` additionally publishes
 a [GitHub Release](https://github.com/borro/allpowers-bridge/releases) after both
-platforms pass. It includes standalone Monitor/Widget EXEs, the Windows ZIP, both
-board firmware ZIPs, complete application/Qt sources and SHA256 checksums.
+platforms pass. It includes standalone Monitor/Widget EXEs, both board firmware
+ZIPs, complete application/Qt sources and one `SHA256SUMS` file for all downloads.
 The application and Windows EXE properties use the tag version without `v`.
 Prerelease tags produce GitHub prereleases. Ordinary branch/PR builds produce
 artifacts. Builds never install or flash anything; no personal tokens are required.

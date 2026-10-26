@@ -140,11 +140,27 @@ throw 'Unexpected fake API invocation'
   foreach ($mode in @('stale-list-after-create','success','resume-draft','upload-failure','partial-upload','bad-digest',
       'created-wrong-tag','created-wrong-commit','created-no-id','created-not-draft','changed-id',
       'moved-tag','lookup-forbidden','foreign-draft','old-draft','duplicate-tag','published-match','published-mismatch',
-      'missing-notes','empty-notes','wrong-version-notes','no-changes-notes')) {
+      'missing-notes','empty-notes','wrong-version-notes','no-changes-notes',
+      'duplicate-checksum','missing-checksum','checksum-mismatch','redundant-runtime','redundant-sidecar')) {
     $env:ALLPOWERS_RELEASE_TEST_STATE = Join-Path $Work ($mode + '.json')
     $published = $mode.StartsWith('published-')
+    $modeAssets = $Assets
+    if ($mode -in @('duplicate-checksum','missing-checksum','checksum-mismatch','redundant-runtime','redundant-sidecar')) {
+      $modeAssets = Join-Path $Work ($mode + '-assets')
+      New-Item -ItemType Directory -Force -Path $modeAssets | Out-Null
+      Get-ChildItem -LiteralPath $Assets -File | Copy-Item -Destination $modeAssets
+      $sums = Join-Path $modeAssets 'SHA256SUMS'
+      $records = @(Get-Content -LiteralPath $sums)
+      switch ($mode) {
+        'duplicate-checksum' { Add-Content -LiteralPath $sums -Value $records[0] }
+        'missing-checksum' { $records | Select-Object -Skip 1 | Set-Content -LiteralPath $sums }
+        'checksum-mismatch' { $records[0] = ('0' * 64) + $records[0].Substring(64); $records | Set-Content -LiteralPath $sums }
+        'redundant-runtime' { 'Duplicate EXEs' | Set-Content -LiteralPath (Join-Path $modeAssets 'AllpowersMonitor-redundant-win-x64.zip') }
+        'redundant-sidecar' { $records[0] | Set-Content -LiteralPath (Join-Path $modeAssets 'duplicate.sha256') }
+      }
+    }
     @{
-      mode=$mode; commit=$commit; assets=$Assets; calls=@(); published=$false; tag=$Tag;
+      mode=$mode; commit=$commit; assets=$modeAssets; calls=@(); published=$false; tag=$Tag;
       exists=($published -or $mode -in @('resume-draft','foreign-draft','old-draft','duplicate-tag'));
       uploaded=$published; draft=(-not $published); replaced=$false
       uploadedNames=@(if ($published) { (Get-ChildItem -LiteralPath $Assets -File).Name }
@@ -160,7 +176,7 @@ throw 'Unexpected fake API invocation'
     }
     if ($mode -ne 'missing-notes') { $content | Set-Content -LiteralPath $notes -Encoding utf8 }
     & pwsh -NoProfile -File (Join-Path $Root 'cmake/PublishRelease.ps1') -Repository 'example/project' `
-      -Tag $Tag -Assets $Assets -NotesFile $notes -GitHubCli $fake *> (Join-Path $Work ($mode + '.log'))
+      -Tag $Tag -Assets $modeAssets -NotesFile $notes -GitHubCli $fake *> (Join-Path $Work ($mode + '.log'))
     $code = $LASTEXITCODE
     $state = Get-Content -LiteralPath $env:ALLPOWERS_RELEASE_TEST_STATE -Raw | ConvertFrom-Json
     $pass = $mode -in @('stale-list-after-create','success','resume-draft','published-match')
@@ -170,11 +186,12 @@ throw 'Unexpected fake API invocation'
     $mutations = @($state.calls | Where-Object { $_ -match '--method (POST|DELETE|PATCH)' })
     if ($mode -eq 'published-match' -or $mode -eq 'published-mismatch' -or
         $mode -in @('lookup-forbidden','foreign-draft','old-draft','duplicate-tag',
-          'missing-notes','empty-notes','wrong-version-notes','no-changes-notes')) {
+          'missing-notes','empty-notes','wrong-version-notes','no-changes-notes',
+          'duplicate-checksum','missing-checksum','checksum-mismatch','redundant-runtime','redundant-sidecar')) {
       if ($mutations.Count) { throw "Existing/unknown release was changed: $mode" }
     }
     if ($mode -in @('stale-list-after-create','success','resume-draft')) {
-      if (-not $state.published -or @($state.uploadedNames).Count -ne 13) {
+      if (-not $state.published -or @($state.uploadedNames).Count -ne 6) {
         throw 'Verified release was not completely published'
       }
       $lists = @($state.calls | Where-Object { $_ -like 'api */releases?per_page=100 *' })

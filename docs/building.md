@@ -247,9 +247,15 @@ firmware manifests, filenames and corresponding-source VERSION. Before upload,
 both EXEs' complete prerelease strings/numeric versions, source VERSION, both
 board manifests, maintenance/partition contracts and all artifact hashes are checked.
 
-Assets include the combined Windows ZIP, two standalone EXEs, separate board
-firmware ZIPs and the complete application/Qt source ZIP. Each has a `.sha256`
-file; `SHA256SUMS` covers all six payloads. The release starts as a draft and
+Public assets include two standalone EXEs, separate board firmware ZIPs and the
+complete application/Qt source ZIP. One `SHA256SUMS` file covers these five payloads.
+The runtime ZIP and checksum sidecars remain internal build/CI artifacts; they
+are not uploaded alongside the EXEs and consolidated checksums.
+GitHub also provides its own source-code ZIP/tarball from the tag. Those do not
+include the bundled Qt sources and source-kit metadata in the full source ZIP.
+Firmware packages retain their own sources, relinking kits and license notices
+so each board download is self-contained.
+The release starts as a draft and
 becomes public only after every uploaded asset's size and server SHA256 match.
 Prerelease tags set GitHub's prerelease flag; stable tags become Latest.
 SemVer build metadata remains in the embedded version; `+` is encoded as `_`

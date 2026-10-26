@@ -173,7 +173,7 @@ CTest 预设使用四个并行任务运行完整测试；串行运行可用 `--p
 
 推送 `v1.2.3` 或 `v1.2.3-alpha.1` 之类的版本标签后，两个平台通过检查才会发布
 [GitHub Release](https://github.com/borro/allpowers-bridge/releases)。
-其中包含独立的 Monitor/Widget EXE、Windows ZIP、两款板卡的固件 ZIP、完整应用/Qt 源代码和 SHA256 校验和。
+其中包含独立的 Monitor/Widget EXE、两款板卡的固件 ZIP、完整应用/Qt 源代码，以及涵盖全部下载文件的一个 `SHA256SUMS` 文件。
 应用和 Windows EXE 属性使用去掉 `v` 的标签版本。预发行标签生成 GitHub 预发行版本；普通分支/PR 构建生成产物。
 构建不会安装或刷写设备，也不需要个人访问令牌。见[发布保护和重试](docs/building.md#tagged-releases)。
 

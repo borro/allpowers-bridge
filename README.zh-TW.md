@@ -173,7 +173,7 @@ CTest 預設使用四個平行工作執行完整測試；循序執行可用 `--p
 
 推送 `v1.2.3` 或 `v1.2.3-alpha.1` 之類的版本標籤後，兩個平台通過檢查才會發布
 [GitHub Release](https://github.com/borro/allpowers-bridge/releases)。
-其中包含獨立的 Monitor/Widget EXE、Windows ZIP、兩款板卡的韌體 ZIP、完整應用程式/Qt 原始碼與 SHA256 檢查碼。
+其中包含獨立的 Monitor/Widget EXE、兩款板卡的韌體 ZIP、完整應用程式/Qt 原始碼，以及涵蓋全部下載檔案的一個 `SHA256SUMS` 檔案。
 應用程式與 Windows EXE 屬性使用移除 `v` 的標籤版本。預先發行標籤產生 GitHub 預先發行版本；一般分支/PR 建置產生產物。
 建置不會安裝或燒錄裝置，也不需要個人存取權杖。見[發布保護與重試](docs/building.md#tagged-releases)。
 

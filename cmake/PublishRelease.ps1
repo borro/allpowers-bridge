@@ -13,7 +13,7 @@ if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
 $Assets = (Resolve-Path -LiteralPath $Assets).Path
 $files = @(Get-ChildItem -LiteralPath $Assets -File | Sort-Object Name)
 $assetVersion = $Tag.Substring(1).Replace('+', '_')
-$payloads = @("AllpowersMonitor-$assetVersion-win-x64.zip", "AllpowersMonitor-$assetVersion-sources.zip",
+$payloads = @("AllpowersMonitor-$assetVersion-sources.zip",
   "AllpowersMonitor-$assetVersion-win-x64.exe", "AllpowersWidget-$assetVersion-win-x64.exe",
   "AllpowersFirmware-$assetVersion-waveshare-147.zip", "AllpowersFirmware-$assetVersion-pocket-096.zip")
 $names = @()
@@ -22,13 +22,17 @@ foreach ($line in Get-Content -LiteralPath (Join-Path $Assets 'SHA256SUMS')) {
   $hash = $Matches[1]; $name = $Matches[2]
   if ($name -cnotin $payloads) { throw 'Release asset version/name does not match the tag' }
   $actual = (Get-FileHash -LiteralPath (Join-Path $Assets $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ($actual -cne $hash -or (Get-Content -LiteralPath (Join-Path $Assets ($name + '.sha256')) -Raw).Trim() -cne $line) {
+  if ($actual -cne $hash) {
     throw "Local release checksum mismatch: $name"
   }
-  $names += $name, ($name + '.sha256')
+  $names += $name
+}
+if ($names.Count -ne $payloads.Count -or
+    (Compare-Object -CaseSensitive ($payloads | Sort-Object) ($names | Sort-Object))) {
+  throw 'SHA256SUMS must cover each release payload exactly once'
 }
 $names += 'SHA256SUMS'
-if ($names.Count -ne 13 -or (Compare-Object -CaseSensitive ($names | Sort-Object) $files.Name)) {
+if (Compare-Object -CaseSensitive ($names | Sort-Object) $files.Name) {
   throw 'Unexpected or incomplete release assets'
 }
 function Invoke-GitHub([string[]]$Arguments) {
@@ -104,10 +108,11 @@ $changes
 Built and tested from **$Tag** on Windows and Ubuntu.
 $marker
 
-- Windows Monitor and desktop Widget: standalone EXEs and a combined ZIP.
+- Windows Monitor and desktop Widget: two standalone EXEs.
 - Separate Waveshare 1.47 and Pocket 0.96 firmware packages, with matching board manifests.
 - Each firmware package includes license notices, corresponding sources and a tested relinking kit.
-- Complete application and Qt corresponding sources, with SHA256 checksums.
+- Complete application and Qt corresponding sources.
+- One SHA256SUMS file covering all five downloads.
 
 The applications work without the optional Windows UPS driver. That integration remains
 experimental, unsigned and unverified in a VM. Firmware updates require the matching

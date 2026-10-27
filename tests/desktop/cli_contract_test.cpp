@@ -3,9 +3,11 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QDialog>
+#include <QDirIterator>
 #include <QListWidget>
 #include <QTextBrowser>
 #include <QDialogButtonBox>
@@ -119,8 +121,14 @@ private slots:
     QCOMPARE(Fake::scans, 0); QCOMPARE(Fake::starts, 0);
   }
   void licensesAndDialog() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(QDir::tempPath() + QStringLiteral("/allpowers-licenses-中文-XXXXXX"));
+    QVERIFY(dir.isValid());
     const auto names = embeddedLicenseFiles(); QVERIFY(names.size() > 10);
+    // Export must replace an existing text, not silently skip it or append.
+    const auto first = dir.filePath(names.first());
+    QVERIFY(QDir().mkpath(QFileInfo(first).absolutePath()));
+    QFile previous(first); QVERIFY(previous.open(QIODevice::WriteOnly));
+    QCOMPARE(previous.write("previous export"), qint64(15)); previous.close();
     QVERIFY(exportEmbeddedLicenses(dir.path()));
     for (const auto &name : names) {
       QFile original(":/licenses/" + name), exported(dir.filePath(name));
@@ -146,6 +154,23 @@ private slots:
       inspected = true;
     });
     showNotices(nullptr); QVERIFY(inspected);
+  }
+  void licenseExportFailedRenamePreservesDestination() {
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    const auto names = embeddedLicenseFiles(); QVERIFY(!names.isEmpty());
+    // A directory cannot be replaced by a license file. Preserve its contents
+    // and remove the staged file when the final rename fails.
+    const auto destination = dir.filePath(names.first());
+    QVERIFY(QDir().mkpath(destination));
+    const auto marker = QDir(destination).filePath("keep.txt");
+    QFile file(marker); QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write("keep"), qint64(4)); file.close();
+    QVERIFY(!exportEmbeddedLicenses(dir.path()));
+    QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(), QByteArray("keep"));
+    QStringList remaining;
+    QDirIterator it(dir.path(), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) remaining.append(it.next());
+    QCOMPARE(remaining, QStringList{marker});
   }
 };
 

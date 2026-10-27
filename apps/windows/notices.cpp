@@ -11,9 +11,10 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
-#include <QSaveFile>
+#include <QTemporaryFile>
 #include <QTextBrowser>
 #include <QVBoxLayout>
+#include <filesystem>
 
 QStringList embeddedLicenseFiles() {
   QStringList files;
@@ -32,11 +33,27 @@ bool exportEmbeddedLicenses(const QString &directory) {
     auto path = QDir(directory).filePath(name);
     if (!QDir().mkpath(QFileInfo(path).absolutePath()) || !source.open(QIODevice::ReadOnly))
       return false;
-    QSaveFile output(path);
+    // License texts can be recreated from resources. QSaveFile::commit() forces
+    // a disk sync for every file (hundreds per export), which can stall a slow
+    // Windows volume. Keep atomic replacement, without a durability barrier:
+    // fully write/close a sibling temporary file, then rename over the target.
     const auto bytes = source.readAll();
-    if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() ||
-        !output.commit())
+    QString temporary;
+    {
+      QTemporaryFile output(path + ".XXXXXX");
+      if (source.error() != QFileDevice::NoError || !output.open() ||
+          output.write(bytes) != bytes.size() || !output.flush())
+        return false;
+      temporary = output.fileName();
+      output.setAutoRemove(false);
+      // QTemporaryFile::close() retains its native handle until destruction.
+    }
+    std::error_code error;
+    std::filesystem::rename(QFile(temporary).filesystemFileName(), QFile(path).filesystemFileName(), error);
+    if (error) {
+      QFile::remove(temporary);
       return false;
+    }
   }
   return true;
 }

@@ -2,10 +2,40 @@
 
 [Documentation](README.md)
 
+## License export latency under Windows coverage — 2026-10-28
+
+Run [40585431988](https://github.com/borro/allpowers-bridge/actions/runs/40585431988)
+failed only in `coverage-windows`: the `licenses` CLI child exceeded 25 seconds,
+then `cli-contract` exceeded 120 seconds. Ordinary Windows tests and all static
+analyzers passed; the validated Cppcheck tool cache was saved successfully.
+
+Local unmodified exports passed on a fast disk. A local-only link probe counted
+210 `FlushFileBuffers` calls, one per `QSaveFile::commit()`. Adding 150 ms to each
+call reproduced the same child timeout under OpenCppCoverage (25.50 s, failure).
+This confirms sensitivity to synchronous storage latency; the failed hosted
+process did not provide a stack trace proving exactly where it was waiting.
+
+License export now writes and flushes a sibling temporary file to the OS, closes
+its native handle and atomically replaces the destination. Reconstructible
+license exports no longer force each file to durable storage. Existing settings
+and history persistence are unaffected. Under the same slow-sync probe, license
+CLI/export/dialog/failure checks passed in 2.30 s with zero disk-sync calls.
+Timeouts remain unchanged. Regression checks compare every exported resource,
+replace an existing file, exercise a Unicode directory, and verify that failed
+replacement preserves the destination and removes the staged file.
+
+Without the probe, the complete parallel Qt coverage suite passed 13/13 in
+64.86 s; `commands(licenses)` took 0.782 s and the export/dialog check 0.649 s.
+MSVC `/analyze` passed all six `monitor_lib` units. The real Monitor and Widget
+executables each exported 210 files matching their resource inputs byte for byte.
+The fix has not yet been exercised on a GitHub runner.
+
 ## Static analysis rollout — 2026-10-28
 
 Local validation on Windows 11 / MSVC 19.51 and WSL Ubuntu, with the existing
-static Qt SDK. These are local measurements; the new GitHub jobs have not run yet.
+static Qt SDK. These are local measurements. The subsequent hosted run above
+passed workflow lint, clang-tidy (4.4 s), Cppcheck (6.2 s) and MSVC (26/26 units),
+all without product findings; its coverage timeout is tracked separately above.
 
 | Check | Result |
 | --- | --- |

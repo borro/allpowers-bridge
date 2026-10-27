@@ -82,6 +82,11 @@ compile/link compatibility and offline execution. Key computation time appears
 in logs and the SDK job summary. The v3 transition creates a new Qt cache once;
 source and WDK archive caches keep their existing keys.
 
+Arduino cache schema v3 stores only installed Linux package data and Arduino CLI.
+Downloaded installation archives in `arduino/Linux/downloads` are excluded: a
+matching installed SDK can build both boards without them. The v3 transition
+populates a new cache once; old entries can expire normally.
+
 Consumers download this run's complete Windows SDK artifact into `build/` and
 validate it again. A runner toolchain mismatch rebuilds Qt locally without writing
 the producer's caches. Objects, CMake caches and ExternalProject stamps are never

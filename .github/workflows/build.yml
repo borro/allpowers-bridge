@@ -252,9 +252,6 @@ jobs:
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
       id: install-pinned-ninja
-    - name: Record actual runner and toolchain
-      run: cmake -P cmake/CiEnvironment.cmake
-      id: record-actual-runner-and-toolchain
     - name: Install pinned Ninja and LLVM 18 fuzz runtime
       run: |
         cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
@@ -270,6 +267,7 @@ jobs:
       run: ctest --preset fuzz-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/fuzz-linux/ci-tests.xml"
       id: fuzz-ble-and-cdc-under-asan-and-ubsan
     - name: Record analysis tool versions
+      if: always()
       run: cmake -P cmake/CiEnvironment.cmake
       id: record-analysis-tool-versions
     - name: Save fuzz corpora, crashes and diagnostics
@@ -324,9 +322,6 @@ jobs:
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
       id: install-pinned-ninja
-    - name: Record actual runner and toolchain
-      run: cmake -P cmake/CiEnvironment.cmake
-      id: record-actual-runner-and-toolchain
     - name: Install pinned Ninja and Valgrind
       run: |
         cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
@@ -348,6 +343,7 @@ jobs:
         --track-origins=yes --error-exitcode=99 --num-callers=30"
       id: check-native-tests-for-memory-errors-and-leaks
     - name: Record analysis tool versions
+      if: always()
       run: cmake -P cmake/CiEnvironment.cmake
       id: record-analysis-tool-versions
     - name: Save Memcheck reports and policy diagnostics
@@ -401,9 +397,6 @@ jobs:
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
       id: install-pinned-ninja
-    - name: Record actual runner and toolchain
-      run: cmake -P cmake/CiEnvironment.cmake
-      id: record-actual-runner-and-toolchain
     - name: Install pinned Ninja and LLVM 18
       run: |
         cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
@@ -425,6 +418,7 @@ jobs:
       run: cmake --build --preset mutation-linux --parallel 2
       id: run-mutation-analysis-and-reject-unreviewed-survivors
     - name: Record analysis tool versions
+      if: always()
       run: cmake -P cmake/CiEnvironment.cmake
       id: record-analysis-tool-versions
     - name: Save mutation reports and diagnostics
@@ -819,9 +813,9 @@ jobs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: |-
-          build/deps/arduino/
-          build/deps/arduino-cli/
-        key: Linux-X64-v2-arduino-${{ steps.keys.outputs.arduino }}
+          build/deps/arduino/Linux/data/
+          build/deps/arduino-cli/Linux/
+        key: Linux-X64-v3-arduino-${{ steps.keys.outputs.arduino }}
       continue-on-error: true
     - name: Restore firmware-legal
       id: firmware-legal
@@ -848,9 +842,9 @@ jobs:
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: |-
-          build/deps/arduino/
-          build/deps/arduino-cli/
-        key: Linux-X64-v2-arduino-${{ steps.keys.outputs.arduino }}
+          build/deps/arduino/Linux/data/
+          build/deps/arduino-cli/Linux/
+        key: Linux-X64-v3-arduino-${{ steps.keys.outputs.arduino }}
       continue-on-error: true
       id: save-complete-arduino
     - name: Save complete firmware-legal

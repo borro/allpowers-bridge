@@ -17,6 +17,7 @@ def main():
     for mode in ("weak", "strong"):
         with (output / f"{mode}.log").open("w") as log:
             subprocess.run([runner, "--allow-surviving", "--timeout", "1000",
+                            "--minimum-timeout", "1000",
                             "--ld-search-path", "/usr/lib/x86_64-linux-gnu",
                             "--reporters", "SQLite", "--report-name", "control",
                             "--report-dir", directory, executable, mode],

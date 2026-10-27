@@ -62,6 +62,46 @@ jobs:
         run: cmake --build --preset native --parallel 2
       - name: Test portable logic and build contracts
         run: ctest --preset native
+  valgrind:
+    needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+        with:
+          cmake-version: '4.4.4'
+      - name: Install pinned Ninja and Valgrind
+        run: |
+          cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+          sudo apt-get update -qq
+          sudo apt-get install -y valgrind
+      - name: Build uninstrumented Debug tests
+        run: |
+          cmake --preset valgrind-linux
+          cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
+      - name: Verify Valgrind version and error exit policy
+        run: cmake -DCONTROL="$GITHUB_WORKSPACE/build/valgrind-linux/tests/native/valgrind_control" -DWORK="$GITHUB_WORKSPACE/build/valgrind-linux/valgrind-policy" -P tests/cmake/valgrind_policy_test.cmake
+      - name: Check native tests for memory errors and leaks
+        run: >-
+          ctest --test-dir build/valgrind-linux -T memcheck -L coverage
+          --output-on-failure --timeout 180 --parallel 2
+          --overwrite MemoryCheckCommand=/usr/bin/valgrind
+          --overwrite "MemoryCheckCommandOptions=--tool=memcheck --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=99 --num-callers=30"
+      - name: Save Memcheck reports and policy diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: valgrind-linux
+          retention-days: 14
+          path: |
+            build/valgrind-linux/Testing/
+            build/valgrind-linux/valgrind-policy/
   mutation:
     needs: audit
     runs-on: ubuntu-24.04
@@ -234,7 +274,7 @@ jobs:
       - name: Test maintenance contracts using only the Python standard library
         run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v
   products:
-    needs: [audit, portable, maintenance, mutation]
+    needs: [audit, portable, maintenance, mutation, valgrind]
     if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
     timeout-minutes: 180
     strategy:

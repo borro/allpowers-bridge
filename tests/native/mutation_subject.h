@@ -10,5 +10,7 @@ __attribute__((noinline)) inline int mutationWeak(int value) {
 __attribute__((noinline)) inline void mutationCountdown(int value) {
   while (value > 0) {
     value = value - 1;
+    // Keep the +1 mutant looping without signed overflow eventually ending it.
+    if (value > 2) value = 2;
   }
 }

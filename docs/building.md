@@ -204,10 +204,15 @@ in the product; a detected mutation there can reflect the built-in check itself.
 
 Operators cover comparisons, boundaries, arithmetic, bitwise operations and logical
 negation. The complete selected scope is checked, including uncovered mutations.
-Original tests must pass first. Runs use two workers and a 3-second timeout per
+Original tests must pass first. Runs use two workers and a 3-second minimum timeout per
 mutant. The CI job has a 30-minute limit; partial runs are failures, not valid scores.
 
 Every invocation starts a fresh SQLite report. Mull merges repeated mutations
+across test programs. Both `--timeout` and `--minimum-timeout` are explicit:
+the mutant deadline has a 3-second floor (1 second for the synthetic controls).
+A fast baseline must not reduce it to tens of milliseconds on a CI runner.
+The delayed-failure control checks that a failure is classified as Killed,
+while the infinite-loop control must still time out. Results are merged
 across test programs before generating `build/mutation-linux/mutation/`:
 an offline HTML source report, JSON, SQLite results, logs and `summary.md`. The score is
 `(killed + timeout) / all mutants`; timeouts and uncovered mutants are also listed
@@ -352,11 +357,43 @@ Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
 contains user history or private recovery storage. Do not delete .local/ or the
 external preservation folders when cleaning build output.
 
+## Memory checking with Valgrind
+
+The `valgrind` job runs the five portable native tests through CTest Memcheck on
+Ubuntu 24.04, on every push, PR and manual run. It uses a separate Debug build,
+without ASan/UBSan, coverage or Mull instrumentation. It checks the portable
+core/shared ABI, UPS logic and host firmware, not Windows/Qt or physical devices.
+The supported Valgrind version is recorded in `cmake/Dependencies.cmake` and
+verified before testing. Install the Ubuntu `valgrind` package for local use.
+
+```sh
+cmake --preset valgrind-linux
+cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
+cmake -DCONTROL="$PWD/build/valgrind-linux/tests/native/valgrind_control" \
+  -DWORK="$PWD/build/valgrind-linux/valgrind-policy" \
+  -P tests/cmake/valgrind_policy_test.cmake
+ctest --test-dir build/valgrind-linux -T memcheck -L coverage \
+  --output-on-failure --timeout 180 --parallel 2 \
+  --overwrite MemoryCheckCommand=/usr/bin/valgrind \
+  --overwrite "MemoryCheckCommandOptions=--tool=memcheck --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=99 --num-callers=30"
+```
+
+The `coverage` label selects the existing native test suite; this invocation
+does not measure coverage. Memory errors and definite/indirect/possible leaks
+fail the job. Still-reachable allocations are reported for review. No project
+suppression file is used. A deliberately uninitialised read must be diagnosed
+with exit code 99, while its ordinary execution returns zero; this verifies that
+Memcheck findings cannot silently pass. The control is excluded from normal
+builds and from the five passing tests.
+
+Logs and CTest XML are retained for 14 days in the `valgrind-linux` Actions
+artifact, including on failure. The Valgrind job also gates tagged product builds.
+
 ## GitHub Actions and publication
 
 `.github/workflows/build.yml` checks all branch pushes, tags, pull requests and
 manual runs. Branches, including `main`, pull requests and manual branch runs
-use the quick audit, portable and maintenance jobs. Full Windows/Linux product
+use audit, portable, maintenance, Valgrind, mutation and coverage jobs. Full Windows/Linux product
 builds, packaging and publication run only for version tags (`v*`), including
 manual runs against a version tag. A PR and its branch push can each produce a
 quick run. After the audit, a portable tier runs core/ABI/UPS tests, RAM-only
@@ -371,7 +408,7 @@ An independent `maintenance` job runs
 standard library. It installs no HID/serial/esptool backend and performs no
 discovery. This checks synthetic image ranges, schema/checksum, history metadata
 and rollback rejection before device access. It is separate from the Python-free
-CMake product build. On version tags, both portable and maintenance jobs gate
+CMake product build. On version tags, portable, maintenance, mutation and Valgrind jobs gate
 the complete Windows/Linux product matrix and publication.
 New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
 release for the same tag. Shared build commands use Bash with fail-fast behavior

@@ -164,7 +164,7 @@ def main():
     for index, (binary, test) in enumerate(pairs):
         libraries = [arg for directory in args.library_dir for arg in ("--ld-search-path", directory)]
         run([str(args.runner), "--allow-surviving", "--include-not-covered",
-             "--timeout", "3000", "--workers", "2",
+             "--timeout", "3000", "--minimum-timeout", "3000", "--workers", "2",
              "--reporters", "SQLite", "--report-name", "mutations",
              "--report-dir", str(output), "--test-program", test, *libraries, binary],
             output / f"run-{index}-{Path(test).name}.log", root)

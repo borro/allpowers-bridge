@@ -8,7 +8,8 @@
   <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Host C++ line coverage"></a><br>
   <sub><a href="docs/building.md#test-coverage">Core, host-tested firmware logic and Windows/Qt; hardware execution is not measured.</a><br>
   <a href="docs/building.md#mutation-testing">Mutation testing runs on every push/PR: reviewed survivors are accepted, new survivors fail CI. Reports are in GitHub Actions.</a><br>
-  <a href="docs/building.md#memory-checking-with-valgrind">Valgrind checks portable host tests for memory errors and leaks on every push/PR.</a></sub>
+  <a href="docs/building.md#memory-checking-with-valgrind">Valgrind checks portable host tests for memory errors and leaks on every push/PR.</a><br>
+  <a href="docs/building.md#parser-fuzzing">BLE and CDC parsers are fuzzed under ASan/UBSan on every push/PR.</a></sub>
 </p>
 
 <p align="center">Power-station telemetry on your desktop. USB UPS reporting through a supported board.</p>

@@ -1,0 +1,37 @@
+cmake_minimum_required(VERSION 4.4)
+if(NOT FUZZER OR NOT WORK)
+  message(FATAL_ERROR "Pass -DFUZZER=<fuzz_control> -DWORK=<diagnostics directory>")
+endif()
+file(MAKE_DIRECTORY "${WORK}")
+file(WRITE "${WORK}/good" "a")
+string(ASCII 165 bad)
+file(MAKE_DIRECTORY "${WORK}/bad-corpus")
+file(WRITE "${WORK}/bad-corpus/seed" "${bad}")
+execute_process(COMMAND "${FUZZER}" "${WORK}/good" -runs=1
+  RESULT_VARIABLE clean OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 10)
+file(WRITE "${WORK}/good.log" "${output}${errors}")
+if(NOT clean STREQUAL "0")
+  message(FATAL_ERROR "Fuzz runtime rejected the good control: ${clean}\n${output}${errors}")
+endif()
+# Remove only our known generated artifact, to require a fresh reproducer.
+file(REMOVE "${WORK}/reproducer")
+execute_process(COMMAND "${FUZZER}" "${WORK}/bad-corpus" -runs=1
+  "-exact_artifact_path=${WORK}/reproducer"
+  RESULT_VARIABLE failed OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 10)
+file(WRITE "${WORK}/bad.log" "${output}${errors}")
+if(failed STREQUAL "0" OR NOT errors MATCHES "runtime error: division by zero" OR
+    NOT EXISTS "${WORK}/reproducer")
+  message(FATAL_ERROR "Fuzz runtime must reject UB and save a reproducer: ${failed}\n${output}${errors}")
+endif()
+file(SHA256 "${WORK}/bad-corpus/seed" expected)
+file(SHA256 "${WORK}/reproducer" actual)
+if(NOT actual STREQUAL expected)
+  message(FATAL_ERROR "Fuzz failure artifact did not preserve the failing input")
+endif()
+execute_process(COMMAND "${FUZZER}" "${WORK}/reproducer" -runs=1
+  RESULT_VARIABLE replay OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 10)
+file(WRITE "${WORK}/replay.log" "${output}${errors}")
+if(replay STREQUAL "0" OR NOT errors MATCHES "runtime error: division by zero")
+  message(FATAL_ERROR "Saved fuzz input did not reproduce the failure: ${replay}")
+endif()
+message(STATUS "Fuzz runtime rejected deliberate UB and saved the exact reproducer")

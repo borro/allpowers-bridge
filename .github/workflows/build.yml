@@ -62,6 +62,40 @@ jobs:
         run: cmake --build --preset native --parallel 2
       - name: Test portable logic and build contracts
         run: ctest --preset native
+  fuzz:
+    needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+        with:
+          cmake-version: '4.4.4'
+      - name: Install pinned Ninja and LLVM 18 fuzz runtime
+        run: |
+          cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-18 libclang-rt-18-dev
+      - name: Build fuzzers and seed corpora
+        run: |
+          cmake --preset fuzz-linux
+          cmake --build --preset fuzz-linux --parallel 2
+      - name: Fuzz BLE and CDC under ASan and UBSan
+        run: ctest --preset fuzz-linux --verbose
+      - name: Save fuzz corpora, crashes and diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-linux
+          retention-days: 14
+          path: |
+            build/fuzz-linux/fuzz/
+            build/fuzz-linux/Testing/
   valgrind:
     needs: audit
     runs-on: ubuntu-24.04
@@ -274,7 +308,7 @@ jobs:
       - name: Test maintenance contracts using only the Python standard library
         run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v
   products:
-    needs: [audit, portable, maintenance, mutation, valgrind]
+    needs: [audit, portable, maintenance, mutation, valgrind, fuzz]
     if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
     timeout-minutes: 180
     strategy:

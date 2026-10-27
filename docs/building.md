@@ -357,6 +357,52 @@ Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
 contains user history or private recovery storage. Do not delete .local/ or the
 external preservation folders when cleaning build output.
 
+## Parser fuzzing
+
+The `fuzz` job exercises the portable BLE notification decoder and CDC command
+collector/controller with Clang 18 libFuzzer plus fatal ASan/UBSan. It runs on
+every push, PR and manual dispatch and gates tagged product builds. Each target
+runs for 120 seconds, with a 5-second per-input timeout and a 1024 MiB RSS limit;
+CTest runs both targets in parallel with a 180-second outer timeout per target.
+The CI job has a 20-minute limit including dependency installation. Crashes,
+failed invariants, sanitizer findings, input timeouts and memory-limit failures
+produce a nonzero test result. Successful bounded fuzzing is not proof that all
+inputs or device behavior are correct.
+A separate `fuzz-policy` control requires a good input to pass and a deliberate
+division by zero to fail with a UBSan diagnostic and an exact saved reproducer.
+
+BLE checks all four model selections, unchanged output on rejection, and decoded
+field invariants. CDC covers direct commands and byte-by-byte collection, blocked
+and short writes, and expiration with an empty in-memory archive. It does not
+exercise BLE/USB hardware, Windows/Qt, or arbitrary archive/storage histories.
+
+Install Ubuntu's `clang-18` and `libclang-rt-18-dev`, then run:
+
+```sh
+cmake --preset fuzz-linux
+cmake --build --preset fuzz-linux --parallel 2
+ctest --preset fuzz-linux --verbose
+```
+
+Only fuzz targets receive libFuzzer/ASan/UBSan flags. Coverage, mutation and ordinary
+sanitizer builds must use separate directories. `tests/fuzz/seed_corpus.py` creates
+reviewable protocol seeds (valid packets/commands, overflow and malformed cases)
+under `build/fuzz-linux/fuzz/{ble,cdc}/corpus`; it does not delete local discoveries.
+CI starts from these seeds on each fresh checkout and uses seed `20261027`.
+Elapsed-time scheduling can still change the number of explored inputs.
+
+The `fuzz-linux` artifact retains corpus, `crashes/` inputs and verbose CTest logs
+for 14 days, including on failure. Investigate an input before adding it to the
+seed generator or making it a permanent regression test. To reproduce a saved
+CDC failure after rebuilding the same revision:
+
+```sh
+build/fuzz-linux/tests/fuzz/fuzz_cdc path/to/crash-input -runs=1
+```
+
+For a BLE failure use `fuzz_ble`. Replay uses the exact saved bytes rather than
+depending on timing or re-running the entire random search.
+
 ## Memory checking with Valgrind
 
 The `valgrind` job runs the five portable native tests through CTest Memcheck on
@@ -393,7 +439,7 @@ artifact, including on failure. The Valgrind job also gates tagged product build
 
 `.github/workflows/build.yml` checks all branch pushes, tags, pull requests and
 manual runs. Branches, including `main`, pull requests and manual branch runs
-use audit, portable, maintenance, Valgrind, mutation and coverage jobs. Full Windows/Linux product
+use audit, portable, maintenance, fuzz, Valgrind, mutation and coverage jobs. Full Windows/Linux product
 builds, packaging and publication run only for version tags (`v*`), including
 manual runs against a version tag. A PR and its branch push can each produce a
 quick run. After the audit, a portable tier runs core/ABI/UPS tests, RAM-only
@@ -408,7 +454,7 @@ An independent `maintenance` job runs
 standard library. It installs no HID/serial/esptool backend and performs no
 discovery. This checks synthetic image ranges, schema/checksum, history metadata
 and rollback rejection before device access. It is separate from the Python-free
-CMake product build. On version tags, portable, maintenance, mutation and Valgrind jobs gate
+CMake product build. On version tags, portable, maintenance, fuzz, mutation and Valgrind jobs gate
 the complete Windows/Linux product matrix and publication.
 New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
 release for the same tag. Shared build commands use Bash with fail-fast behavior

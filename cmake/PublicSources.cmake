@@ -9,7 +9,7 @@ function(ap_check_public_path name)
       name MATCHES "^\\.github/(workflows/[a-z-]+\\.yml|dependabot\\.yml)$" OR
       name MATCHES "^config/(arduino|devices)\\.example\\.json$" OR
       name MATCHES "^(core|firmware|apps|drivers|tests|docs|cmake)/[A-Za-z0-9_./-]+\\.(cpp|h|ino|cmake|md|ps1|py|in)$" OR
-      name MATCHES "^(core|apps/windows|drivers/windows|tests/native)/CMakeLists\\.txt$")
+      name MATCHES "^(core|apps/windows|drivers/windows|tests/native|tests/fuzz)/CMakeLists\\.txt$")
     return()
   endif()
   if(name IN_LIST AP_PUBLIC_SPECIAL_FILES)

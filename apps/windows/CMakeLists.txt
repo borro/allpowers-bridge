@@ -168,7 +168,8 @@ if(BUILD_TESTING)
     target_compile_options(integration_contract_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
   ap_enable_coverage(integration_contract_tests)
-  add_test(NAME integration-contract COMMAND integration_contract_tests)
+  add_test(NAME integration-contract COMMAND integration_contract_tests
+    -o -,txt -o integration-contract-tests.xml,junitxml)
   set_tests_properties(integration-contract PROPERTIES LABELS coverage TIMEOUT 120)
   qt_add_executable(usb_serial_contract_tests ../../tests/desktop/usb_serial_contract_test.cpp usb_serial.h)
   target_include_directories(usb_serial_contract_tests PRIVATE . "${CMAKE_CURRENT_BINARY_DIR}/serial-contract")
@@ -190,7 +191,8 @@ if(BUILD_TESTING)
     target_compile_options(usb_serial_contract_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
   ap_enable_coverage(usb_serial_contract_tests)
-  add_test(NAME usb-serial-contract COMMAND usb_serial_contract_tests)
+  add_test(NAME usb-serial-contract COMMAND usb_serial_contract_tests
+    -o -,txt -o usb-serial-contract-tests.xml,junitxml)
   set_tests_properties(usb-serial-contract PROPERTIES LABELS coverage TIMEOUT 60)
   qt_add_executable(battery_contract_tests ../../tests/desktop/battery_contract_test.cpp)
   target_include_directories(battery_contract_tests PRIVATE . ../../core/src)
@@ -202,7 +204,8 @@ if(BUILD_TESTING)
     target_compile_options(battery_contract_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
   ap_enable_coverage(battery_contract_tests)
-  add_test(NAME battery-contract COMMAND battery_contract_tests)
+  add_test(NAME battery-contract COMMAND battery_contract_tests
+    -o -,txt -o battery-contract-tests.xml,junitxml)
   set_tests_properties(battery-contract PROPERTIES LABELS coverage TIMEOUT 30)
   qt_add_executable(service_contract_tests ../../tests/desktop/service_contract_test.cpp)
   target_include_directories(service_contract_tests PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/identity")
@@ -213,7 +216,8 @@ if(BUILD_TESTING)
     target_compile_options(service_contract_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
   ap_enable_coverage(service_contract_tests)
-  add_test(NAME service-contract COMMAND service_contract_tests)
+  add_test(NAME service-contract COMMAND service_contract_tests
+    -o -,txt -o service-contract-tests.xml,junitxml)
   set_tests_properties(service-contract PROPERTIES LABELS coverage TIMEOUT 120)
   qt_add_executable(cli_contract_tests ../../tests/desktop/cli_contract_test.cpp)
   target_sources(cli_contract_tests PRIVATE ${notice_sources})
@@ -233,7 +237,8 @@ if(BUILD_TESTING)
     target_compile_options(ipc_contract_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
   ap_enable_coverage(ipc_contract_tests)
-  add_test(NAME ipc-contract COMMAND ipc_contract_tests)
+  add_test(NAME ipc-contract COMMAND ipc_contract_tests
+    -o -,txt -o ipc-contract-tests.xml,junitxml)
   set_tests_properties(ipc-contract PROPERTIES LABELS coverage TIMEOUT 60)
   target_sources(monitor_tests PRIVATE ${notice_sources})
   target_link_libraries(monitor_tests PRIVATE monitor_lib Qt6::Test)
@@ -261,7 +266,8 @@ if(BUILD_TESTING)
   if(MSVC)
     target_compile_options(language_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
-  add_test(NAME languages COMMAND language_tests -platform offscreen)
+  add_test(NAME languages COMMAND language_tests -platform offscreen
+    -o -,txt -o languages-tests.xml,junitxml)
   add_test(NAME translation-coverage COMMAND "${CMAKE_COMMAND}"
     "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/translation-coverage"
     "-DLUPDATE=$<TARGET_FILE:Qt6::lupdate>" "-DLRELEASE=$<TARGET_FILE:Qt6::lrelease>"
@@ -272,7 +278,8 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME widget COMMAND widget_tests -platform offscreen
     -v1 -o -,txt -o widget-tests.xml,junitxml)
-  add_test(NAME widget-native COMMAND widget_tests nativeHostRecovery nativeCardPaintAndDrag -platform windows)
+  add_test(NAME widget-native COMMAND widget_tests nativeHostRecovery nativeCardPaintAndDrag -platform windows
+    -o -,txt -o widget-native-tests.xml,junitxml)
 
   if(MSVC)
     target_compile_options(monitor_tests PRIVATE /utf-8 /UNDEBUG)
@@ -280,8 +287,14 @@ if(BUILD_TESTING)
   add_test(NAME desktop COMMAND monitor_tests -platform offscreen
     -v1 -o -,txt -o desktop-tests.xml,junitxml)
   add_test(NAME dropdown-native COMMAND monitor_tests dropdownFitsVisibleRows:2-0 dropdownFitsVisibleRows:2-1
-    -platform windows -o dropdown-native-tests.txt,txt)
+    -platform windows -o -,txt -o dropdown-native-tests.xml,junitxml)
   set_tests_properties(dropdown-native PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5")
+  # With CTest's redirected handles, Qt otherwise sends text diagnostics to
+  # OutputDebugString instead of the captured stream, even with -o -,txt.
+  set_property(TEST integration-contract usb-serial-contract battery-contract
+    service-contract cli-contract ipc-contract archive-transport languages
+    widget widget-native desktop dropdown-native APPEND PROPERTY ENVIRONMENT
+    "QT_FORCE_STDERR_LOGGING=1")
   set_tests_properties(widget-native dropdown-native PROPERTIES RESOURCE_LOCK windows-desktop)
   set_tests_properties(history-operation-process archive-transport languages widget widget-native
     desktop dropdown-native PROPERTIES LABELS coverage)

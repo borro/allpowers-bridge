@@ -48,6 +48,9 @@ private slots:
     QTRY_VERIFY(!history.isEmpty() && qvariant_cast<HistoryPoints>(history.last()[0]).size() == 3);
     const auto merged = qvariant_cast<HistoryPoints>(history.last()[0]);
     QCOMPARE(merged[0].wall, a.wall); QCOMPARE(merged.last().wall, c.wall);
+    // Keepalive is only needed during the periodic history request. A later
+    // state reply would replace the diagnostics used by the error assertion.
+    keepalive.stop();
     peer->write(wire({{"op", "sample"}, {"point", Ipc::point(point(now-172801))}}));
     peer->write(wire({{"op", "sample"}, {"point", QJsonObject{}}}));
     auto other = c; other.address = "other";
@@ -55,13 +58,15 @@ private slots:
     peer->write(wire({{"op", "found"}, {"address", "synthetic"}, {"name", "test"}, {"rssi", -42}, {"model", 3}}));
     peer->write(wire({{"op", "packet"}, {"hex", "0102"}, {"valid", true}}));
     peer->write(wire({{"op", "log"}, {"message", "event"}}));
-    peer->write(wire({{"op", "error"}, {"message", "test failure"}}));
     QTRY_COMPARE(logs.count(), 1); QCOMPARE(found.count(), 1); QCOMPARE(packets.count(), 1);
     QCOMPARE(qvariant_cast<HistoryPoints>(history.last()[0]).size(), 3);
-    QCOMPARE(client.diagnostics()["error"].toString(), QString("test failure"));
+    // Deliver the error separately: receiving log is not a barrier for a later
+    // frame, even when both messages were written in the same event-loop turn.
+    peer->write(wire({{"op", "error"}, {"message", "test failure"}}));
+    QTRY_COMPARE(client.diagnostics()["error"].toString(), QString("test failure"));
     client.scan(); client.start("fixture", 3); client.stop();
     QTRY_VERIFY(std::any_of(requests.begin(), requests.end(), [](auto o) { return o["op"] == "stop"; }));
-    keepalive.stop(); peer->write(wire(state("new-fixture")));
+    peer->write(wire(state("new-fixture")));
     QTRY_COMPARE(client.address(), QString("new-fixture"));
     QVERIFY(qvariant_cast<HistoryPoints>(history.last()[0]).isEmpty());
     peer->abort(); QTRY_VERIFY(!client.available()); QVERIFY(!client.active());
@@ -127,9 +132,8 @@ private slots:
     client.write(wire({{"op", "select"}, {"address", "bad"}, {"profile", 9}}));
     client.write(wire({{"op", "history"}, {"offset", 0}}));
     client.write(wire({{"op", "scan"}}));
-    QTRY_VERIFY(responses.size() >= 4);
-    QVERIFY(std::any_of(responses.begin(), responses.end(), [](auto o) { return o["message"] == "Invalid station selection"; }));
-    QVERIFY(std::any_of(responses.begin(), responses.end(), [](auto o) { return o["op"] == "history" && o["total"].toInt(-1) == 0; }));
+    QTRY_VERIFY(std::any_of(responses.begin(), responses.end(), [](auto o) { return o["message"] == "Invalid station selection"; }));
+    QTRY_VERIFY(std::any_of(responses.begin(), responses.end(), [](auto o) { return o["op"] == "history" && o["total"].toInt(-1) == 0; }));
     auto *ble = host.findChild<BleTransport *>(); QVERIFY(ble);
     emit ble->found("synthetic", "fixture", -30, 3); emit ble->packet("0102", true);
     QTRY_VERIFY(std::any_of(responses.begin(), responses.end(), [](auto o) { return o["op"] == "packet"; }));

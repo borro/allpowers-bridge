@@ -979,6 +979,7 @@ jobs:
           build/**/desktop-tests.*
           build/**/widget-tests.*
           build/**/archive-transport-tests.*
+          build/**/*-tests.xml
           build/**/windows-identity-graph/*.log
           build/**/source-kit-check/*.log
           build/**/single-exe-check/report*.json

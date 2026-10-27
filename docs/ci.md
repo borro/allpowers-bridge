@@ -52,6 +52,14 @@ running that same suite twice. Publication combines these Windows packages with
 the Linux firmware from the same workflow run, checking tag, commit, host and
 checksums. Nothing in CI flashes a device or opens a station connection.
 
+Cold Qt builds use four compiler processes; Qt components remain sequential.
+Ordinary Linux test builds and nested Windows product builds also use four
+compiler processes. The outer Windows build keeps two slots because its product
+builds have their own parallelism. Firmware keeps two boards with two compiler
+processes each, and Mull retains its existing limits for nested workers. Test
+execution limits are independent of compilation limits. The Qt job count is a
+CI invocation option, so changing it does not invalidate a compatible SDK cache.
+
 The Windows identity regression keeps independent root and standalone builds
 through clean, dirty and reverted states. Its standalone fixture builds only the
 two product executables it exercises; the ordinary Windows job still builds and

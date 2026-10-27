@@ -132,7 +132,7 @@ jobs:
     - name: Build and test portable code and build contracts
       run: |-
         cmake --preset native
-        cmake --build --preset native --parallel 2
+        cmake --build --preset native --parallel 4
         ctest --preset native --output-junit "$GITHUB_WORKSPACE/build/native/ci-tests.xml"
       id: build-and-test-portable-code-and-build-contracts
     - name: Test maintenance tooling
@@ -198,7 +198,7 @@ jobs:
     - name: Build and test with ASan and UBSan
       run: |-
         cmake --preset sanitizers-linux
-        cmake --build --preset sanitizers-linux --parallel 2
+        cmake --build --preset sanitizers-linux --parallel 4
         ctest --preset sanitizers-linux --output-junit "$GITHUB_WORKSPACE/build/sanitizers-linux/ci-tests.xml"
       id: build-and-test-with-asan-and-ubsan
     - name: Save test reports
@@ -261,7 +261,7 @@ jobs:
     - name: Build fuzzers and seed corpora
       run: |
         cmake --preset fuzz-linux
-        cmake --build --preset fuzz-linux --parallel 2
+        cmake --build --preset fuzz-linux --parallel 4
       id: build-fuzzers-and-seed-corpora
     - name: Fuzz BLE and CDC under ASan and UBSan
       run: ctest --preset fuzz-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/fuzz-linux/ci-tests.xml"
@@ -331,7 +331,7 @@ jobs:
     - name: Build uninstrumented Debug tests
       run: |
         cmake --preset valgrind-linux
-        cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
+        cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 4
       id: build-uninstrumented-debug-tests
     - name: Verify Valgrind version and error exit policy
       run: cmake -DCONTROL="$GITHUB_WORKSPACE/build/valgrind-linux/tests/native/valgrind_control" -DWORK="$GITHUB_WORKSPACE/build/valgrind-linux/valgrind-policy"
@@ -612,10 +612,10 @@ jobs:
     - name: Configure coverage
       env:
         QT_ROOT: ''
-      run: cmake --preset coverage-linux -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+      run: cmake --preset coverage-linux -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=4
       id: configure-coverage
     - name: Build coverage binaries
-      run: cmake --build --preset coverage-linux --parallel 2
+      run: cmake --build --preset coverage-linux --parallel 4
       id: build-coverage-binaries
     - name: Measure fresh line coverage
       run: ctest --preset coverage-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/coverage-linux/ci-tests.xml"
@@ -720,7 +720,7 @@ jobs:
     - name: Configure coverage
       env:
         QT_ROOT: ${{ github.workspace }}/build/windows/deps/qt/install
-      run: cmake --preset coverage-windows -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+      run: cmake --preset coverage-windows -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=4
       id: configure-coverage
     - name: Build coverage binaries
       run: cmake --build --preset coverage-windows --parallel 2
@@ -935,7 +935,7 @@ jobs:
         RELEASE_TAG: ${{ needs.audit.outputs.release == 'true' && github.ref_name || '' }}
         RELEASE_COMMIT: ${{ github.sha }}
       run: cmake --preset windows -DALLPOWERS_QT_ROOT="$GITHUB_WORKSPACE/build/windows/deps/qt/install" -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT"
-        -DALLPOWERS_BUILD_JOBS=2
+        -DALLPOWERS_BUILD_JOBS=4
       id: configure-windows-release
     - name: Build Windows applications and host tests
       run: cmake --build --preset windows --parallel 2

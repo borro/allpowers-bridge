@@ -16,6 +16,21 @@ devices. A listed advertiser is not proof of a working GATT connection or
 supported telemetry. See [Bluetooth and models](BLUETOOTH.md). **F5** scans;
 **Disconnect** cancels pending discovery/reconnection.
 
+Board firmware keeps the last eight established BLE disconnections in RAM until
+the next reboot. In USB Monitor diagnostics (or a read-only `DIAG` response),
+`BLE DROP <sequence>` rows retain the stack name, raw 16-bit disconnect reason and its name,
+64-bit board uptime in milliseconds, connection token and peer address, ages of
+the last main/settings packets, and the last scan RSSI (not live link RSSI).
+`request=telemetry_timeout` or `target_changed` identifies a firmware request;
+`request=none` means no application-requested close was recorded, not proof that
+the peer initiated it. `CONNECTION_TIMEOUT` is a link supervision timeout, not a
+diagnosis of interference or distance. `UNAVAILABLE` differs from raw code zero.
+NimBLE HCI errors retain their `0x200` offset (for example `0x0208` is HCI timeout
+`0x08`); NimBLE host errors are decoded separately, not as HCI reason codes.
+Records survive reconnection and station changes, but are not written to NVS or
+the telemetry archive. The USB maintenance/update path and reconnect policy are
+unchanged. Remove peer addresses before sharing diagnostics publicly.
+
 ## Readings are stale, unknown or incomplete
 
 Stale means required telemetry has expired. It does not mean zero charge or an

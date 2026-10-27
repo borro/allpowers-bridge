@@ -36,6 +36,7 @@ static std::atomic<bool> bleStartupFailed{false};
 static std::atomic<uint32_t> upsGets{0}, staticGets{0};
 static uint32_t upsSent=0,upsSendFailed=0,vendorSent=0,vendorSendFailed=0,hidNotReady=0;
 static uint32_t bleConnects=0,bleDrops=0;
+static BleDisconnects::Log bleDisconnectLog;
 static USBCDC Console;
 static USBHID hid;
 static Dashboard screen;
@@ -271,11 +272,53 @@ static void notifyStation(BLERemoteCharacteristic *sender,uint8_t *bytes,size_t 
   }
 }
 class ClientEvents:public BLEClientCallbacks {
-  void onConnect(BLEClient*)override{portENTER_CRITICAL(&dataLock);connected=true;bleConnects++;portEXIT_CRITICAL(&dataLock);}
+  void onConnect(BLEClient *client)override{
+    auto peer=client->getPeerAddress();
+#if defined(CONFIG_NIMBLE_ENABLED)
+    uint8_t address[6];for(unsigned i=0;i<6;++i)address[i]=peer.getNative()[5-i];
+    const uint8_t gattInterface=0;const auto backend=BleDisconnects::Backend::Nimble;
+#else
+    const uint8_t *address=peer.getNative();
+    const uint8_t gattInterface=client->getGattcIf();const auto backend=BleDisconnects::Backend::Bluedroid;
+#endif
+    portENTER_CRITICAL(&dataLock);connected=true;bleConnects++;
+    bleDisconnectLog.connected(gattInterface,client->getConnId(),address,activeConnectionToken,backend);
+    portEXIT_CRITICAL(&dataLock);
+  }
   void onDisconnect(BLEClient*)override{
-    portENTER_CRITICAL(&dataLock);connected=false;bleDrops++;activeRx=nullptr;telemetry.mainSeen=false;telemetry.settingsSeen=false;connectionState="DISCONNECTED";portEXIT_CRITICAL(&dataLock);
+    const uint32_t now=millis();const uint64_t uptimeMs=uint64_t(esp_timer_get_time())/1000;
+    portENTER_CRITICAL(&dataLock);
+    bleDisconnectLog.disconnected({uptimeMs,now-telemetry.mainAt,now-telemetry.settingsAt,telemetry.mainSeen,telemetry.settingsSeen,int8_t(stationRssi)});
+    connected=false;bleDrops++;activeRx=nullptr;telemetry.mainSeen=false;telemetry.settingsSeen=false;connectionState="DISCONNECTED";portEXIT_CRITICAL(&dataLock);
   }
 } clientEvents;
+class DisconnectReasonEvents {
+public:
+#if defined(CONFIG_NIMBLE_ENABLED)
+static int receive(ble_gap_event *event,void*){
+  if(!event||event->type!=BLE_GAP_EVENT_DISCONNECT)return 0;
+  uint8_t address[6];for(unsigned i=0;i<6;++i)address[i]=event->disconnect.conn.peer_ota_addr.val[5-i];
+  portENTER_CRITICAL(&dataLock);
+  bleDisconnectLog.reason(0,event->disconnect.conn.conn_handle,address,uint16_t(event->disconnect.reason));
+  portEXIT_CRITICAL(&dataLock);return 0;
+}
+#else
+static void receive(esp_gattc_cb_event_t event,esp_gatt_if_t gattInterface,esp_ble_gattc_cb_param_t *param){
+  if(event!=ESP_GATTC_DISCONNECT_EVT||!param)return;
+  portENTER_CRITICAL(&dataLock);
+  bleDisconnectLog.reason(gattInterface,param->disconnect.conn_id,param->disconnect.remote_bda,uint16_t(param->disconnect.reason));
+  portEXIT_CRITICAL(&dataLock);
+}
+#endif
+};
+static void disconnectStation(BLEClient *client,BleDisconnects::Request cause,uint32_t token){
+  portENTER_CRITICAL(&dataLock);bleDisconnectLog.request(cause);portEXIT_CRITICAL(&dataLock);
+  // Preserve the original call and policy. A rejected close is not a local
+  // disconnect request for an unrelated future radio/peer failure.
+  if(client->disconnect()!=ESP_OK){
+    portENTER_CRITICAL(&dataLock);bleDisconnectLog.requestFailed(token);portEXIT_CRITICAL(&dataLock);
+  }
+}
 static void statusRequest(BLERemoteCharacteristic *tx) {
   if(!tx || !(tx->canWrite()||tx->canWriteNoResponse()))return;
   portENTER_CRITICAL(&dataLock);auto model=activeModel;portEXIT_CRITICAL(&dataLock);
@@ -306,6 +349,11 @@ static void scanNearby(BLEScan *scan,uint32_t seconds){
 }
 static void bleTask(void*) {
   if(!BLEDevice::init("R2500 USB UPS")){bleStartupFailed=true;vTaskDelete(nullptr);return;}
+#if defined(CONFIG_NIMBLE_ENABLED)
+  BLEDevice::setCustomGapHandler(DisconnectReasonEvents::receive);
+#else
+  BLEDevice::setCustomGattcHandler(DisconnectReasonEvents::receive);
+#endif
   portENTER_CRITICAL(&dataLock);bleReady=true;portEXIT_CRITICAL(&dataLock);
   BLEScan *scan=BLEDevice::getScan();BLEClient *client=BLEDevice::createClient();
   if(!scan||!client){bleStartupFailed=true;vTaskDelete(nullptr);return;}
@@ -351,7 +399,7 @@ static void bleTask(void*) {
           portENTER_CRITICAL(&dataLock);current=targetRevision;
           bool complete=telemetryFresh(telemetry,now);
           bool rescan=scanRequested||(pickerOpen&&uint32_t(now-lastScan)>=8000);portEXIT_CRITICAL(&dataLock);
-          if(current!=revision){client->disconnect();break;}
+          if(current!=revision){disconnectStation(client,BleDisconnects::Request::TargetChanged,token);break;}
           if(requestBoot||requestRestart)continue;
           if(rescan){scanNearby(scan,2);lastScan=millis();}
           if(subscribed&&uint32_t(now-keepalive)>=AllpowersCore::kPollIntervalMs){statusRequest(tx);keepalive=now;}
@@ -359,7 +407,7 @@ static void bleTask(void*) {
           // Main-only/settings-only traffic and a missing Notify RX must not
           // keep an unusable connection alive forever. Poll first, reconnect
           // after the bounded grace period even when no first snapshot arrived.
-          if(recovery.reconnectDue(now)){client->disconnect();break;}
+          if(recovery.reconnectDue(now)){disconnectStation(client,BleDisconnects::Request::TelemetryTimeout,token);break;}
         }
       }else{portENTER_CRITICAL(&dataLock);connectionState="CONNECT FAILED";portEXIT_CRITICAL(&dataLock);}
     }
@@ -379,6 +427,7 @@ static DiagnosticData diagnosticsSnapshot(){
   portENTER_CRITICAL(&dataLock);
   d.telemetry=telemetry;d.station=stationIdentity;d.bleConnected=connected;d.scanRssi=stationRssi;
   d.connects=bleConnects;d.drops=bleDrops;strlcpy(d.phase,connectionState,sizeof(d.phase));
+  d.bleDisconnects=bleDisconnectLog.snapshot();
   portEXIT_CRITICAL(&dataLock);
   d.nowMs=millis();d.uptimeSeconds=uint64_t(esp_timer_get_time())/1000000;
   d.log=history.status();d.reset=resetReasonName();d.resetCode=uint32_t(esp_reset_reason());
@@ -388,12 +437,15 @@ static DiagnosticData diagnosticsSnapshot(){
 }
 static void printDiagnostics(){
 
-  auto d=diagnosticsSnapshot();auto view=diagnosticView(d);char body[2400];
+  auto d=diagnosticsSnapshot();auto view=diagnosticView(d);static char body[6144];
   size_t used=snprintf(body,sizeof(body),"{\"diagnostic\":true,\"version\":\"%c\",\"page\":%u,\"heading\":\"%s\",\"footer\":\"%s\",\"rows\":[",ADAPTER_VERSION,displayPage,view.heading,view.footer);
   for(unsigned i=0;i<DiagnosticView::Count&&used<sizeof(body)-3;++i){auto &r=view.rows[i];
     used+=snprintf(body+used,sizeof(body)-used,"%s{\"label\":\"%s\",\"value\":\"%s\",\"tone\":%u}",i?",":"",r.label,r.value,unsigned(r.tone));
   }
-  if(used<sizeof(body)-3){memcpy(body+used,"]}\n",3);serialOutput.queueOptional(body,used+3);}
+  if(used>=sizeof(body)-3)return;
+  const int extra=BleDisconnects::appendDiagnosticRows(body+used,sizeof(body)-used-3,d.bleDisconnects);
+  if(extra<0)return;
+  used+=size_t(extra);memcpy(body+used,"]}\n",3);serialOutput.queueOptional(body,used+3);
 }
 static bool captureStatus(HistoryFormat::StatusSnapshot &frame,uint32_t now){
   frame={};frame.nowMs=now;frame.state=connectionSnapshot();auto report=upsSnapshot();

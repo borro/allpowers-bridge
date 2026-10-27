@@ -4,6 +4,7 @@
 #include "Telemetry.h"
 #include "StationIdentity.h"
 #include "HistoryStore.h"
+#include "BleDisconnectLog.h"
 
 enum class DiagnosticTone:uint8_t {Plain,Dim,Good,Warning,Bad};
 struct DiagnosticData {
@@ -14,6 +15,7 @@ struct DiagnosticData {
   bool bleConnected=false,usbMounted=false,cdcOpen=false,upsEnabled=false;
   uint32_t upsGets=0,upsSent=0,upsFailed=0,heapFree=0,heapMin=0,psramFree=0;
   Telemetry telemetry;StationIdentity station;HistoryStats log;
+  BleDisconnects::Snapshot bleDisconnects;
 };
 struct DiagnosticRow {const char *label="";char value[18]={};DiagnosticTone tone=DiagnosticTone::Plain;};
 struct DiagnosticView {

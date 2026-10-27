@@ -82,6 +82,7 @@
 
 - [Первый запуск](docs/getting-started.md) — загрузка, подключение и подготовка платы.
 - [Приложения Windows](docs/windows-apps.md) — языки, графики, виджет, хранение данных и диагностика.
+- [Диагностика обрывов Bluetooth](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — плата хранит восемь причин отключения до перезагрузки; они доступны в USB-диагностике Monitor.
 - [Устранение неполадок](docs/troubleshooting.md) — подключение, устаревшие показания и пропуски истории.
 - [Оглавление документации](docs/README.md) — платы, протокол USB, восстановление и справочник.
 - [Сборка из исходников](docs/building.md) · [Архитектура](docs/architecture.md) · [Участие в проекте](CONTRIBUTING.md).

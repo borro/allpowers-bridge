@@ -82,6 +82,7 @@ Chinese. Detailed guides are maintained in English.
 
 - [Getting started](docs/getting-started.md) — downloads, first connection and board setup.
 - [Windows applications](docs/windows-apps.md) — languages, graphs, Widget, storage and diagnostics.
+- [Bluetooth disconnect diagnostics](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — the board retains eight disconnect reasons until reboot; read them in USB Monitor diagnostics.
 - [Troubleshooting](docs/troubleshooting.md) — connection issues, stale readings and history gaps.
 - [Documentation index](docs/README.md) — hardware, USB protocol, recovery and reference material.
 - [Build from source](docs/building.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md).

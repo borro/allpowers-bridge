@@ -9,6 +9,7 @@
 #include "../../firmware/R2500Adapter/HistoryWire.h"
 #include "../../firmware/R2500Adapter/HistorySample.h"
 #include "../../firmware/R2500Adapter/HistoryExport.h"
+#include "../../firmware/R2500Adapter/BleDisconnectLog.h"
 #include "window.h"
 #include "monitor_application.h"
 #include <QAbstractItemView>
@@ -808,6 +809,19 @@ private slots:
     QVERIFY(usb.diagnostics()["usb_bad_lines"].toInt() >= 2);
     io->feed("{\"diagnostic\":true,\"rows\":[{\"label\":\"HEAP\",\"value\":\"123456\"}]}\n");
     QCOMPARE(usb.diagnostics()["usb_diagnostics"].toObject()["HEAP"].toString(), QString("123456"));
+    BleDisconnects::Log drops;
+    const uint8_t peer[6]={2,0,0,0,0,1};
+    drops.connected(1,2,peer,7);drops.disconnected({12345,20,100,true,true,-89});
+    QVERIFY(drops.reason(1,2,peer,0x08));
+    char diagnosticRows[4096];
+    const int rowBytes=BleDisconnects::appendDiagnosticRows(diagnosticRows,sizeof(diagnosticRows),drops.snapshot());
+    QVERIFY(rowBytes>0);
+    // Production firmware serializer -> actual USB parser -> existing UI data.
+    io->feed("{\"diagnostic\":true,\"rows\":[{\"label\":\"HEAP\",\"value\":\"123456\"}"
+             +QByteArray(diagnosticRows,rowBytes)+"]}\n");
+    const auto drop=usb.diagnostics()["usb_diagnostics"].toObject()["BLE DROP 1"].toString();
+    QVERIFY(drop.contains("up_ms=12345")&&drop.contains("reason=0x0008 CONNECTION_TIMEOUT"));
+    QVERIFY(drop.contains("request=none")&&drop.contains("main_ms=20 cfg_ms=100 scan_dbm=-89"));
     now += 7000;
     QTRY_VERIFY(!usb.connected());
     usb.stop();

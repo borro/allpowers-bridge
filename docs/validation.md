@@ -2,6 +2,35 @@
 
 [Documentation](README.md)
 
+## BLE disconnect diagnostics — 2026-10-28
+
+The firmware retains eight established-link disconnections in RAM across
+reconnections. Host checks exercise both raw-event/callback orders, peer and
+connection matching, duplicate events, local-close intent, missing reasons,
+NimBLE HCI versus host error domains, ring eviction and bounded serialization.
+The production serializer also passes through the actual Qt USB parser into
+the existing diagnostic rows. USB descriptors, STATUS framing, update commands,
+partitions and reconnect policy are unchanged.
+
+- Linux GCC 13.3: 16/16 CTest checks passed; both firmware boards compiled and
+  relinked with the pinned SDK.
+- Windows MSVC: 20/20 native/build-contract checks and 16/16 standalone Qt checks
+  passed; both firmware boards compiled/relinked; the CPack runtime ZIP passed.
+- Maintenance tooling: 54/54 offline tests passed without USB access.
+- Registered Waveshare hardware: the same diagnostic image was actually written
+  twice, with four segment digests verified after each write. The first new boot
+  exposed vendor HID maintenance and entered ROM for the second write. Both boots
+  produced a real GATT connection and fresh station telemetry.
+- ROM readback after both writes retained all 2880 previous history records
+  byte-for-byte and added three valid records. The station-target blob and all
+  other logical NVS values were preserved except the SDK's `phy:cal_data` cache;
+  this is not a claim that the physical NVS bytes stayed identical. Pre-write
+  application, NVS and history copies remain in external private recovery storage.
+- A 180-second passive observation had fresh telemetry and no natural disconnect.
+  Actual reason capture on a physical disconnect is therefore still unobserved;
+  no forced station switch or disconnect was used to manufacture that evidence.
+  The previous Widget was restored and current fresh history writes confirmed.
+
 ## License export latency under Windows coverage — 2026-10-28
 
 Run [40585431988](https://github.com/borro/allpowers-bridge/actions/runs/40585431988)

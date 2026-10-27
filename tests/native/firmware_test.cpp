@@ -11,6 +11,7 @@
 #include "output_test.h"
 #include "history_operation_test.h"
 #include "firmware_contract_test.h"
+#include "ble_disconnect_test.h"
 
 int main() {
   assert(BootGestures::selfTest());
@@ -25,4 +26,5 @@ int main() {
   std::array<HistoryFormat::Record, GraphHistory::kCapacity> graph{};
   assert(GraphHistory::selfTest(graph.data()));
   FirmwareContractTests::run();
+  BleDisconnectTests::run();
 }

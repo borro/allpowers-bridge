@@ -142,6 +142,15 @@ inline void run(){
     at+=9;const auto end=json.find('"',at);assert(end!=std::string::npos&&end-at<=256);at=end;++rows;
   }
   assert(rows==kCapacity);
+  // An inconsistent snapshot count must never expose a ninth/nonexistent
+  // event. Its complete diagnostic output is identical to the eight retained
+  // records, even when the count byte is corrupt or outside its normal range.
+  for(uint8_t count:{uint8_t(kCapacity+1),uint8_t(UINT8_MAX)}){
+    auto oversized=s;oversized.count=count;
+    std::array<char,4096> clamped{};
+    assert(appendDiagnosticRows(clamped.data(),clamped.size(),oversized)==length);
+    assert(!memcmp(clamped.data(),output.data(),size_t(length)+1));
+  }
   std::array<char,4096> bounded;bounded.fill('#');
   assert(appendDiagnosticRows(bounded.data(),size_t(length),s)==-1);
   assert(bounded[size_t(length)]=='#');

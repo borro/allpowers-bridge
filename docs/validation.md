@@ -43,6 +43,21 @@ logger at 68/68 lines; all five native Windows tests pass. Compiler-dependent
 line totals differ from the hosted report. No coverage filters, thresholds,
 product code or on-device firmware changed for this follow-up.
 
+Mutation follow-up: hosted run `40593165686` for `e00b897` reported five new
+survivors in the logger. The reason-domain/output scenarios above already kill
+three. A new inconsistent-count test requires output to remain exactly the
+eight retained records for count bytes 9 and 255, detecting the missing array
+bound. The remaining zero-length-format mutation was equivalent for the fixed,
+nonempty format; one unsigned length comparison now handles formatting failure
+and truncation without that redundant branch. The targeted Mull run detects
+all 32 remaining logger mutations. The complete seven-target run reports
+744 killed, three timeouts, 56 previously reviewed survivors, zero uncovered,
+and zero new/unreviewed results (747/803, 93.03%). `accepted.json` is unchanged.
+ASan/UBSan runtime checks pass 6/6, Windows native checks 5/5 and the Qt desktop
+parser suite passes. Both board images compile/relink on Linux, and measured
+portable line coverage remains 1167/1167; MSVC logger coverage remains 68/68.
+This follow-up did not open a device or replace the running diagnostic image.
+
 ## License export latency under Windows coverage — 2026-10-28
 
 Run [40585431988](https://github.com/borro/allpowers-bridge/actions/runs/40585431988)

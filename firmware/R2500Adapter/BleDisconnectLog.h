@@ -116,7 +116,9 @@ inline int appendDiagnosticRows(char *out,size_t capacity,const Snapshot &snapsh
       (unsigned long)e.sequence,e.backend==Backend::Nimble?"nimble":"bluedroid",(unsigned long long)e.context.uptimeMs,(unsigned long)e.connection,
       unsigned(e.peer[0]),unsigned(e.peer[1]),unsigned(e.peer[2]),unsigned(e.peer[3]),unsigned(e.peer[4]),unsigned(e.peer[5]),
       reason,e.reasonKnown?reasonName(e.backend,e.reason):"UNAVAILABLE",requestName(e.requested),mainAge,settingsAge,int(e.context.scanRssi));
-    if(n<0||size_t(n)>=capacity-used)return -1;
+    // Negative snprintf results convert above any valid buffer size on our
+    // targets; the same comparison rejects errors and missing terminator space.
+    if(size_t(n)>=capacity-used)return -1;
     used+=size_t(n);
   }
   return int(used);

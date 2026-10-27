@@ -341,7 +341,6 @@ private slots:
       window.show();
       for (int page = 0; page < 3; ++page) {
         window.findChild<QButtonGroup *>()->button(page)->click();
-        QTest::qWait(100);
         QVERIFY(
             window.grab().save(output + "/monitor-" + code + "-" + QString::number(page) + ".png"));
       }

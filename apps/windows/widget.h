@@ -82,7 +82,7 @@ class WidgetController : public QObject {
   WidgetRuntime runtime_;
   qint64 wallNow() const;
   qint64 elapsedNow() const;
-  bool offline_, locked = false;
+  bool offline_, locked = false, historyReady = false;
   QPointer<QDialog> settingsDialog;
   bool save();
   void refresh();

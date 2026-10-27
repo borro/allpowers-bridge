@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QIcon>
 #include <QJsonArray>
@@ -224,8 +225,18 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
       window.grab().save(parser.value("screenshot"));
     auto info = window.diagnostics();
     const bool lgplNotice = embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
+    const bool historyReady = info["history"].toObject().contains("live");
     bool ok = info["history_error"].toString().isEmpty() &&
-              info["history"].toObject().contains("live") && lgplNotice;
+              historyReady && lgplNotice;
+    if (selfTest) {
+      info["history_ready"] = historyReady;
+      if (!info["history_error"].toString().isEmpty())
+        info["self_test_error"] = "History initialization failed";
+      else if (!historyReady)
+        info["self_test_error"] = "Timed out waiting for history initialization";
+      else if (!lgplNotice)
+        info["self_test_error"] = "Embedded LGPL notice is missing";
+    }
     if (parser.isSet("report")) {
       QFile out(parser.value("report"));
       if (out.open(QIODevice::WriteOnly)) {
@@ -240,8 +251,23 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
     }
     app.exit(ok ? 0 : 3);
   };
-  if (selfTest || parser.isSet("test-seconds"))
-    QTimer::singleShot(selfTest ? 1500 : qMax(1, parser.value("test-seconds").toInt()) * 1000, &app,
-                       finish);
+  QTimer selfTestPoll;
+  QElapsedTimer selfTestDeadline;
+  if (selfTest) {
+    // SQLite opens on the history worker. A fixed delay can report failure on
+    // a busy runner before its first result reaches the GUI thread.
+    // The failure bound is below CTest's standalone process timeout (20 s).
+    selfTestDeadline.start();
+    QObject::connect(&selfTestPoll, &QTimer::timeout, &app, [&] {
+      const auto info = window.diagnostics();
+      if (info["history"].toObject().contains("live") ||
+          !info["history_error"].toString().isEmpty() || selfTestDeadline.elapsed() >= 10000) {
+        selfTestPoll.stop();
+        finish();
+      }
+    });
+    selfTestPoll.start(50);
+  } else if (parser.isSet("test-seconds"))
+    QTimer::singleShot(qMax(1, parser.value("test-seconds").toInt()) * 1000, &app, finish);
   return app.exec();
 }

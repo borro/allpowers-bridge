@@ -22,7 +22,14 @@ HANDLE CreateFileW(LPCWSTR path, DWORD access, DWORD, auto, DWORD, DWORD, auto) 
 }
 BOOL DeviceIoControl(HANDLE h, DWORD code, LPVOID data, DWORD size, auto, DWORD, LPDWORD, auto) {
   Q_ASSERT(h == device && code == UpsSetState && size == sizeof(AllpowersUps::State));
-  ++publications; last = *static_cast<AllpowersUps::State *>(data); return scenario != "driver-write";
+  ++publications; last = *static_cast<AllpowersUps::State *>(data);
+  // Stop after two actual replay ticks, even when a busy runner delays them.
+  if (publications == 2 && handler)
+    QMetaObject::invokeMethod(QCoreApplication::instance(), [] {
+      handler(SERVICE_CONTROL_INTERROGATE, 0, nullptr, nullptr);
+      handler(SERVICE_CONTROL_SHUTDOWN, 0, nullptr, nullptr);
+    }, Qt::QueuedConnection);
+  return scenario != "driver-write";
 }
 BOOL CloseHandle(HANDLE h) { if (h == device) { ++closes; return TRUE; } return ::CloseHandle(h); }
 DWORD GetLastError() { return ERROR_ACCESS_DENIED; }
@@ -32,12 +39,6 @@ SERVICE_STATUS_HANDLE RegisterServiceCtrlHandlerExW(auto, LPHANDLER_FUNCTION_EX 
 }
 BOOL SetServiceStatus(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS status) {
   reports.append(*status);
-  if (status->dwCurrentState == SERVICE_RUNNING) {
-    QTimer::singleShot(1100, QCoreApplication::instance(), [] {
-      handler(SERVICE_CONTROL_INTERROGATE, 0, nullptr, nullptr);
-      handler(SERVICE_CONTROL_SHUTDOWN, 0, nullptr, nullptr);
-    });
-  }
   return TRUE;
 }
 BOOL StartServiceCtrlDispatcherW(const SERVICE_TABLE_ENTRYW *table) {

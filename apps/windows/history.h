@@ -102,6 +102,7 @@ public slots:
   void log(QString message);
   void saveSettings(QString path, QJsonObject settings);
 signals:
+  void opened();
   void sampleFinished();
   void loaded(QString address, HistoryPoints points, QJsonObject stats);
   void problem(QString message);

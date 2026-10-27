@@ -177,6 +177,10 @@ if(BUILD_TESTING)
   target_link_libraries(usb_serial_contract_tests PRIVATE Qt6::Core Qt6::Test)
   qt6_generate_moc(usb_serial.cpp "${CMAKE_CURRENT_BINARY_DIR}/serial-contract/usb_serial.moc"
     TARGET usb_serial_contract_tests)
+  # The included generated moc is skipped by AUTOMOC but appears in its depfile.
+  # Generate it before autogen to avoid a dependency cycle on subsequent builds.
+  set_property(TARGET usb_serial_contract_tests APPEND PROPERTY AUTOGEN_TARGET_DEPENDS
+    "${CMAKE_CURRENT_BINARY_DIR}/serial-contract/usb_serial.moc")
   # qt_generate_moc marks its input SKIP_AUTOMOC globally. The production
   # backend still needs its own moc and automatic discovery of usb_serial.h.
   set_source_files_properties(usb_serial.cpp PROPERTIES SKIP_AUTOMOC OFF)

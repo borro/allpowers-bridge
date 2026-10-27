@@ -986,7 +986,7 @@ private slots:
       }
       if(scenario=="early")stream="{\"history_dump_done\":true}\n";
       for(char byte:stream)io->feed(QByteArray(1,byte));
-      if(scenario=="timeout"){now=70001;QTest::qWait(600);}
+      if(scenario=="timeout"){now=70001;usb.refresh();}
       const QString expected=scenario=="session"||scenario=="source-error"||scenario=="timeout"?"error":
         scenario=="dropped"||scenario=="corrupt"||scenario=="generation"||scenario=="early"||scenario=="source-end"||scenario=="session-change"||scenario=="noise"?"partial":"complete";
       QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),expected);
@@ -1074,7 +1074,7 @@ private slots:
         QVERIFY(io->writes.contains(" 128\n"));
       }else if(mode==1)io->feed("{\"history_ready\":true,\"history_records\":2,\"history_latest\":3,\"history_session\":8}\n");
       else if(mode==2)io->feed("{\"history_ready\":true,\"history_records\":3,\"history_latest\":4,\"history_session\":7}\n");
-      else if(mode==3){now=120001;QTest::qWait(600);}
+      else if(mode==3){now=120001;usb.refresh();}
       else {
         if(mode==4){
           for(quint32 sequence:{1u,3u}){char line[512];const auto record=archiveRecord(sequence);
@@ -1177,7 +1177,7 @@ private slots:
       const auto prefix=sink.bytes.size();io->feed(sink.bytes);
       if(mode==0||mode==3)writer.pump(62001); // Actual firmware hard deadline.
       if(mode==1)writer.cancel();
-      now=70001;QTest::qWait(600); // Actual desktop deadline releases request 1.
+      now=70001;usb.refresh(); // Actual desktop deadline releases request 1.
       QCOMPARE(usb.diagnostics()["usb_history_result"].toString(),QString("error"));
       imported.clear();usb.requestHistory();QVERIFY(io->writes.contains("HISTORY-EXPORT 2\n"));
       if(mode!=2)writer.cancel(); // Production beginHistoryExport also cancels an inactive predecessor.
@@ -1344,7 +1344,6 @@ private slots:
     const auto shots = qEnvironmentVariable("ALLPOWERS_TEST_SHOTS");
     if (!shots.isEmpty()) {
       QDir().mkpath(shots);
-      QTest::qWait(30);
       window.grab().save(QDir(shots).filePath("usb-overview.png"));
     }
     QTRY_VERIFY(window.diagnostics()["history"].toObject()["live"].toInt() > 0);
@@ -1393,7 +1392,6 @@ private slots:
       io->feed("{\"diagnostic\":true,\"rows\":[{\"label\":\"HEAP\",\"value\":\"123456\"},{"
                "\"label\":\"USB\",\"value\":\"HOST\"}]}\n");
       window.findChild<QTabWidget *>("diagnosticTabs")->setCurrentIndex(1);
-      QTest::qWait(30);
       window.grab().save(QDir(shots).filePath("usb-diagnostics.png"));
     }
     usb->resume("R2500-000000000002", {}, 0);
@@ -1453,9 +1451,12 @@ private slots:
     QTRY_VERIFY(router->available());
     router->resume("02:00:00:00:00:03", "Synthetic station", 3);
     QTRY_VERIFY(router->active());
+    const auto sockets = host.findChildren<QLocalSocket *>();
+    QCOMPARE(sockets.size(), 1);
+    QSignalSpy disconnected(sockets.first(), &QLocalSocket::disconnected);
     window.findChild<QComboBox *>("transportMode")->setCurrentIndex(1);
     QVERIFY(router->usb());
-    QTest::qWait(30);
+    QTRY_COMPARE(disconnected.count(), 1);
     QVERIFY(host.diagnostics()["diagnostics"].toObject()["active"].toBool());
     window.close();
     QVERIFY(host.diagnostics()["diagnostics"].toObject()["active"].toBool());
@@ -1507,7 +1508,11 @@ private slots:
       ServiceTransport second(nullptr, pipe, false);
       QTRY_VERIFY(second.active());
       window.close();
-      QTest::qWait(30);
+      // A reply on the same pipe follows any command issued by closeEvent.
+      QSignalSpy closeBarrier(client, &ServiceTransport::historyReady);
+      client->requestHistory();
+      QTRY_VERIFY(!closeBarrier.isEmpty());
+      QVERIFY(host.diagnostics()["diagnostics"].toObject()["active"].toBool());
       QVERIFY(second.active()); // Closing a viewer must never stop the system UPS.
       QSignalSpy historyReceived(&second, &ServiceTransport::historyReady);
       ap_snapshot sample{};
@@ -1714,7 +1719,7 @@ private slots:
       button->click();
       QVERIFY(!backend->active());
       emit backend->stateChanged();
-      QTest::qWait(50);
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
       QVERIFY(!backend->active());
       // The saved entry can be retried without a separate manual scan.
       button->click();
@@ -1726,7 +1731,7 @@ private slots:
     {
       MonitorWindow demo(true);
       demo.show();
-      QTest::qWait(30);
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
       QVERIFY(!demo.findChild<BleTransport *>()->active());
     }
     {
@@ -1734,7 +1739,8 @@ private slots:
       MonitorWindow closed(false, nullptr, backend);
       closed.show();
       closed.close();
-      QTest::qWait(30);
+      // Run the queued startup callback after the window has closed.
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
       QVERIFY(!backend->active());
     }
   }
@@ -1746,7 +1752,7 @@ private slots:
     auto *backend = new BleTransport(nullptr, true);
     MonitorWindow window(false, nullptr, backend);
     window.show();
-    QTest::qWait(30);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
     QVERIFY(!backend->active());
     QVERIFY(backend->address().isEmpty());
   }
@@ -1756,7 +1762,7 @@ private slots:
     window.loadDemo();
     window.findChild<QButtonGroup *>()->button(0)->click();
     window.resize(930, 710);
-    QTest::qWait(20);
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     auto *source = window.findChild<QLabel *>("powerSource");
     auto *runtime = window.findChild<QLabel *>("remainingTime");
     QVERIFY(source && runtime);
@@ -1781,7 +1787,7 @@ private slots:
     window.loadDemo();
     window.findChild<QButtonGroup *>()->button(0)->click();
     window.resize(930, 710);
-    QTest::qWait(20);
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     auto *charge = window.findChild<AdaptiveLabel *>("chargeValue");
     auto *source = window.findChild<AdaptiveLabel *>("powerSource");
     auto *runtime = window.findChild<AdaptiveLabel *>("remainingTime");
@@ -1790,9 +1796,8 @@ private slots:
     const int smallCard = charge->parentWidget()->height();
     for (const auto &size : {QSize(1920, 1080), QSize(3840, 2160)}) {
       window.resize(size);
-      QTest::qWait(20);
-      QVERIFY(charge->parentWidget()->height() > smallCard);
-      QVERIFY(charge->fittedFont().pixelSize() > smallFont * 1.5);
+      QTRY_VERIFY(charge->parentWidget()->height() > smallCard);
+      QTRY_VERIFY(charge->fittedFont().pixelSize() > smallFont * 1.5);
       source->setText("Аккумулятор");
       runtime->setText("26 д 16 ч");
       for (auto *label : window.findChildren<AdaptiveLabel *>()) {
@@ -1804,8 +1809,7 @@ private slots:
       window.grab().save(QString("overview-%1x%2.png").arg(size.width()).arg(size.height()));
     }
     window.resize(930, 710);
-    QTest::qWait(20);
-    QCOMPARE(charge->fittedFont().pixelSize(), smallFont);
+    QTRY_COMPARE(charge->fittedFont().pixelSize(), smallFont);
     source->setText("Не определён");
     runtime->setText("999 д 23 ч");
     for (auto *label : {source, runtime}) {
@@ -1846,8 +1850,16 @@ private slots:
     window.findChild<QButtonGroup *>()->button(1)->click();
     for (int attempt = 0; attempt < 2; ++attempt) {
       select->showPopup();
-      QTest::qWait(220); // Include the completion of native popup effects.
+      // Qt's scroll effect can restore stale geometry at completion. Wait for
+      // the actual effect window to disappear before checking the final rows.
+      QTRY_VERIFY(([&] {
+        const auto topLevels = QApplication::topLevelWidgets();
+        return std::none_of(topLevels.begin(), topLevels.end(), [](QWidget *widget) {
+          return widget->isVisible() && QByteArray(widget->metaObject()->className()) == "QRollEffect";
+        });
+      })());
       auto *view = select->view();
+      QVERIFY(QTest::qWaitForWindowExposed(view->window()));
       const auto viewport = view->viewport()->rect();
       qInfo() << "Popup rows" << items << "selected" << select->currentIndex() << "popup"
               << view->window()->size() << "viewport" << viewport << "margins"
@@ -1892,8 +1904,8 @@ private slots:
     auto *select = window.findChild<Select *>("profile");
     QVERIFY(select);
     select->showPopup();
-    QTest::qWait(50);
     auto *view = select->view();
+    QVERIFY(QTest::qWaitForWindowExposed(view->window()));
     QVERIFY(view->isVisible());
     const auto fieldTop = select->mapToGlobal(QPoint(0, 0));
     QCOMPARE(view->window()->geometry().left(), fieldTop.x());
@@ -1963,7 +1975,7 @@ private slots:
     log.show();
     for (int i = 0; i < 100; ++i)
       log.appendEntry(QString("Event %1").arg(i));
-    QTest::qWait(20);
+    QTRY_VERIFY(log.verticalScrollBar()->maximum() > 20);
     QVERIFY(log.following());
     log.verticalScrollBar()->setValue(20);
     QVERIFY(!log.following());
@@ -2002,9 +2014,8 @@ private slots:
       emit transport->packet(QString("test %1").arg(i), true);
     auto *pages = window.findChild<QStackedWidget *>();
     pages->setCurrentIndex(2);
-    QTest::qWait(20);
+    QTRY_VERIFY(log->toPlainText().endsWith("RX test 79"));
     QVERIFY(log->toPlainText().contains("RX test 0"));
-    QVERIFY(log->toPlainText().endsWith("RX test 79"));
     QVERIFY(log->following());
     window.grab().save("diagnostic-log.png");
     log->verticalScrollBar()->setValue(0);
@@ -2059,7 +2070,6 @@ private slots:
     QCOMPARE(copied["main_age_ms"].toInt(), 100);
     window.findChild<QButtonGroup *>()->button(2)->click();
     table->verticalScrollBar()->setValue(0);
-    QTest::qWait(20);
     window.grab().save("diagnostic-table.png");
   }
   void nativeControlsAndChart() {
@@ -2067,7 +2077,7 @@ private slots:
     window.resize(1120, 820);
     window.show();
     window.loadDemo();
-    QTest::qWait(100);
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     auto *connect = window.findChild<QPushButton *>("primary");
     QVERIFY(connect);
     QVERIFY(!connect->isEnabled());

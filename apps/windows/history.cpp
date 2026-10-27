@@ -340,6 +340,8 @@ void HistoryWorker::open(const QString &path) {
   store = new HistoryStore(path);
   if (!store->valid())
     emit problem(store->error());
+  else
+    emit opened();
 }
 void HistoryWorker::newSession() {
   if (store)

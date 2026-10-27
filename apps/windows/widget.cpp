@@ -37,7 +37,7 @@ bool setWidgetStartup(QSettings &store, bool enabled, const QString &executable)
 }
 
 WidgetCard::WidgetCard(bool desktop, std::function<quintptr()> hostFinder)
-    : DesktopSurface(desktop, std::move(hostFinder)) {
+    : DesktopSurface(desktop, std::move(hostFinder)), graphAnimation_(this) {
   setWindowTitle(QStringLiteral("ALLPOWERS Widget"));
   setFixedSize(300, 210);
   setCursor(Qt::SizeAllCursor);
@@ -279,6 +279,7 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   history->moveToThread(&historyThread);
   connect(&historyThread, &QThread::finished, history, &QObject::deleteLater);
   connect(this, &WidgetController::openHistory, history, &HistoryWorker::open);
+  connect(history, &HistoryWorker::opened, this, [this] { historyReady = true; });
   connect(this, &WidgetController::loadHistory, history, &HistoryWorker::load);
   connect(this, &WidgetController::sample, history, &HistoryWorker::sample);
   connect(history, &HistoryWorker::sampleFinished, this, [this] {
@@ -628,6 +629,7 @@ void WidgetController::loadDemo() {
 QJsonObject WidgetController::diagnostics() const {
   auto result = card_.nativeDiagnostics();
   const QJsonObject values{{"history_error", historyError},
+                           {"history_ready", historyReady},
                            {"ui_language", qApp->property("ui_language").toString()},
                            {"history_worker_busy", sampleQueue.busy()},
                            {"history_sample_pending", sampleQueue.waiting()},

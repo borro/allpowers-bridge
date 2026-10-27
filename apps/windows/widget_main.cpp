@@ -63,32 +63,57 @@ int main(int argc, char **argv) {
   widget.start();
   if (offline)
     widget.loadDemo();
-  if (parser.isSet("self-test") || parser.isSet("test-seconds")) {
-    QTimer::singleShot(
-        parser.isSet("self-test") ? 1500 : qMax(1, parser.value("test-seconds").toInt()) * 1000,
-        &app, [&] {
-          if (parser.isSet("screenshot"))
-            widget.card()->renderedImage().save(parser.value("screenshot"));
-          auto report = widget.diagnostics();
-          const bool notice =
-              embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
-          bool ok = ap_self_test() && report["history_error"].toString().isEmpty() && notice &&
-                    report["points"].toInt() > 0;
-          if (QGuiApplication::platformName() != "offscreen")
-            ok = ok && report["desktop_attached"].toBool() && report["native_child"].toBool() &&
-                 report["native_parent_matches"].toBool() && report["native_visible"].toBool() &&
-                 !report["native_popup"].toBool() && report["native_frame_published"].toBool();
-          report["embedded_notices"] = embeddedLicenseFiles().size();
-          report["lgpl_notice"] = notice;
-          report["qt_runtime"] = qVersion();
-          report["status"] = ok ? "PASS" : "FAIL";
-          if (parser.isSet("report")) {
-            QFile file(parser.value("report"));
-            if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(report).toJson()) < 0)
-              ok = false;
-          }
-          app.exit(ok ? 0 : 3);
-        });
-  }
+  const auto ready = [](const QJsonObject &report) {
+    bool ok = report["history_ready"].toBool() && report["points"].toInt() > 0;
+    if (QGuiApplication::platformName() != "offscreen")
+      ok = ok && report["desktop_attached"].toBool() && report["native_child"].toBool() &&
+           report["native_parent_matches"].toBool() && report["native_visible"].toBool() &&
+           !report["native_popup"].toBool() && report["native_frame_published"].toBool();
+    return ok;
+  };
+  const auto finish = [&] {
+    if (parser.isSet("screenshot"))
+      widget.card()->renderedImage().save(parser.value("screenshot"));
+    auto report = widget.diagnostics();
+    const bool notice =
+        embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
+    bool ok = ap_self_test() && report["history_error"].toString().isEmpty() && notice &&
+              ready(report);
+    if (parser.isSet("self-test")) {
+      if (!report["history_error"].toString().isEmpty())
+        report["self_test_error"] = "History initialization failed";
+      else if (!ready(report))
+        report["self_test_error"] = "Timed out waiting for history or desktop frame";
+      else if (!notice)
+        report["self_test_error"] = "Embedded LGPL notice is missing";
+    }
+    report["embedded_notices"] = embeddedLicenseFiles().size();
+    report["lgpl_notice"] = notice;
+    report["qt_runtime"] = qVersion();
+    report["status"] = ok ? "PASS" : "FAIL";
+    if (parser.isSet("report")) {
+      QFile file(parser.value("report"));
+      if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(report).toJson()) < 0)
+        ok = false;
+    }
+    app.exit(ok ? 0 : 3);
+  };
+  QTimer selfTestPoll;
+  QElapsedTimer selfTestDeadline;
+  if (parser.isSet("self-test")) {
+    // Finish on readiness. The deadline only bounds a stuck worker/desktop host;
+    // it is below the standalone process timeout used by CTest.
+    selfTestDeadline.start();
+    QObject::connect(&selfTestPoll, &QTimer::timeout, &app, [&] {
+      const auto report = widget.diagnostics();
+      if (ready(report) || !report["history_error"].toString().isEmpty() ||
+          selfTestDeadline.elapsed() >= 10000) {
+        selfTestPoll.stop();
+        finish();
+      }
+    });
+    selfTestPoll.start(50);
+  } else if (parser.isSet("test-seconds"))
+    QTimer::singleShot(qMax(1, parser.value("test-seconds").toInt()) * 1000, &app, finish);
   return app.exec();
 }

@@ -3,6 +3,7 @@
 #include <QThread>
 #include <QTimer>
 #include <mutex>
+#include <functional>
 #include <windows.h>
 #include <setupapi.h>
 #include <cfgmgr32.h>
@@ -18,6 +19,7 @@ struct State {
   COMMTIMEOUTS timeouts{};
   int opens = 0, closes = 0, reads = 0, listsClosed = 0;
   bool shortWrite = false;
+  std::function<void()> onClose;
 } s;
 std::mutex mutex;
 HANDLE handle = reinterpret_cast<HANDLE>(quintptr(123));
@@ -56,7 +58,11 @@ HANDLE CreateFileW(LPCWSTR path, DWORD access, DWORD share, auto, DWORD disposit
   ++s.opens; s.path = QString::fromWCharArray(path);
   return s.fail == "open" ? INVALID_HANDLE_VALUE : handle;
 }
-BOOL CloseHandle(HANDLE value) { std::lock_guard lock(mutex); Q_ASSERT(value == handle); ++s.closes; return TRUE; }
+BOOL CloseHandle(HANDLE value) {
+  std::lock_guard lock(mutex); Q_ASSERT(value == handle); ++s.closes;
+  if (s.onClose) s.onClose();
+  return TRUE;
+}
 DWORD GetLastError() { return ERROR_ACCESS_DENIED; }
 BOOL GetCommState(HANDLE, LPDCB state) {
   std::lock_guard lock(mutex);
@@ -130,8 +136,14 @@ private slots:
     Fake::s.input = "first"; QTRY_COMPARE(received.count(), 1);
     QCOMPARE(received[0][1].toByteArray(), QByteArray("first"));
     Fake::s.input = "second"; const int reads = Fake::s.reads;
-    QTest::qWait(60); QCOMPARE(Fake::s.reads, reads);
-    worker.acknowledge(6); QTest::qWait(40); QCOMPARE(received.count(), 1);
+    auto *poll = worker.findChild<QTimer *>();
+    QVERIFY(poll);
+    // Exercise the polling callback while blocked, without waiting for wall time.
+    QVERIFY(QMetaObject::invokeMethod(poll, "timeout", Qt::DirectConnection));
+    QCOMPARE(Fake::s.reads, reads);
+    worker.acknowledge(6);
+    QVERIFY(QMetaObject::invokeMethod(poll, "timeout", Qt::DirectConnection));
+    QCOMPARE(Fake::s.reads, reads); QCOMPARE(received.count(), 1);
     worker.acknowledge(7); QTRY_COMPARE(received.count(), 2);
     worker.write("request"); QCOMPARE(Fake::s.output, QByteArray("request"));
     worker.close(); worker.close(); QCOMPARE(Fake::s.closes, 1);
@@ -166,12 +178,18 @@ private slots:
     channel.reset(); QCOMPARE(Fake::s.closes, 2);
   }
   void staleGenerationIsIgnored() {
+    bool closed = false;
+    QObject completion;
+    Fake::s.onClose = [&] {
+      QMetaObject::invokeMethod(&completion, [&] { closed = true; }, Qt::QueuedConnection);
+    };
     auto channel = std::unique_ptr<UsbChannel>(nativeUsbChannel(nullptr));
     QSignalSpy opened(channel.get(), &UsbChannel::opened), failed(channel.get(), &UsbChannel::failed);
     channel->open("invalid"); channel->open("COM1"); channel->close();
-    // Destruction drains the worker queue; queued signals from all old requests
-    // must not be delivered to consumers after close increments the generation.
-    QTest::qWait(80); QCOMPARE(opened.count(), 0); QCOMPARE(failed.count(), 0);
+    // This queued acknowledgement follows the worker's stale signals. Receiving
+    // it proves those signals have been processed while the channel is still alive.
+    QTRY_VERIFY(closed);
+    QCOMPARE(opened.count(), 0); QCOMPARE(failed.count(), 0);
     channel.reset(); QCOMPARE(Fake::s.closes, 1);
   }
 };

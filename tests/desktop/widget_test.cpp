@@ -350,10 +350,15 @@ private slots:
     QVERIFY(outputAt(before, 2, 127));
     card.setHistory(points, now + 1);
     QCOMPARE(card.renderedImage(), before); // No one-second position jump on receipt.
-    QTest::qWait(400);
+    auto *animation = card.findChild<QVariantAnimation *>();
+    QVERIFY(animation);
+    QCOMPARE(animation->state(), QAbstractAnimation::Running);
+    // Inspect exact animation positions even if the runner is descheduled.
+    animation->setCurrentTime(animation->duration() / 2);
     const auto moving = card.renderedImage();
     QVERIFY(moving != before);
-    QTest::qWait(600);
+    animation->setCurrentTime(animation->duration());
+    QCOMPARE(animation->state(), QAbstractAnimation::Stopped);
     const auto after = card.renderedImage();
     QVERIFY(after != moving);
     QVERIFY(outputAt(after, 3, 127));
@@ -635,10 +640,9 @@ private slots:
     card.setTelemetry(value, QStringLiteral("Демонстрационные данные"));
     QVERIFY(card.attached());
     QVERIFY(card.nativeDiagnostics()["native_frame_published"].toBool());
-    QTest::qWait(500);
     auto window = reinterpret_cast<HWND>(card.nativeHandle());
     if (unobscured(window, {8, 130}, card.desktopScale()))
-      QCOMPARE(composedPixel(window, {8, 130}, card.desktopScale()), RGB(16, 27, 45));
+      QTRY_COMPARE(composedPixel(window, {8, 130}, card.desktopScale()), RGB(16, 27, 45));
     else
       qInfo()
           << "Desktop pixel is covered by another application; checking publication and geometry";
@@ -647,7 +651,6 @@ private slots:
     for (int i = 0; i < 20; ++i) {
       value.soc = 50 + i;
       card.setTelemetry(value, QStringLiteral("Демонстрационные данные"));
-      QTest::qWait(100);
       RECT current{};
       GetWindowRect(window, &current);
       QCOMPARE(current.left, expected.left);
@@ -672,7 +675,8 @@ private slots:
     SetWindowPos(host, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     QVERIFY(IsWindowVisible(host));
-    WidgetCard surface(true, [&] { return reinterpret_cast<quintptr>(host); });
+    int hostChecks = 0;
+    WidgetCard surface(true, [&] { ++hostChecks; return reinterpret_cast<quintptr>(host); });
     surface.setDesktopPosition({}, {80, 80});
     ap_snapshot value{};
     value.known = 15;
@@ -683,27 +687,12 @@ private slots:
     // The displayed HWND must be independent of Qt's hidden content widget.
     QVERIFY(!surface.windowHandle());
     QVERIFY(surface.nativeDiagnostics()["native_frame_published"].toBool());
-    QTest::qWait(500);
     HWND child = reinterpret_cast<HWND>(surface.nativeHandle());
     // Match Explorer's composition mode and sample the actual screen output.
     // The child's GDI DC can look correct while DWM displays a black rectangle.
-    HDC dc = GetDC(nullptr);
-    QVERIFY(dc);
     const qreal scale = surface.desktopScale();
-    POINT samplePoint{qRound(8 * scale), qRound(130 * scale)};
-    ClientToScreen(child, &samplePoint);
-    HDC capture = CreateCompatibleDC(dc);
-    HBITMAP pixel = CreateCompatibleBitmap(dc, 1, 1);
-    HGDIOBJ previous = SelectObject(capture, pixel);
-    BitBlt(capture, 0, 0, 1, 1, dc, samplePoint.x, samplePoint.y, SRCCOPY | CAPTUREBLT);
-    const COLORREF background = GetPixel(capture, 0, 0);
-    SelectObject(capture, previous);
-    DeleteObject(pixel);
-    DeleteDC(capture);
-    ReleaseDC(nullptr, dc);
-    qInfo() << "Composed background:" << background;
     if (unobscured(child, {8, 130}, scale))
-      QCOMPARE(background, RGB(16, 27, 45));
+      QTRY_COMPARE(composedPixel(child, {8, 130}, scale), RGB(16, 27, 45));
     else
       qInfo() << "Test pixel is covered by another application; checking publication and geometry";
     // A host offset must not accumulate on each bitmap update.
@@ -757,7 +746,8 @@ private slots:
           Qt::LeftButton);
     mouse(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton);
     QCOMPARE(surface.desktopOffset(), locked);
-    QTest::qWait(1600); // the host health check must not reset position
+    const int previousChecks = hostChecks;
+    QTRY_VERIFY(hostChecks > previousChecks); // An actual health check must preserve position.
     QCOMPARE(surface.desktopOffset(), locked);
   }
   void independentSettingsAndDemo() {
@@ -773,7 +763,7 @@ private slots:
       WidgetController widget(folder, true, false);
       widget.start();
       widget.loadDemo();
-      QTest::qWait(1200);
+      QTRY_VERIFY(widget.diagnostics()["history_ready"].toBool());
       QVERIFY(widget.diagnostics()["history_error"].toString().isEmpty());
       QCOMPARE(widget.diagnostics()["points"].toInt(), 3601);
       QCOMPARE(widget.card()->size(), QSize(300, 210));
@@ -791,6 +781,47 @@ private slots:
       reopened.start();
     }
   }
+  void historyReadinessFollowsWorker_data() {
+    QTest::addColumn<bool>("fail");
+    QTest::newRow("opened") << false;
+    QTest::newRow("failed") << true;
+  }
+  void historyReadinessFollowsWorker() {
+    QFETCH(bool, fail);
+    struct ControlledOpen : HistoryWorker {
+      QSemaphore &entered, &release;
+      bool fail;
+      ControlledOpen(QSemaphore &e, QSemaphore &r, bool f) : entered(e), release(r), fail(f) {}
+      void open(const QString &path) override {
+        entered.release();
+        // Failure bound only: the test releases the worker explicitly.
+        if (!release.tryAcquire(1, 10000)) {
+          emit problem("Controlled open was not released");
+          return;
+        }
+        HistoryWorker::open(fail ? QFileInfo(path).absolutePath() : path);
+      }
+    };
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSemaphore entered, release;
+    WidgetRuntime runtime;
+    runtime.makeHistoryWorker = [&] { return new ControlledOpen(entered, release, fail); };
+    WidgetController widget(directory.path(), true, false, {}, runtime);
+    const auto unblock = qScopeGuard([&] { release.release(); });
+    widget.loadDemo();
+    QTRY_VERIFY(entered.available() == 1);
+    QVERIFY(!widget.diagnostics()["history_ready"].toBool());
+    QVERIFY(widget.diagnostics()["history_error"].toString().isEmpty());
+    release.release();
+    if (fail) {
+      QTRY_VERIFY(!widget.diagnostics()["history_error"].toString().isEmpty());
+      QVERIFY(!widget.diagnostics()["history_ready"].toBool());
+    } else {
+      QTRY_VERIFY(widget.diagnostics()["history_ready"].toBool());
+      QVERIFY(widget.diagnostics()["history_error"].toString().isEmpty());
+    }
+  }
 };
 
 int main(int argc, char **argv) {
@@ -802,6 +833,8 @@ int main(int argc, char **argv) {
     output.open(stdout, QIODevice::WriteOnly);
     output.write("owned\n");
     output.flush();
+    // Parent waits for "owned", then kills us to test lease recovery after a
+    // crash. This is only an orphan-child lifetime bound, not synchronization.
     Sleep(30000);
     return 0;
   }

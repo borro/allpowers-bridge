@@ -54,18 +54,38 @@ public:
 };
 QList<UsbPort> ports() { return {{"R2500-000000000001", "COM17", "Synthetic USB"}}; }
 int battery(const QString &report, int seconds) { return !report.isEmpty() && seconds == 2 ? 17 : 2; }
+// Keep the real window/storage, but control when its asynchronous history result
+// becomes observable to the CLI. This reproduces a slow worker without sleeps
+// on the GUI thread or dependence on the CI machine's disk speed.
+class Window : public MonitorWindow {
+  QElapsedTimer age;
+public:
+  Window(bool offline, QWidget *parent, TelemetryTransport *transport)
+      : MonitorWindow(offline, parent, transport) { age.start(); }
+  QJsonObject diagnostics() const {
+    auto info = MonitorWindow::diagnostics();
+    if (scenario == "self-test-no-history" ||
+        (scenario == "self-test-slow-history" && age.elapsed() < 2000))
+      info["history"] = QJsonObject{};
+    if (scenario == "self-test-history-error")
+      info["history_error"] = "Injected history failure";
+    return info;
+  }
+};
 } // namespace Fake
-// Only external transport dependencies are substituted. Argument parsing,
-// result criteria, event loops, reports and the GUI are production code.
+// Argument parsing, result criteria, event loops, reports and the GUI are
+// production code; external I/O and history-result timing are controlled here.
 #define BleTransport Fake::Transport
 #define UsbTransport Fake::Transport
 #define allpowersUsbPorts Fake::ports
 #define runBatteryProbe Fake::battery
+#define MonitorWindow Fake::Window
 #include "../../apps/windows/monitor_application.cpp"
 #undef BleTransport
 #undef UsbTransport
 #undef allpowersUsbPorts
 #undef runBatteryProbe
+#undef MonitorWindow
 
 class CliContract : public QObject {
   Q_OBJECT
@@ -73,7 +93,8 @@ private slots:
   void commands_data() {
     QTest::addColumn<QString>("scenario");
     for (auto *name : {"scan-usb", "scan-usb-unwritable", "scan-ble", "usb-pass", "usb-fail",
-        "station-pass", "station-fail", "demo", "self-test", "report-unwritable", "licenses", "battery"})
+        "station-pass", "station-fail", "demo", "self-test", "self-test-slow-history",
+        "self-test-no-history", "self-test-history-error", "report-unwritable", "licenses", "battery"})
       QTest::newRow(name) << QString(name);
   }
   void commands() {
@@ -147,12 +168,16 @@ int runChild(QApplication &app, const QString &scenario) {
     args << "--verify-station" << "10"; if (scenario.endsWith("fail")) expected = 5;
   } else if (scenario == "licenses") args << "--export-licenses" << dir.filePath("licenses");
   else if (scenario == "battery") { args << "--battery-probe" << "2"; expected = 17; }
-  else if (scenario == "self-test") args << "--self-test" << "--screenshot" << dir.filePath("ui.png");
+  else if (scenario.startsWith("self-test")) {
+    args << "--self-test" << "--screenshot" << dir.filePath("ui.png");
+    if (scenario == "self-test-no-history" || scenario == "self-test-history-error") expected = 3;
+  }
   else { args << "--demo" << "--test-seconds" << "1"; if (scenario.endsWith("unwritable")) expected = 3; }
   MonitorRuntime runtime;
   runtime.serviceInstalled = [] { return false; };
   runtime.leaseKey = "ALLPOWERS.Test.Cli." + QUuid::createUuid().toString();
   runtime.makeTransport = [](QObject *parent, bool) { return new Fake::Transport(parent); };
+  QElapsedTimer elapsed; elapsed.start();
   const int result = runMonitorApplication(app, args, runtime);
   if (result != expected) { qCritical() << scenario << result << expected; return 72; }
   if (scenario.endsWith("unwritable") || scenario == "battery" || scenario == "licenses") return 0;
@@ -163,10 +188,17 @@ int runChild(QApplication &app, const QString &scenario) {
   } else if (scenario == "scan-ble") {
     if (data["devices"].toArray().size() != 2 || Fake::starts || data["connection_attempted"].toBool()) return 75;
   } else {
-    if (data["status"].toString() != (expected == 5 ? "FAIL" : "PASS")) return 76;
+    if (data["status"].toString() != (expected ? "FAIL" : "PASS")) return 76;
     if (scenario.startsWith("usb-") && (!data["port_closed_after_test"].toBool() || data["samples"].toInt() < 2)) return 77;
     if (scenario.startsWith("station-") && (!data["disconnected_after_test"].toBool() || Fake::starts != 1)) return 78;
     if (scenario == "self-test" && !QFile::exists(dir.filePath("ui.png"))) return 79;
+    if (scenario == "self-test-slow-history" &&
+        (elapsed.elapsed() < 2000 || !data["history_ready"].toBool() || Fake::starts || Fake::scans)) return 80;
+    if (scenario == "self-test-no-history" &&
+        (elapsed.elapsed() < 10000 || data["history_ready"].toBool() ||
+         data["self_test_error"].toString() != "Timed out waiting for history initialization")) return 81;
+    if (scenario == "self-test-history-error" &&
+        data["self_test_error"].toString() != "History initialization failed") return 82;
   }
   return 0;
 }

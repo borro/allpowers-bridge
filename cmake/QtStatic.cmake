@@ -34,6 +34,10 @@ ExternalProject_Add(qtbase-static
   PREFIX "${PROJECT_BINARY_DIR}/deps/qtbase"
   CMAKE_GENERATOR Ninja
   CMAKE_ARGS ${qt_common} -DFEATURE_cpp_winrt=ON -DFEATURE_static_runtime=ON -DFEATURE_opengl=OFF
+    -DFEATURE_dbus=OFF -DFEATURE_printsupport=OFF -DFEATURE_concurrent=OFF
+    -DFEATURE_xml=OFF -DFEATURE_sql_odbc=OFF -DFEATURE_qmake=OFF
+    -DFEATURE_androiddeployqt=OFF -DFEATURE_harmonydeployqt=OFF
+    -DFEATURE_wasmdeployqt=OFF -DFEATURE_windeployqt=OFF
     -DINPUT_opengl=no -DFEATURE_opengl_dynamic=OFF -DFEATURE_opengl_desktop=OFF -DFEATURE_icu=OFF
     -DFEATURE_system_zlib=OFF -DFEATURE_system_png=OFF -DFEATURE_system_jpeg=OFF
     -DFEATURE_system_freetype=OFF -DFEATURE_system_harfbuzz=OFF -DFEATURE_system_sqlite=OFF
@@ -52,7 +56,7 @@ ExternalProject_Add(qtconnectivity-static
   DOWNLOAD_DIR "${ALLPOWERS_QT_SOURCE_CACHE}"
   PREFIX "${PROJECT_BINARY_DIR}/deps/qtconnectivity"
   DEPENDS qtbase-static CMAKE_GENERATOR Ninja
-  CMAKE_ARGS ${qt_common} -DFEATURE_winrt_bt=ON "-DCMAKE_PREFIX_PATH=${ALLPOWERS_QT_ROOT}"
+  CMAKE_ARGS ${qt_common} -DFEATURE_winrt_bt=ON -DFEATURE_nfc=OFF "-DCMAKE_PREFIX_PATH=${ALLPOWERS_QT_ROOT}"
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_QT_JOBS}"
   INSTALL_BYPRODUCTS "${ALLPOWERS_QT_ROOT}/lib/Qt6Bluetooth.lib"
   LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON

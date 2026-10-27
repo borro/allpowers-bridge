@@ -23,7 +23,6 @@ public:
   // Call begin() once. Unsigned subtraction supports millis() rollover; polling
   // must not stop for an entire uint32_t timer period (~49.7 days).
   Event update(bool pressed, uint32_t now) {
-    Event event = Event::None;
     if (pressed != raw_) {
       raw_ = pressed;
       changedAt_ = now;
@@ -41,12 +40,9 @@ public:
       if (stable_) {
         pressedAt_ = now;
         holdSent_ = false;
+        // A late raw onset already emitted Single in the poll that observed
+        // it (below). Only an on-time second press can still be waiting here.
         second_ = waiting_ && elapsed(changedAt_, releasedAt_) <= DoubleMs;
-        if (waiting_ && !second_) {
-          // Expired first click plus a new independent press in the same poll.
-          waiting_ = false;
-          event = Event::Single;
-        }
       } else {
         if (holdSent_) {
           second_ = false;
@@ -79,7 +75,7 @@ public:
       waiting_ = false;
       return Event::Single;
     }
-    return event;
+    return Event::None;
   }
 
   // Runs entirely in RAM; suitable for the existing firmware self-test gate.

@@ -7,6 +7,65 @@ namespace FirmwareContractTests {
 inline void run() {
   using namespace HistoryFormat;
   {
+    StatusSnapshot snapshot;
+    std::array<char, 128> buffer;
+    buffer.fill('#');
+    const auto before = buffer;
+    for (uint8_t index : {kStatusRows, uint8_t(255)}) {
+      assert(serializeStatus(snapshot, index, buffer.data(), buffer.size()) == 0);
+      assert(buffer == before); // Invalid rows produce no output, including a terminator.
+    }
+  }
+  for (const char *command : {"", "UNKNOWN", "STATUS extra", "HISTORY-EXPORT", "HISTORY-READ"}) {
+    OutputTests::Source source, referenceSource;
+    OutputTests::Status status(source), referenceStatus(referenceSource);
+    HistoryOperationTests::Sink sink, referenceSink;
+    OutputController output(source, sink, status), reference(referenceSource, referenceSink, referenceStatus);
+    assert(!output.command(command, 0));
+    assert(!output.busy() && !output.failed() && !output.paused());
+    assert(source.opens == 0 && source.closes == 0 && status.captures == 0 && sink.bytes.empty());
+    assert(output.command("HISTORY-EXPORT 1", 0));
+    assert(reference.command("HISTORY-EXPORT 1", 0));
+    uint32_t now = 0;
+    for (; !source.opened && now < 5000; now += 5) {
+      output.pump(now); reference.pump(now);
+    }
+    assert(source.opened && output.active());
+    const auto before = sink.bytes;
+    assert(!output.command(command, now));
+    assert(output.active() && !output.failed() && !output.paused());
+    assert(source.opens == 1 && source.closes == 0 && sink.bytes == before);
+    for (; (output.busy() || reference.busy()) && now < 15000; now += 5) {
+      output.pump(now); reference.pump(now);
+    }
+    assert(!output.busy() && !reference.busy() && !output.failed());
+    assert(output.acknowledged() == source.count && source.closes == 1);
+    assert(sink.bytes == referenceSink.bytes); // Same export and STATUS stream as without the command.
+  }
+  {
+    // Reserve an on-time second raw press even when debounce is polled late;
+    // a late raw press must finish the first Single immediately, exactly once.
+    using Event = BootGestures::Event;
+    for (uint32_t base : {uint32_t(0), UINT32_C(0xffffff00)}) {
+      for (uint32_t onset : {579u, 580u, 581u, 900u}) {
+        BootGestures button;
+        button.begin(false, base);
+        auto poll = [&](bool down, uint32_t at) { return button.update(down, base + at); };
+        assert(poll(true, 100) == Event::None);
+        assert(poll(true, 130) == Event::None);
+        assert(poll(false, 200) == Event::None);
+        assert(poll(false, 230) == Event::None);
+        const bool second = onset <= 230 + BootGestures::DoubleMs;
+        assert(poll(true, onset) == (second ? Event::None : Event::Single));
+        assert(poll(true, onset + 100) == Event::None);
+        assert(poll(false, onset + 150) == Event::None);
+        assert(poll(false, onset + 180) == (second ? Event::Double : Event::None));
+        assert(poll(false, onset + 530) == (second ? Event::None : Event::Single));
+        assert(poll(false, onset + 600) == Event::None);
+      }
+    }
+  }
+  {
     // A lying erase must not cause a second pass over the partition or writes
     // into occupied slots. Once exhausted, the ring stays unhealthy.
     struct OccupiedFlash : Flash {

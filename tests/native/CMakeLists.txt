@@ -14,6 +14,7 @@ target_compile_definitions(abi_test PRIVATE
   FIXTURE_PATH="${PROJECT_SOURCE_DIR}/tests/fixtures/notifications.json")
 foreach(target models_test abi_test ups_test firmware_test history_rollback_test)
   ap_enable_coverage(${target})
+  ap_enable_mutation(${target})
   target_compile_features(${target} PRIVATE cxx_std_23)
   if(MSVC)
     target_compile_options(${target} PRIVATE /utf-8 /UNDEBUG)

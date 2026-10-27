@@ -179,6 +179,119 @@ uploads; enable public tokenless uploads in Codecov if the organization requires
 it. Confirm both flags on the first `main` run, a numeric badge and a PR report
 before considering hosted setup verified.
 
+## Mutation testing
+
+Mull 0.35.0 with Clang/LLVM 18 runs on Ubuntu 24.04 amd64 (including WSL).
+The official package URL and SHA256 are pinned in `cmake/Dependencies.cmake`;
+setup verifies and extracts it into the build directory without running an installer.
+Install the Ubuntu toolchain packages once, then use the same CMake entry points as CI:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y clang-18 libclang-cpp18 llvm-18-dev libclang-18-dev
+cmake -DWORK=build/mutation-linux/tools/mull -P cmake/SetupMutation.cmake
+cmake --preset mutation-linux
+cmake --build --preset mutation-linux --parallel 2
+```
+
+The preset builds and runs the `mutation-report` target, using an isolated tree
+with coverage and sanitizers disabled. Ordinary builds do not require LLVM or Mull.
+Five native test programs exercise the core, host firmware logic and portable
+`ups_state.h` adapter. The shared core library is scanned separately with both
+its test programs. Qt, test sources, dependencies and hardware execution are outside
+this scope. Built-in `selfTest()` routines remain included because they also run
+in the product; a detected mutation there can reflect the built-in check itself.
+
+Operators cover comparisons, boundaries, arithmetic, bitwise operations and logical
+negation. The complete selected scope is checked, including uncovered mutations.
+Original tests must pass first. Runs use two workers and a 3-second timeout per
+mutant. The CI job has a 30-minute limit; partial runs are failures, not valid scores.
+
+Every invocation starts a fresh SQLite report. Mull merges repeated mutations
+across test programs before generating `build/mutation-linux/mutation/`:
+an offline HTML source report, JSON, SQLite results, logs and `summary.md`. The score is
+`(killed + timeout) / all mutants`; timeouts and uncovered mutants are also listed
+separately. Empty results or missing core/firmware mutations fail validation.
+
+The `mutation` GitHub Actions job runs on push/PR and manual dispatch. Its summary
+and `mutation-linux` artifact (retained 14 days) need no external reporting account.
+The reviewed survivors are recorded in `tests/mutation/accepted.json`, with a
+reason and category for each mutation. The job fails for any unreviewed survivor,
+any uncovered mutation, or a baseline/tool/report error. There is no minimum
+percentage: acceptance leaves the original statuses and mutation score unchanged.
+The mutation job also gates tagged product builds and releases.
+
+An acceptance matches the exact file, Mull mutation ID (operator and coordinates),
+replacement and SHA-256 of the entire source file, normalized to LF. Changing
+surrounding source invalidates the acceptance; moving the same operator or losing
+coverage cannot silently inherit it. `review.json` and the job summary distinguish
+accepted, unexpected and inactive entries. An accepted mutation that is now killed
+or removed is inactive, not a failure. Remove obsolete entries after review.
+To accept a new survivor, inspect its source and tests, document the invariant or
+accepted limitation, and deliberately update its entry and file digest. There is
+no automatic baseline refresh. Use survivors to find missing behavioral tests;
+do not change production code merely to raise the score.
+
+The initial run found 771 unique mutants (76.91% detected). Tests for exact
+freshness/buffer boundaries, independent output flags, unknown output power and
+the runtime limit raised detection to 78.86% without changing product code.
+Some remaining survivors are equivalent: replacing `>` with `>=` when selecting
+the larger of two equal ages in `ups_state.h` leaves the result unchanged.
+The ABI boundary at 512 bytes initially looked equivalent because both versions
+reject the packet, but changes the observable invalid-frame counter; the review
+added a test for that counter instead of classifying it as equivalent.
+Equivalent mutations remain visible, not suppressed. A survivor is a review
+candidate, not proof of a product bug or of equivalence.
+
+The follow-up review adds behavioral checks for independent legacy output bits,
+UPS state combinations, frozen history ordering, a fixed FNV digest vector,
+graph age boundaries, picker pages, optional-output draining, STATUS fairness,
+strict export deadlines and delimiter recovery after a blocked write. These use
+the public portable interfaces; no product implementation or mutation exclusions
+are changed. They also run under ASan/UBSan in a separate native build.
+
+With the same 771 mutants, the review detected 104 additional mutations:
+**92.35%** (709 killed, 3 timeouts, 59 survivors). The remaining reviewed groups
+are 11 equivalent under valid-input invariants, 35 in built-in diagnostics/RAM
+fault simulators, 9 defensive branches, and 4 mutants introducing out-of-bounds
+accesses. These are analysis categories, not automatic suppressions or a promise
+that every survivor outside the equivalent group is harmless.
+
+The subsequent defensive/bounds review adds permanent tests for a flash that
+claims to erase but retains occupied slots, STATUS lines of 3071/3072/3073 bytes,
+and an exactly 80-byte unterminated command buffer. The ordinary Mull result is
+now **92.74%** (712 killed, 3 timeouts, 56 survivors). Seven formatting-boundary
+survivors are equivalent under the current formats: record output is bounded by
+303 bytes, the export prefix by 175, and all queued export lines by 477, below
+the 512/768-byte buffers. The fixed nonempty formats cannot return zero; STATUS
+uses only valid row indices. These invariants must be reviewed if formats change.
+
+All four previously identified unsafe mutations were also rebuilt individually
+in isolated header copies with Clang 18, `-O0 -g`,
+`-fsanitize=address,undefined,bounds`, `-fno-sanitize-recover=all`, and
+`-fsanitize-address-field-padding=2`. The unmutated control passed; every mutant
+produced a sanitizer diagnostic. The field-padding option is essential for the
+export self-test mutation that writes from `input[3]` into the adjacent `memory`
+member: ordinary ASan/UBSan missed it. This is a separate local replay, not part
+of the Mull score or an automated CI sanitizer mutation pass. Three of those
+mutations remain ordinary Mull survivors; the other remaining groups are 18
+equivalent mutations (including the seven formatting guards) and 35 mutations
+in built-in diagnostics/RAM fault simulators. No exclusions were added.
+
+Review surviving mutations separately from ordinary missing scenarios:
+
+- Equivalent changes need a concrete invariant, such as equal operands in a
+  min/max selection or a value already handled by an earlier return.
+- Mutations inside startup `selfTest()` routines and their RAM fault simulators
+  can weaken the diagnostic while still succeeding on a correct implementation.
+  Checking their detection ability requires deliberately defective subjects;
+  asserting their loop counts is not a useful product contract.
+- Defensive formatting/storage branches may need malformed-provider or failing
+  flash scenarios. Their survival is not proof of equivalence.
+- A mutant that introduces an out-of-bounds access is unsafe, not equivalent.
+  ASan/UBSan passing on the original program does not validate those mutants;
+  detecting them reliably needs separate sanitized mutation replay.
+
 ## Firmware
 
 ```sh

@@ -46,6 +46,14 @@ int main() {
     assert(sentinel.soc == 77);
     assert(!ap_receive(s.handle, nullptr, 513, 0));
     assert(!ap_receive(s.handle, nullptr, 0, 0));
+    // An in-range malformed notification counts as a received invalid frame;
+    // an oversized ABI request is rejected before touching session state.
+    const auto invalidBefore = s.snapshot(0).invalid_frames;
+    std::vector<uint8_t> maximumFrame(512, 0);
+    assert(!ap_receive(s.handle, maximumFrame.data(), 512, 0));
+    assert(s.snapshot(0).invalid_frames == invalidBefore + 1);
+    assert(!ap_receive(s.handle, maximumFrame.data(), 513, 0));
+    assert(s.snapshot(0).invalid_frames == invalidBefore + 1);
     uint8_t small[2] = {0x12, 0x34};
     assert(!ap_poll(s.handle, small, sizeof small));
     assert(small[0] == 0x12 && small[1] == 0x34);
@@ -60,6 +68,7 @@ int main() {
       assert(ap_model_hint(name) == ap_catalog_model(i));
     }
     assert(!ap_catalog_name(ap_catalog_count()));
+    assert(!ap_catalog_model(ap_catalog_count()));
     assert(!ap_catalog_model(UINT32_MAX));
     for (uint32_t kind = 0; kind < 3; ++kind)
       assert(ap_uuid(kind) && std::string(ap_uuid(kind)).size() == 36);
@@ -78,6 +87,8 @@ int main() {
     const auto v = s.snapshot(201);
     assert(v.soc == 100 && v.input_w == 0 && v.output_w == 230);
     assert(v.runtime_s == 2304000 && v.source == 2 && v.fresh);
+    assert(v.main_age_ms == 101 && v.settings_age_ms == 1);
+    assert(v.ac_output && !v.usb_output && !v.dc_output);
     assert(!s.snapshot(15201).fresh);
     assert(s.receive(battery, 15202) && s.snapshot(15202).source == 1);
     auto unknown = mains;
@@ -85,6 +96,28 @@ int main() {
     unknown.back() ^= 1;
     assert(s.receive(unknown, 15203));
     assert(s.snapshot(15203).source == 0 && !s.snapshot(15203).fresh);
+  }
+  {
+    // Output flags are independent. Exercise both clear and set bits through
+    // the ABI, including a Settings delta that must not replace Main flags.
+    Session s;
+    for (uint8_t flags : {uint8_t(0), uint8_t(1), uint8_t(2), uint8_t(3)}) {
+      auto packet = main;
+      packet.back() ^= packet[7] ^ flags;
+      packet[7] = flags;
+      assert(s.receive(packet, 100));
+      auto settings = mains;
+      settings.back() ^= settings[7] ^ uint8_t(0x10);
+      settings[7] = 0x10;
+      assert(s.receive(settings, 200));
+      const auto v = s.snapshot(201);
+      assert(v.ac_output == uint32_t(bool(flags & 2)));
+      assert(v.usb_output == uint32_t(bool(flags & 1)));
+      assert(v.dc_output && v.main_age_ms == 101 && v.settings_age_ms == 1);
+    }
+    assert(s.receive(main, 1000) && s.receive(mains, 1000));
+    assert(s.snapshot(16000).fresh);
+    assert(!s.snapshot(16001).fresh);
   }
   {
     Session s;
@@ -119,6 +152,7 @@ int main() {
     assert(ap_model_hint("unknown") == 0);
     uint8_t poll[32]{};
     const auto expected = hex("a565b1000106010000000000");
+    assert(ap_poll(s.handle, poll, expected.size()) == expected.size());
     assert(ap_poll(s.handle, poll, sizeof poll) == expected.size());
     assert(std::equal(expected.begin(), expected.end(), poll));
     ap_snapshot out{};

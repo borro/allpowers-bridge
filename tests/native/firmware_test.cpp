@@ -10,6 +10,7 @@
 #include "HistoryExport.h"
 #include "output_test.h"
 #include "history_operation_test.h"
+#include "firmware_contract_test.h"
 
 int main() {
   assert(BootGestures::selfTest());
@@ -23,4 +24,5 @@ int main() {
   assert(telemetryLabelsSelfTest());
   std::array<HistoryFormat::Record, GraphHistory::kCapacity> graph{};
   assert(GraphHistory::selfTest(graph.data()));
+  FirmwareContractTests::run();
 }

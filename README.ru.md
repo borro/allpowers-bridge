@@ -6,7 +6,8 @@
 
 <p align="center">
   <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Покрытие строк C++ на ПК"></a><br>
-  <sub><a href="docs/building.md#test-coverage">Ядро, логика прошивки в тестах на ПК и Windows/Qt; выполнение на оборудовании не измеряется.</a></sub>
+  <sub><a href="docs/building.md#test-coverage">Ядро, логика прошивки в тестах на ПК и Windows/Qt; выполнение на оборудовании не измеряется.</a><br>
+  <a href="docs/building.md#mutation-testing">Мутационные тесты запускаются на каждый push/PR: разобранные мутанты приняты, новые выжившие вызывают ошибку CI. Отчёты доступны в GitHub Actions.</a></sub>
 </p>
 
 <p align="center">Телеметрия зарядной станции на рабочем столе. USB-ИБП через поддерживаемую плату.</p>

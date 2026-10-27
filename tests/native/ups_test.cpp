@@ -6,6 +6,29 @@
 #include <iterator>
 int main() {
   using namespace AllpowersUps;
+  {
+    // The bridge accepts only coherent power states, independently of the
+    // telemetry adapter that usually constructs them.
+    State wire;
+    wire.generation = wire.sequence = 1;
+    wire.validForMs = 1;
+    for (uint32_t flags = 0; flags < 32; ++flags) {
+      wire.flags = flags;
+      const auto power = flags & ~RuntimeKnown;
+      const bool allowed = power == Present || power == (Present | Mains) ||
+                           power == (Present | Mains | Charging) || power == (Present | Discharging);
+      assert(valid(wire) == (flags == 0 || allowed));
+    }
+    wire.flags = Present | RuntimeKnown;
+    wire.runtimeSeconds = 0x7fffffffu;
+    assert(valid(wire));
+    wire.runtimeSeconds = 0x80000000u;
+    assert(!valid(wire));
+    wire.flags = Present;
+    assert(valid(wire)); // Unknown runtime must not be interpreted.
+    wire.validForMs = 0;
+    assert(!valid(wire));
+  }
   // Captured packets through the production C ABI, rather than hand-setting
   // the very known bits whose propagation this integration test verifies.
   const uint8_t mainPacket[]={0xa5,0x65,0xb1,0,1,8,1,2,100,0,0,0,230,0x96,0,0x6f};
@@ -109,6 +132,16 @@ int main() {
   s = makeUpsState(input, 1, 4);
   assert((s.flags & Present) && (s.flags & RuntimeKnown) && (s.flags & Discharging));
   assert(s.runtimeSeconds == 2246400);
+  // Unknown output power must not invent discharging, even if a stale numeric
+  // value remains. Runtime has a strict upper bound for the Windows interface.
+  auto unknownOutput = input;
+  unknownOutput.known &= ~AllpowersModels::OutputWatts;
+  assert(!(makeUpsState(unknownOutput, 1, 5).flags & Discharging));
+  input.runtime_s = 0x7fffffffu;
+  auto runtimeLimit = makeUpsState(input, 1, 6);
+  assert((runtimeLimit.flags & RuntimeKnown) && runtimeLimit.runtimeSeconds == 0x7fffffffu);
+  input.runtime_s = 0x80000000u;
+  assert(!(makeUpsState(input, 1, 7).flags & RuntimeKnown));
   s.percent = 101;
   assert(!valid(s));
   s.percent = 5;

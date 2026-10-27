@@ -15,6 +15,7 @@ set(ALLPOWERS_DEPS_DIR "${PROJECT_BINARY_DIR}/deps" CACHE PATH "Dependency cache
 option(ALLPOWERS_BUILD_WINDOWS "Build the static Windows BLE monitor" OFF)
 include(cmake/Sanitizers.cmake)
 include(cmake/Coverage.cmake)
+include(cmake/Mutation.cmake)
 add_subdirectory(core)
 add_dependencies(core product-identity)
 if(BUILD_TESTING)
@@ -78,6 +79,7 @@ if(ALLPOWERS_BUILD_WINDOWS)
   add_dependencies(products windows)
 endif()
 ap_add_coverage_test()
+ap_add_mutation_target()
 add_custom_target(audit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
 add_custom_target(audit-worktree COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"

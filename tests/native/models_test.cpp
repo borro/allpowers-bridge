@@ -27,9 +27,52 @@ int main() {
   assert(!recovery.reconnectDue(1000));
   assert(recovery.reconnectDue(45000));
   assert(selfTest());
+  // Every legacy output bit is independent; all-on fixtures miss stuck-on bits.
+  for (uint8_t flags = 0; flags < 16; ++flags) {
+    uint8_t old[] = {flags, 100, 0, 0, 0, 0, 0, 0, 0, 0};
+    Decoded decoded;
+    assert(decode(Model::Old10, old, sizeof old, 0, decoded) == Result::Decoded);
+    assert(decoded.soc == 100 && decoded.dcOutput == bool(flags & 1));
+    assert(decoded.usbOutput == bool(flags & 2) && decoded.acOutput == bool(flags & 4));
+    assert(decoded.lightOutput == bool(flags & 8));
+    old[1] = 101;
+    assert(decode(Model::Old10, old, sizeof old, 0, decoded) == Result::Invalid);
+  }
+  assert(!strcmp(sourceName(PowerSource::Mains), "mains"));
+  assert(!strcmp(sourceName(PowerSource::Battery), "battery"));
+  assert(!strcmp(sourceName(PowerSource::Unknown), "unknown"));
   // Actual local R2500V2 captures: SOC100, input0W, output230W, 38400 minutes.
   const uint8_t ownMain[] = {0xa5, 0x65, 0xb1, 0, 1, 8, 1, 2, 100, 0, 0, 0, 230, 0x96, 0, 0x6f};
   const uint8_t ownSettings[] = {0xa5, 0x65, 0xb1, 0, 1, 6, 3, 0, 1, 0, 0, 3, 2, 0x75};
+  {
+    uint8_t packet[sizeof ownMain];
+    for (uint8_t flags : {0u, 1u, 2u, 0x10u, 0x13u}) {
+      memcpy(packet, ownMain, sizeof packet);
+      packet[2] = 0x42; // A valid legacy envelope need not be R2500V2-specific.
+      packet[7] = flags;
+      checksum(packet, sizeof packet);
+      Decoded d;
+      assert(decode(Model::Legacy16, packet, sizeof packet, 0, d) == Result::Decoded);
+      assert(d.acOutput == bool(flags & 2) && d.dcOutput == bool(flags & 1));
+      assert(d.lightOutput == bool(flags & 0x10));
+      memcpy(packet, ownSettings, sizeof ownSettings);
+      packet[7] = flags;
+      checksum(packet, sizeof ownSettings);
+      assert(decode(Model::R2500V2, packet, sizeof ownSettings, 0, d) == Result::Decoded);
+      assert(d.dcOutput == bool(flags & 0x10));
+    }
+    uint8_t emptyFrame[] = {0xa5, 0x65, 0xb1, 0, 1, 0, 0, 0};
+    checksum(emptyFrame, sizeof emptyFrame);
+    assert(framed(emptyFrame, sizeof emptyFrame));
+    Telemetry t;
+    assert(decodeTelemetry(t, ownSettings, sizeof ownSettings, 0));
+    assert(t.lastKnownSource == PowerSource::Mains);
+    memcpy(packet, ownSettings, sizeof ownSettings);
+    packet[9] = 1;
+    checksum(packet, sizeof ownSettings);
+    assert(decodeTelemetry(t, packet, sizeof ownSettings, 1));
+    assert(t.source == PowerSource::Unknown && t.lastKnownSource == PowerSource::Mains);
+  }
   for(bool mainOnly : {false,true}) {
     AllpowersCore::Session session(Model::R2500V2);
     recovery.begin(0);
@@ -72,6 +115,7 @@ int main() {
   assert(main.has(UsbOutput) && !main.has(DcOutput) && !main.has(MainsSource));
   assert(decode(Model::R2500V2, ownSettings, 14, 100, settings) == Result::Decoded);
   assert(settings.source == Source::Mains && existingUpsEligible(main, settings, 101));
+  assert(existingUpsEligible(main, settings, 15100));
   assert(!existingUpsEligible(main, settings, 15101));
   assert(decode(Model::Unknown, ownMain, 16, 100, generic) == Result::Decoded);
   assert(generic.model == Model::Legacy16 && generic.has(DcOutput) && !generic.has(UsbOutput));

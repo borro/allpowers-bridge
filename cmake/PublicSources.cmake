@@ -49,6 +49,7 @@ set(AP_PUBLIC_SPECIAL_FILES
   docs/images/waveshare-display.png
   docs/images/pocket-display.png
   tests/fixtures/notifications.json
+  tests/mutation/accepted.json
   tests/desktop/frozen_b989/provenance.json
   tests/fixtures/usb-contract.json)
 

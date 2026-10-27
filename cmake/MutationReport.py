@@ -5,7 +5,6 @@ from collections import Counter
 from html import escape
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -184,9 +183,6 @@ def main():
     (output / "mutations.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
     (output / "mutations.html").write_text(standalone_html(report), encoding="utf-8")
     (output / "summary.md").write_text(summary, encoding="utf-8")
-    if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
-            stream.write(summary)
     print(summary, flush=True)
     if review["unexpected"]:
         raise ValueError("Unreviewed survivors or uncovered mutations; see summary.md and review.json")

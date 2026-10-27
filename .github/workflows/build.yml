@@ -32,6 +32,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -39,22 +40,30 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Audit public files and reachable history
       run: |
         cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/Audit.cmake
         cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=worktree -P cmake/Audit.cmake
         cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=history -P cmake/Audit.cmake
         cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/CheckSecrets.cmake
+      id: audit-public-files-and-reachable-history
     - name: Test CI selection and final gate
-      run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_ci_policy.py" -v
+      run: |-
+        mkdir -p build/ci-reports
+        python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_ci_*.py" -v 2>&1 | tee build/ci-reports/unittest.log
+      id: test-ci-selection-and-final-gate
     - name: Select checks from verified history
       id: policy
       env:
@@ -66,6 +75,29 @@ jobs:
         RELEASE_TAG: ${{ github.ref_name }}
         BUILD_COMMIT: ${{ github.sha }}
       run: cmake -DROOT="$GITHUB_WORKSPACE" -DTAG="$RELEASE_TAG" -DCOMMIT="$BUILD_COMMIT" -P cmake/CheckReleaseTag.cmake
+      id: validate-release-tag-before-building
+    - name: Save test reports
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: audit-tests
+        path: |
+          build/ci-reports/
+        retention-days: 14
+      id: save-test-reports
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   portable:
     needs: audit
     if: ${{ needs.audit.outputs.mode == 'full' }}
@@ -77,6 +109,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -84,21 +117,53 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Build and test portable code and build contracts
       run: |-
         cmake --preset native
         cmake --build --preset native --parallel 2
-        ctest --preset native
+        ctest --preset native --output-junit "$GITHUB_WORKSPACE/build/native/ci-tests.xml"
+      id: build-and-test-portable-code-and-build-contracts
     - name: Test maintenance tooling
-      run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v
+      run: |-
+        mkdir -p build/ci-reports
+        python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v 2>&1 | tee build/ci-reports/unittest.log
+      id: test-maintenance-tooling
+    - name: Save test reports
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: portable-tests
+        path: |
+          build/ci-reports/
+          build/native/ci-tests.xml
+          build/native/**/Testing/Temporary/LastTest.log
+        retention-days: 14
+      id: save-test-reports
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   sanitizers:
     needs: audit
     if: ${{ needs.audit.outputs.mode == 'full' }}
@@ -110,6 +175,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -117,19 +183,48 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Build and test with ASan and UBSan
       run: |-
         cmake --preset sanitizers-linux
         cmake --build --preset sanitizers-linux --parallel 2
-        ctest --preset sanitizers-linux
+        ctest --preset sanitizers-linux --output-junit "$GITHUB_WORKSPACE/build/sanitizers-linux/ci-tests.xml"
+      id: build-and-test-with-asan-and-ubsan
+    - name: Save test reports
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: sanitizers-tests
+        path: |
+          build/ci-reports/
+          build/sanitizers-linux/ci-tests.xml
+          build/sanitizers-linux/**/Testing/Temporary/LastTest.log
+        retention-days: 14
+      id: save-test-reports
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   fuzz:
     needs: audit
     runs-on: ubuntu-24.04
@@ -140,6 +235,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -147,27 +243,35 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Install pinned Ninja and LLVM 18 fuzz runtime
       run: |
         cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
         sudo apt-get update -qq
         sudo apt-get install -y clang-${{ steps.tools.outputs.fuzz-llvm }} libclang-rt-${{ steps.tools.outputs.fuzz-llvm }}-dev
+      id: install-pinned-ninja-and-llvm-18-fuzz-runtime
     - name: Build fuzzers and seed corpora
       run: |
         cmake --preset fuzz-linux
         cmake --build --preset fuzz-linux --parallel 2
+      id: build-fuzzers-and-seed-corpora
     - name: Fuzz BLE and CDC under ASan and UBSan
-      run: ctest --preset fuzz-linux --verbose
+      run: ctest --preset fuzz-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/fuzz-linux/ci-tests.xml"
+      id: fuzz-ble-and-cdc-under-asan-and-ubsan
     - name: Record analysis tool versions
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-analysis-tool-versions
     - name: Save fuzz corpora, crashes and diagnostics
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -177,6 +281,21 @@ jobs:
         path: |
           build/fuzz-linux/fuzz/
           build/fuzz-linux/Testing/
+          build/fuzz-linux/ci-tests.xml
+      id: save-fuzz-corpora-crashes-and-diagnostics
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
     if: ${{ needs.audit.outputs.mode == 'full' }}
   valgrind:
     needs: audit
@@ -188,6 +307,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -195,32 +315,41 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Install pinned Ninja and Valgrind
       run: |
         cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
         sudo apt-get update -qq
         sudo apt-get install -y valgrind
+      id: install-pinned-ninja-and-valgrind
     - name: Build uninstrumented Debug tests
       run: |
         cmake --preset valgrind-linux
         cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
+      id: build-uninstrumented-debug-tests
     - name: Verify Valgrind version and error exit policy
       run: cmake -DCONTROL="$GITHUB_WORKSPACE/build/valgrind-linux/tests/native/valgrind_control" -DWORK="$GITHUB_WORKSPACE/build/valgrind-linux/valgrind-policy"
         -P tests/cmake/valgrind_policy_test.cmake
+      id: verify-valgrind-version-and-error-exit-policy
     - name: Check native tests for memory errors and leaks
       run: ctest --test-dir build/valgrind-linux -T memcheck -L coverage --output-on-failure --timeout 180 --parallel 2 --overwrite MemoryCheckCommand=/usr/bin/valgrind
-        --overwrite "MemoryCheckCommandOptions=--tool=memcheck --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=definite,indirect,possible --track-origins=yes
-        --error-exitcode=99 --num-callers=30"
+        --overwrite "MemoryCheckCommandOptions=--tool=memcheck --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=definite,indirect,possible
+        --track-origins=yes --error-exitcode=99 --num-callers=30"
+      id: check-native-tests-for-memory-errors-and-leaks
     - name: Record analysis tool versions
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-analysis-tool-versions
     - name: Save Memcheck reports and policy diagnostics
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -230,6 +359,20 @@ jobs:
         path: |
           build/valgrind-linux/Testing/
           build/valgrind-linux/valgrind-policy/
+      id: save-memcheck-reports-and-policy-diagnostics
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
     if: ${{ needs.audit.outputs.mode == 'full' }}
   mutation:
     needs: audit
@@ -241,6 +384,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -248,29 +392,41 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Install pinned Ninja and LLVM 18
       run: |
         cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
         sudo apt-get update -qq
         sudo apt-get install -y clang-${{ steps.tools.outputs.mull-llvm }} libclang-cpp${{ steps.tools.outputs.mull-llvm }} llvm-${{ steps.tools.outputs.mull-llvm }}-dev libclang-${{ steps.tools.outputs.mull-llvm }}-dev
+      id: install-pinned-ninja-and-llvm-18
     - name: Extract verified Mull package
       run: cmake -DWORK="$GITHUB_WORKSPACE/build/mutation-linux/tools/mull" -P cmake/SetupMutation.cmake
+      id: extract-verified-mull-package
     - name: Configure mutation tests
       run: cmake --preset mutation-linux
+      id: configure-mutation-tests
     - name: Test mutation report tooling
-      run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_mutation_report.py" -v
+      run: |-
+        mkdir -p build/ci-reports
+        python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_mutation_report.py" -v 2>&1 | tee build/ci-reports/unittest.log
+      id: test-mutation-report-tooling
     - name: Run mutation analysis and reject unreviewed survivors
       run: cmake --build --preset mutation-linux --parallel 2
+      id: run-mutation-analysis-and-reject-unreviewed-survivors
     - name: Record analysis tool versions
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-analysis-tool-versions
     - name: Save mutation reports and diagnostics
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -280,6 +436,21 @@ jobs:
         path: |
           build/mutation-linux/mutation/
           build/mutation-linux/mutation-policy/
+          build/ci-reports/
+      id: save-mutation-reports-and-diagnostics
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
     if: ${{ needs.audit.outputs.mode == 'full' }}
   windows-sdk:
     needs: audit
@@ -292,6 +463,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -299,18 +471,23 @@ jobs:
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Set up MSVC and Windows SDK
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
       with:
         arch: x64
         toolset: ${{ steps.tools.outputs.msvc }}
         sdk: ${{ steps.tools.outputs.sdk }}
+      id: set-up-msvc-and-windows-sdk
     - name: Verify MSVC and Windows SDK
       run: cmake -P cmake/CheckMsvcToolchain.cmake
+      id: verify-msvc-and-windows-sdk
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Identify dependency cache keys
       id: keys
       run: cmake -P cmake/DependencyFingerprint.cmake
@@ -342,6 +519,7 @@ jobs:
     - name: Prepare and validate complete SDKs
       shell: pwsh
       run: ./cmake/PrepareWindowsSdk.ps1
+      id: prepare-and-validate-complete-sdks
     - name: Save complete qt
       if: ${{ steps.qt.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -349,6 +527,7 @@ jobs:
         path: build/windows/deps/qt/install/
         key: ${{ steps.qt-key.outputs.key }}
       continue-on-error: true
+      id: save-complete-qt
     - name: Save complete qt-sources
       if: ${{ steps.qt-sources.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -356,6 +535,7 @@ jobs:
         path: build/deps/downloads/*everywhere-src-*.tar.xz
         key: Windows-X64-v2-qt-sources-${{ steps.keys.outputs.qt-sources }}
       continue-on-error: true
+      id: save-complete-qt-sources
     - name: Save complete wdk
       if: ${{ steps.wdk.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -363,6 +543,7 @@ jobs:
         path: build/deps/downloads/microsoft.windows.wdk*.nupkg
         key: Windows-X64-v2-wdk-${{ steps.keys.outputs.wdk }}
       continue-on-error: true
+      id: save-complete-wdk
     - name: Save windows-sdk
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -375,6 +556,20 @@ jobs:
         if-no-files-found: error
         retention-days: 1
         include-hidden-files: true
+      id: save-windows-sdk
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   coverage-linux:
     needs: audit
     if: ${{ needs.audit.outputs.mode == 'full' }}
@@ -386,6 +581,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -393,14 +589,18 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Install verified coverage tool
       id: coverage-tools
       run: cmake -DWORK="$GITHUB_WORKSPACE/build/coverage-linux/tools/coverage" -P cmake/SetupCoverage.cmake
@@ -408,10 +608,13 @@ jobs:
       env:
         QT_ROOT: ''
       run: cmake --preset coverage-linux -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+      id: configure-coverage
     - name: Build coverage binaries
       run: cmake --build --preset coverage-linux --parallel 2
+      id: build-coverage-binaries
     - name: Measure fresh line coverage
-      run: ctest --preset coverage-linux --verbose
+      run: ctest --preset coverage-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/coverage-linux/ci-tests.xml"
+      id: measure-fresh-line-coverage
     - continue-on-error: true
       id: codecov
       name: Upload coverage to Codecov
@@ -425,9 +628,8 @@ jobs:
         version: ${{ steps.coverage-tools.outputs.codecov-version }}
     - if: steps.codecov.outcome == 'failure'
       name: Report Codecov upload failure
-      run: |
-        echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
-        echo "Codecov upload failed. Download the coverage artifact for the measured result." >> "$GITHUB_STEP_SUMMARY"
+      run: echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
+      id: report-codecov-upload-failure
     - if: always()
       name: Save coverage and test diagnostics
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -439,7 +641,23 @@ jobs:
           build/coverage-linux/**/*-tests.xml
           build/coverage-linux/**/*-err.log
           build/coverage-linux/**/*-out.log
+          build/ci-reports/
+          build/coverage-linux/ci-tests.xml
         retention-days: 14
+      id: save-coverage-and-test-diagnostics
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
     permissions:
       contents: read
       id-token: write
@@ -456,6 +674,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -463,26 +682,33 @@ jobs:
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Set up MSVC and Windows SDK
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
       with:
         arch: x64
         toolset: ${{ steps.tools.outputs.msvc }}
         sdk: ${{ steps.tools.outputs.sdk }}
+      id: set-up-msvc-and-windows-sdk
     - name: Verify MSVC and Windows SDK
       run: cmake -P cmake/CheckMsvcToolchain.cmake
+      id: verify-msvc-and-windows-sdk
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Download this run's Windows SDK
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         name: windows-sdk
         path: build
+      id: download-this-run-s-windows-sdk
     - name: Verify SDK or rebuild for this runner
       shell: pwsh
       run: ./cmake/PrepareWindowsSdk.ps1
+      id: verify-sdk-or-rebuild-for-this-runner
     - name: Install verified coverage tool
       id: coverage-tools
       run: cmake -DWORK="$GITHUB_WORKSPACE/build/coverage-windows/tools/coverage" -P cmake/SetupCoverage.cmake
@@ -490,10 +716,13 @@ jobs:
       env:
         QT_ROOT: ${{ github.workspace }}/build/windows/deps/qt/install
       run: cmake --preset coverage-windows -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+      id: configure-coverage
     - name: Build coverage binaries
       run: cmake --build --preset coverage-windows --parallel 2
+      id: build-coverage-binaries
     - name: Measure fresh line coverage
-      run: ctest --preset coverage-windows --verbose
+      run: ctest --preset coverage-windows --verbose --output-junit "$GITHUB_WORKSPACE/build/coverage-windows/ci-tests.xml"
+      id: measure-fresh-line-coverage
     - continue-on-error: true
       id: codecov
       name: Upload coverage to Codecov
@@ -507,9 +736,8 @@ jobs:
         version: ${{ steps.coverage-tools.outputs.codecov-version }}
     - if: steps.codecov.outcome == 'failure'
       name: Report Codecov upload failure
-      run: |
-        echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
-        echo "Codecov upload failed. Download the coverage artifact for the measured result." >> "$GITHUB_STEP_SUMMARY"
+      run: echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
+      id: report-codecov-upload-failure
     - if: always()
       name: Save coverage and test diagnostics
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -521,7 +749,23 @@ jobs:
           build/coverage-windows/**/*-tests.xml
           build/coverage-windows/**/*-err.log
           build/coverage-windows/**/*-out.log
+          build/ci-reports/
+          build/coverage-windows/ci-tests.xml
         retention-days: 14
+      id: save-coverage-and-test-diagnostics
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
     permissions:
       contents: read
       id-token: write
@@ -536,6 +780,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -543,14 +788,18 @@ jobs:
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version
         echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+      id: select-pinned-host-compiler
     - name: Set up CMake
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Identify firmware cache keys
       id: keys
       run: cmake -P cmake/DependencyFingerprint.cmake
@@ -576,10 +825,13 @@ jobs:
         RELEASE_COMMIT: ${{ github.sha }}
       run: cmake --preset firmware-linux -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT" -DARDUINO_CLI="$GITHUB_WORKSPACE/build/deps/arduino-cli/Linux/arduino-cli"
         -DARDUINO_DATA_DIR="$GITHUB_WORKSPACE/build/deps/arduino/Linux/data"
+      id: configure-both-firmware-boards
     - name: Prepare Arduino toolchain
       run: cmake --build build/firmware-linux --target arduino-setup
+      id: prepare-arduino-toolchain
     - name: Build both boards in parallel
       run: cmake --build --preset firmware-linux --parallel 2
+      id: build-both-boards-in-parallel
     - name: Save complete arduino
       if: ${{ steps.arduino.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -589,6 +841,7 @@ jobs:
           build/deps/arduino-cli/
         key: Linux-X64-v2-arduino-${{ steps.keys.outputs.arduino }}
       continue-on-error: true
+      id: save-complete-arduino
     - name: Save complete firmware-legal
       if: ${{ steps.firmware-legal.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -596,10 +849,12 @@ jobs:
         path: build/deps/firmware-legal/
         key: Linux-X64-v2-firmware-legal-${{ steps.keys.outputs.firmware-legal }}
       continue-on-error: true
+      id: save-complete-firmware-legal
     - name: Ensure build did not modify public sources
       run: |-
         git diff --exit-code
         test -z "$(git ls-files --others --exclude-standard)"
+      id: ensure-build-did-not-modify-public-sources
     - name: Save firmware-linux
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -608,6 +863,20 @@ jobs:
         if-no-files-found: error
         retention-days: 14
       if: ${{ needs.audit.outputs.release == 'true' }}
+      id: save-firmware-linux
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   windows:
     needs:
     - audit
@@ -621,6 +890,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -628,47 +898,60 @@ jobs:
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Set up MSVC and Windows SDK
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
       with:
         arch: x64
         toolset: ${{ steps.tools.outputs.msvc }}
         sdk: ${{ steps.tools.outputs.sdk }}
+      id: set-up-msvc-and-windows-sdk
     - name: Verify MSVC and Windows SDK
       run: cmake -P cmake/CheckMsvcToolchain.cmake
+      id: verify-msvc-and-windows-sdk
     - name: Install pinned Ninja
       run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: install-pinned-ninja
     - name: Record actual runner and toolchain
       run: cmake -P cmake/CiEnvironment.cmake
+      id: record-actual-runner-and-toolchain
     - name: Download this run's Windows SDK
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         name: windows-sdk
         path: build
+      id: download-this-run-s-windows-sdk
     - name: Verify SDK or rebuild for this runner
       shell: pwsh
       run: ./cmake/PrepareWindowsSdk.ps1
+      id: verify-sdk-or-rebuild-for-this-runner
     - name: Configure Windows Release
       env:
         RELEASE_TAG: ${{ needs.audit.outputs.release == 'true' && github.ref_name || '' }}
         RELEASE_COMMIT: ${{ github.sha }}
       run: cmake --preset windows -DALLPOWERS_QT_ROOT="$GITHUB_WORKSPACE/build/windows/deps/qt/install" -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT"
         -DALLPOWERS_BUILD_JOBS=2
+      id: configure-windows-release
     - name: Build Windows applications and host tests
       run: cmake --build --preset windows --parallel 2
+      id: build-windows-applications-and-host-tests
     - name: Test Windows products and build contracts
       if: ${{ needs.audit.outputs.release != 'true' }}
-      run: ctest --preset windows --verbose
+      run: ctest --preset windows --verbose --output-junit "$GITHUB_WORKSPACE/build/windows/ci-tests.xml"
+      id: test-windows-products-and-build-contracts
     - name: Test release contracts; release target runs desktop unit tests
       if: ${{ needs.audit.outputs.release == 'true' }}
-      run: ctest --preset windows --verbose -E "^windows-unit$"
+      run: ctest --preset windows --verbose -E "^windows-unit$" --output-junit "$GITHUB_WORKSPACE/build/windows/ci-tests.xml"
+      id: test-release-contracts-release-target-runs-desktop-unit-tests
     - name: Package and independently rebuild corresponding sources
       if: ${{ needs.audit.outputs.release == 'true' }}
       run: cmake --build --preset release --parallel 2
+      id: package-and-independently-rebuild-corresponding-sources
     - name: Ensure build did not modify public sources
       run: |-
         git diff --exit-code
         test -z "$(git ls-files --others --exclude-standard)"
+      id: ensure-build-did-not-modify-public-sources
     - name: Save windows-products
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -679,8 +962,9 @@ jobs:
         if-no-files-found: error
         retention-days: 14
       if: ${{ needs.audit.outputs.release == 'true' }}
-    - name: Save test diagnostics on failure
-      if: failure() || cancelled()
+      id: save-windows-products
+    - name: Save Windows test diagnostics
+      if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: windows-diagnostics
@@ -695,6 +979,22 @@ jobs:
           build/**/compliance/relink/relink.log
           build/**/*-err.log
           build/**/*-out.log
+          build/ci-reports/
+          build/windows/ci-tests.xml
+      id: save-windows-test-diagnostics
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   ci-result:
     name: ${{ needs.audit.outputs.mode == 'delegated' && 'CI delegated to PR' || 'CI result' }}
     needs:
@@ -718,11 +1018,26 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Require all planned checks
       env:
         CI_MODE: ${{ needs.audit.outputs.mode }}
         CI_NEEDS: ${{ toJSON(needs) }}
       run: python3 cmake/ci_policy.py gate
+      id: require-all-planned-checks
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
   release:
     needs:
     - audit
@@ -741,6 +1056,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
+      id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
       run: cmake -P cmake/CiTools.cmake
@@ -748,6 +1064,7 @@ jobs:
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
       with:
         cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: set-up-cmake
     - name: Verify release tag
       id: release-identity
       env:
@@ -764,19 +1081,36 @@ jobs:
       with:
         name: windows-products
         path: build/release-input
+      id: download-this-run-s-checked-windows-artifacts
     - name: Download checked Linux firmware
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         name: firmware-linux
         path: build/release-input/firmware
+      id: download-checked-linux-firmware
     - name: Prepare and verify release assets
       env:
         RELEASE_TAG: ${{ github.ref_name }}
         BUILD_COMMIT: ${{ steps.release-identity.outputs.commit }}
       run: cmake "-DINPUT=$env:GITHUB_WORKSPACE/build/release-input" "-DOUTPUT=$env:GITHUB_WORKSPACE/build/release-assets" "-DTAG=$env:RELEASE_TAG" "-DCOMMIT=$env:BUILD_COMMIT"
         -DEXPECTED_FIRMWARE_HOST=Linux -P cmake/PrepareRelease.cmake
+      id: prepare-and-verify-release-assets
     - name: Publish complete release
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE_TAG: ${{ github.ref_name }}
       run: ./cmake/PublishRelease.ps1 -Repository "$env:GITHUB_REPOSITORY" -Tag "$env:RELEASE_TAG" -Assets build/release-assets
+      id: publish-complete-release
+    - name: Publish job summary
+      if: always()
+      shell: bash
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi

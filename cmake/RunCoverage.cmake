@@ -19,7 +19,8 @@ endif()
 file(REMOVE_RECURSE "${report}")
 file(MAKE_DIRECTORY "${report}")
 set(test_command "${CMAKE_CTEST_COMMAND}" --test-dir "${binary}"
-  --output-on-failure --no-tests=error --parallel 2 -L "^coverage$")
+  --output-on-failure --no-tests=error --parallel 2 -L "^coverage$"
+  --output-junit "${report}/tests.xml")
 if(WINDOWS)
   file(TO_NATIVE_PATH "${root}/core" core_sources)
   file(TO_NATIVE_PATH "${root}/firmware/R2500Adapter" firmware_sources)

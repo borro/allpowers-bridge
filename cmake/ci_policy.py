@@ -120,8 +120,6 @@ def main():
     release = event_name == "push" and ref.startswith("refs/tags/v")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.write(f"mode={mode}\nrelease={str(release).lower()}\n")
-    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-        summary.write(f"CI mode: **{mode}**; release: **{release}**.\n")
 
 
 if __name__ == "__main__":

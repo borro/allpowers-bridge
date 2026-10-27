@@ -27,6 +27,19 @@ coverage depend on the SDK producer, not on the Linux analyzers. All mandatory
 results join at **CI result**; unexpected skips, failures or cancellations fail it.
 Codecov service availability does not replace the local coverage requirement.
 
+Every executed job publishes a result in the run's **Summary** tab, including
+failures and cancellations when the runner can still execute its final step.
+Test summaries show CTest check counts and failed names, Python test results,
+coverage, mutation scores and reviewed survivors, Valgrind defects, or completed
+fuzzer input counts as applicable. CTest counts are registered checks, which may
+wrap a nested suite. Missing or partial reports are explicitly marked unavailable,
+never interpreted as zero failures. Uploaded reports are linked directly;
+environment details and step statuses are collapsed. **CI result** lists every
+required job, including jobs skipped by policy or blocked by a failed dependency.
+Jobs skipped before starting cannot publish their own summary.
+SDK preparation reports validation and cache restores; firmware reports each
+board's version and application size; release publication lists prepared assets.
+
 Firmware is built only on Linux, with both boards sharing one installed Arduino
 SDK and compiling in separate directories, two compiler processes per board.
 Arduino CLI's explicit `--build-path` keeps the complete compilation in that

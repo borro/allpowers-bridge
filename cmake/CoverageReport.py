@@ -1,7 +1,6 @@
 """Normalize host Cobertura line coverage; no build or device operations."""
 
 import argparse
-import os
 from pathlib import Path
 import posixpath
 import xml.etree.ElementTree as ET
@@ -105,9 +104,6 @@ def main():
     write_report(files, args.output)
     markdown = summary(files, args.incomplete)
     args.summary.write_text(markdown, encoding="utf-8")
-    if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
-            stream.write(markdown)
     print(markdown)
 
 

@@ -1,5 +1,7 @@
 include("${CMAKE_CURRENT_LIST_DIR}/QtStatic.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/UpsDriver.cmake")
+ap_dependency_fingerprint(qt-sources notice_dependencies)
+file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/notice-dependencies.txt" CONTENT "${notice_dependencies}\n")
 set(windows_build "${PROJECT_BINARY_DIR}/windows-monitor")
 set(windows_output "${ALLPOWERS_RELEASE_DIR}/windows/AllpowersMonitor")
 set(windows_test_options)
@@ -36,7 +38,7 @@ ExternalProject_Add_Step(windows-monitor prepare-notices
     "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}" -DFETCH=ON
     -P "${PROJECT_SOURCE_DIR}/cmake/PrepareNotices.cmake"
   DEPENDEES patch DEPENDERS configure
-  DEPENDS "${PROJECT_SOURCE_DIR}/cmake/PrepareNotices.cmake" "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake"
+  DEPENDS "${PROJECT_SOURCE_DIR}/cmake/PrepareNotices.cmake" "${PROJECT_BINARY_DIR}/notice-dependencies.txt"
     "${PROJECT_SOURCE_DIR}/cmake/CollectQtNotices.cmake"
     "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
     "${PROJECT_SOURCE_DIR}/docs/relinking.md" "${PROJECT_SOURCE_DIR}/core/src/AllpowersModels.LICENSE.txt"
@@ -52,7 +54,7 @@ if(BUILD_TESTING)
     set(windows_coverage_filter -L "^coverage$")
   endif()
   add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure --parallel 2 --no-tests=error ${windows_coverage_filter})
-  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900 PROCESSORS 2)
+  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900 PROCESSORS 2 LABELS runtime)
   if(ALLPOWERS_COVERAGE)
     set_tests_properties(windows-unit PROPERTIES LABELS coverage TIMEOUT 1800)
   endif()
@@ -71,7 +73,8 @@ if(BUILD_TESTING)
     "-DSOURCE_CACHE=${ALLPOWERS_QT_SOURCE_CACHE}" "-DDEPS_DIR=${ALLPOWERS_DEPS_DIR}"
     "-DCXX=${CMAKE_CXX_COMPILER}" "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/windows_identity_graph_test.cmake")
-  set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS integration PROCESSORS 4)
+  set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS "integration;build-contract" PROCESSORS 4)
+  set_tests_properties(single-exe widget-single-exe PROPERTIES LABELS integration)
 endif()
 install(PROGRAMS "${windows_output}/AllpowersMonitor.exe" DESTINATION .)
 install(PROGRAMS "${windows_output}/AllpowersWidget.exe" DESTINATION .)

@@ -1,5 +1,8 @@
 include(ExternalProject)
 include("${CMAKE_CURRENT_LIST_DIR}/BuildParallelism.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/DependencyFingerprint.cmake")
+ap_dependency_fingerprint(wdk wdk_dependencies)
+file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/wdk-dependencies.txt" CONTENT "${wdk_dependencies}\n")
 ExternalProject_Add(ups-driver-project
   SOURCE_DIR "${PROJECT_SOURCE_DIR}/drivers/windows"
   BINARY_DIR "${PROJECT_BINARY_DIR}/ups-driver"
@@ -19,7 +22,7 @@ ExternalProject_Add_Step(ups-driver-project prepare-sdk
   COMMAND "${CMAKE_COMMAND}" "-DDEPS_DIR=${ALLPOWERS_DEPS_DIR}"
     -P "${PROJECT_SOURCE_DIR}/cmake/SetupWdk.cmake"
   DEPENDEES patch DEPENDERS configure
-  DEPENDS "${PROJECT_SOURCE_DIR}/cmake/SetupWdk.cmake" "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake"
+  DEPENDS "${PROJECT_SOURCE_DIR}/cmake/SetupWdk.cmake" "${PROJECT_BINARY_DIR}/wdk-dependencies.txt"
   BYPRODUCTS "${ALLPOWERS_DEPS_DIR}/wdk/${ALLPOWERS_WDK_VERSION}/.complete"
     "${ALLPOWERS_DEPS_DIR}/wdk/${ALLPOWERS_WDK_VERSION}/c/Include/wdf/kmdf/${ALLPOWERS_KMDF_VERSION}/wdf.h"
   LOG ON)

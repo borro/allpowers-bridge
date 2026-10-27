@@ -33,7 +33,7 @@ add_test(NAME abi COMMAND abi_test)
 add_test(NAME ups-state COMMAND ups_test)
 add_test(NAME firmware-host COMMAND firmware_test)
 add_test(NAME history-rollback COMMAND history_rollback_test)
-set_tests_properties(models abi ups-state firmware-host history-rollback PROPERTIES LABELS coverage)
+set_tests_properties(models abi ups-state firmware-host history-rollback PROPERTIES LABELS "coverage;runtime")
 if(ALLPOWERS_SANITIZERS)
   add_executable(ubsan_fatal_control ubsan_policy_control.cpp)
   add_executable(ubsan_recoverable_control ubsan_policy_control.cpp)
@@ -44,6 +44,7 @@ if(ALLPOWERS_SANITIZERS)
   add_test(NAME sanitizer-policy COMMAND "${CMAKE_COMMAND}"
     "-DFATAL=$<TARGET_FILE:ubsan_fatal_control>" "-DRECOVERABLE=$<TARGET_FILE:ubsan_recoverable_control>"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/sanitizer_policy_test.cmake")
+  set_tests_properties(sanitizer-policy PROPERTIES LABELS runtime)
 endif()
 if(WIN32)
   set_tests_properties(abi ups-state PROPERTIES

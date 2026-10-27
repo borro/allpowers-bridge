@@ -5,11 +5,10 @@
 <h1 align="center">ALLPOWERS</h1>
 
 <p align="center">
-  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Host C++ line coverage"></a><br>
-  <sub><a href="docs/building.md#test-coverage">Core, host-tested firmware logic and Windows/Qt; hardware execution is not measured.</a><br>
-  <a href="docs/building.md#mutation-testing">Mutation testing runs on every push/PR: reviewed survivors are accepted, new survivors fail CI. Reports are in GitHub Actions.</a><br>
-  <a href="docs/building.md#memory-checking-with-valgrind">Valgrind checks portable host tests for memory errors and leaks on every push/PR.</a><br>
-  <a href="docs/building.md#parser-fuzzing">BLE and CDC parsers are fuzzed under ASan/UBSan on every push/PR.</a></sub>
+  <a href="https://github.com/borro/allpowers-bridge/actions/workflows/build.yml?query=branch%3Amain"><img src="https://github.com/borro/allpowers-bridge/actions/workflows/build.yml/badge.svg?branch=main&amp;event=push" alt="Build and test on main"></a>
+  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Host C++ line coverage"></a>
+  <a href="https://github.com/borro/allpowers-bridge/releases/latest"><img src="https://img.shields.io/github/v/release/borro/allpowers-bridge" alt="Latest release"></a>
+  <a href="https://github.com/borro/allpowers-bridge/releases"><img src="https://img.shields.io/github/downloads/borro/allpowers-bridge/total" alt="Release downloads"></a>
 </p>
 
 <p align="center">Power-station telemetry on your desktop. USB UPS reporting through a supported board.</p>
@@ -91,6 +90,8 @@ Product code is C++23: a portable core, shared firmware and native Qt Windows
 applications. Builds use CMake Presets/Ninja, CTest and CPack; Linux supports the
 core and firmware build, with no Linux desktop app yet. Build and test commands
 never flash boards or connect to stations.
+
+Builds and analyzers run in parallel; release packages are published only for valid `v` tags. Documentation-only changes use short checks. Windows applications use MSVC/WinRT, and both firmware boards build on Linux. See [CI jobs, images and cache ownership](docs/ci.md).
 
 ## License
 

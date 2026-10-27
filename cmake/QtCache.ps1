@@ -12,7 +12,7 @@ $install = Join-Path $BuildDirectory 'deps/qt/install'
 $manifest = Join-Path $install 'allpowers-qt-cache.json'
 
 function Write-OutputValue([string]$Name, [string]$Value) {
-    Write-Host "$Name=$Value"
+    Write-Output "$Name=$Value"
     if ($env:GITHUB_OUTPUT) { Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "$Name=$Value" -Encoding utf8 }
 }
 
@@ -27,12 +27,18 @@ foreach ($name in 'VCToolsVersion', 'WindowsSDKVersion', 'VSCMD_ARG_TGT_ARCH') {
     if (![Environment]::GetEnvironmentVariable($name)) { throw "Missing MSVC environment variable: $name" }
 }
 if ($env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'The Qt cache requires an x64 MSVC environment' }
+. (Join-Path $PSScriptRoot 'ToolchainFingerprint.ps1')
+$toolchainDigest = Get-ToolchainFingerprint -Compiler $compiler.Source
+$dependencies = & cmake -DGROUP=qt -P (Join-Path $Root 'cmake/DependencyFingerprint.cmake')
+if ($LASTEXITCODE) { throw 'Cannot identify Qt dependency inputs' }
 $inputs = [ordered]@{
-    schema = 1
+    schema = 2
     platform = 'Windows-x64-Release-static-MT-WinRT'
     install = $install.Replace('\', '/').ToLowerInvariant()
     compiler = $compiler.Source.Replace('\', '/').ToLowerInvariant()
     compilerSha256 = (Get-FileHash -LiteralPath $compiler.Source -Algorithm SHA256).Hash
+    toolchainSha256 = $toolchainDigest
+    dependencies = "$dependencies"
     toolset = $env:VCToolsVersion
     sdk = $env:WindowsSDKVersion
     sdkRoot = $env:WindowsSdkDir
@@ -40,7 +46,7 @@ $inputs = [ordered]@{
     cmake = $cmakeVersion[0]
     ninja = "$ninjaVersion"
 }
-foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
+foreach ($file in 'DependencyFingerprint.cmake', 'ToolchainFingerprint.ps1', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
                   'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     $inputs[$file] = (Get-FileHash -LiteralPath (Join-Path $Root "cmake/$file") -Algorithm SHA256).Hash
 }
@@ -48,7 +54,7 @@ $fingerprint = $inputs | ConvertTo-Json -Compress
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $digest = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($fingerprint))).Replace('-', '').ToLowerInvariant() }
 finally { $sha.Dispose() }
-$key = "qt-static-v1-windows-x64-$digest"
+$key = "qt-static-v2-windows-x64-$digest"
 if ($Mode -eq 'Key') {
     Write-OutputValue key $key
     Write-OutputValue path $install.Replace('\', '/')
@@ -56,6 +62,9 @@ if ($Mode -eq 'Key') {
 }
 
 function Test-QtSdk {
+    & cmake -DMODE=VERIFY "-DPREFIX=$install" "-DSOURCE_CACHE=$Root/build/deps/downloads" `
+        -P "$Root/cmake/QtSourceIdentity.cmake"
+    if ($LASTEXITCODE) { throw 'Qt SDK/source identity check failed' }
     $probe = Join-Path $BuildDirectory 'qt-cache-probe'
     New-Item -ItemType Directory -Path "$probe/source" -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $Root 'cmake/QtCacheProbe.cmake') -Destination "$probe/source/CMakeLists.txt"

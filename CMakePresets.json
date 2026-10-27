@@ -32,6 +32,16 @@
        "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}},
     {"name": "coverage-windows", "inherits": "windows", "displayName": "Windows host line coverage",
      "cacheVariables": {"ALLPOWERS_COVERAGE": "ON", "ALLPOWERS_SANITIZERS": "OFF",
+       "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}},
+    {"name": "sanitizers-linux", "inherits": "native",
+     "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux"},
+     "cacheVariables": {"ALLPOWERS_SANITIZERS": "ON", "ALLPOWERS_COVERAGE": "OFF",
+       "ALLPOWERS_MUTATION": "OFF", "ALLPOWERS_FUZZING": "OFF",
+       "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}},
+    {"name": "firmware-linux", "inherits": "native",
+     "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux"},
+     "cacheVariables": {"BUILD_TESTING": "OFF", "ALLPOWERS_ARDUINO_JOBS": "2",
+       "ALLPOWERS_FIRMWARE_PARALLEL_BOARDS": "2",
        "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}}
   ],
   "buildPresets": [
@@ -43,7 +53,9 @@
     {"name": "all-linux", "configurePreset": "native", "targets": ["products"]},
     {"name": "release", "configurePreset": "windows", "targets": ["release"]},
     {"name": "coverage-linux", "configurePreset": "coverage-linux", "targets": ["core", "native-tests"]},
-    {"name": "coverage-windows", "configurePreset": "coverage-windows", "targets": ["core", "native-tests", "windows"]}
+    {"name": "coverage-windows", "configurePreset": "coverage-windows", "targets": ["core", "native-tests", "windows"]},
+    {"name": "sanitizers-linux", "configurePreset": "sanitizers-linux", "targets": ["core", "native-tests"]},
+    {"name": "firmware-linux", "configurePreset": "firmware-linux", "targets": ["firmware"]}
   ],
   "testPresets": [
     {"name": "native", "configurePreset": "native", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}},
@@ -53,6 +65,8 @@
     {"name": "coverage-linux", "configurePreset": "coverage-linux",
      "filter": {"include": {"name": "^coverage-report$"}}, "output": {"outputOnFailure": true}},
     {"name": "coverage-windows", "configurePreset": "coverage-windows",
-     "filter": {"include": {"name": "^coverage-report$"}}, "output": {"outputOnFailure": true}}
+     "filter": {"include": {"name": "^coverage-report$"}}, "output": {"outputOnFailure": true}},
+    {"name": "sanitizers-linux", "configurePreset": "sanitizers-linux", "execution": {"jobs": 2},
+     "filter": {"include": {"label": "^runtime$"}}, "output": {"outputOnFailure": true}}
   ]
 }

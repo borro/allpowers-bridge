@@ -14,6 +14,10 @@ int main(int argc, char **argv) {
   fs::path output, library, sketch;
   for (int i=1;i<argc;++i) {
     const std::string arg=argv[i];
+    if (arg=="core" && i+1<argc && std::string(argv[i+1])=="list") {
+      std::cout << "{\"platforms\":[{\"id\":\"esp32:esp32\",\"installed_version\":\"3.3.11\"}]}";
+      return 0;
+    }
     if (arg=="--output-dir" && i+1<argc) output=argv[++i];
     else if (arg=="--library" && i+1<argc) library=argv[++i];
   }

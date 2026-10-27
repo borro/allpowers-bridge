@@ -5,8 +5,10 @@
 <h1 align="center">ALLPOWERS</h1>
 
 <p align="center">
-  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="主机 C++ 行覆盖率"></a><br>
-  <sub><a href="docs/building.md#test-coverage">包括核心、在主机上测试的固件逻辑和 Windows/Qt；不衡量硬件上的执行情况。</a></sub>
+  <a href="https://github.com/borro/allpowers-bridge/actions/workflows/build.yml?query=branch%3Amain"><img src="https://github.com/borro/allpowers-bridge/actions/workflows/build.yml/badge.svg?branch=main&amp;event=push" alt="main 构建与测试"></a>
+  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="主机 C++ 行覆盖率"></a>
+  <a href="https://github.com/borro/allpowers-bridge/releases/latest"><img src="https://img.shields.io/github/v/release/borro/allpowers-bridge" alt="最新版本"></a>
+  <a href="https://github.com/borro/allpowers-bridge/releases"><img src="https://img.shields.io/github/downloads/borro/allpowers-bridge/total" alt="版本下载量"></a>
 </p>
 
 <p align="center">在桌面查看电源设备遥测。通过受支持的板卡提供 USB UPS 状态报告。</p>

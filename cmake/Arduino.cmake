@@ -59,6 +59,10 @@ ap_json_quote(user "${PROJECT_BINARY_DIR}/arduino/user")
 set(arduino_config "${PROJECT_BINARY_DIR}/arduino/config.json")
 file(GENERATE OUTPUT "${arduino_config}" CONTENT
   "{\"directories\":{\"data\":${data},\"downloads\":${downloads},\"user\":${user}},\"board_manager\":{\"additional_urls\":[\"https://espressif.github.io/arduino-esp32/package_esp32_index.json\"]}}\n")
+include("${CMAKE_CURRENT_LIST_DIR}/DependencyFingerprint.cmake")
+ap_dependency_fingerprint(firmware-legal firmware_dependencies)
+set(firmware_dependencies_file "${PROJECT_BINARY_DIR}/firmware/dependencies.txt")
+file(GENERATE OUTPUT "${firmware_dependencies_file}" CONTENT "${firmware_dependencies}\n")
 add_custom_target(arduino-setup COMMAND "${CMAKE_COMMAND}"
   "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}" "-DCONFIG=${arduino_config}"
   -P "${PROJECT_SOURCE_DIR}/cmake/SetupArduino.cmake" USES_TERMINAL VERBATIM)
@@ -100,11 +104,11 @@ foreach(board waveshare-147 pocket-096)
       "-DLEGAL_CACHE=${ALLPOWERS_DEPS_DIR}/firmware-legal"
       "-DOUTPUT=${output}" "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
       -P "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake"
-    DEPENDS ${firmware_sources} "${firmware_inventory_file}" "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
+    DEPENDS arduino-setup ${firmware_sources} "${firmware_inventory_file}" "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
       "${arduino_config}" "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
       "${PROJECT_SOURCE_DIR}/cmake/BuildFirmware.cmake" "${PROJECT_SOURCE_DIR}/cmake/Partitions.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/CheckContracts.cmake" "${PROJECT_SOURCE_DIR}/cmake/Json.cmake"
-      "${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake" "${ALLPOWERS_IDENTITY_FILE}"
+      "${firmware_dependencies_file}" "${ALLPOWERS_IDENTITY_FILE}"
       "${PROJECT_SOURCE_DIR}/cmake/StageFirmware.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/HistoryCompatibility.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/PrepareFirmwareKit.cmake" "${PROJECT_SOURCE_DIR}/cmake/RelinkFirmware.cmake"
@@ -114,3 +118,4 @@ foreach(board waveshare-147 pocket-096)
   add_custom_target(${board} DEPENDS "${output}/manifest.json")
   add_dependencies(${board} product-identity)
 endforeach()
+add_custom_target(firmware DEPENDS waveshare-147 pocket-096)

@@ -1,10 +1,12 @@
 name: Build and test
-on:
+'on':
   push:
-    branches: ['**']
-    tags: ['**']
-  pull_request:
-  workflow_dispatch:
+    branches:
+    - '**'
+    tags:
+    - '**'
+  pull_request: null
+  workflow_dispatch: null
 permissions:
   contents: read
 defaults:
@@ -12,432 +14,721 @@ defaults:
     shell: bash
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref != 'refs/heads/main' }}
 jobs:
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      mode: ${{ steps.policy.outputs.mode }}
+      release: ${{ steps.policy.outputs.release }}
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Audit public files and reachable history
-        run: |
-          cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/Audit.cmake
-          cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=worktree -P cmake/Audit.cmake
-          cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=history -P cmake/Audit.cmake
-          cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/CheckSecrets.cmake
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Audit public files and reachable history
+      run: |
+        cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/Audit.cmake
+        cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=worktree -P cmake/Audit.cmake
+        cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=history -P cmake/Audit.cmake
+        cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/CheckSecrets.cmake
+    - name: Test CI selection and final gate
+      run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_ci_policy.py" -v
+    - name: Select checks from verified history
+      id: policy
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 cmake/ci_policy.py plan
+    - name: Validate release tag before building
+      if: ${{ steps.policy.outputs.release == 'true' }}
+      env:
+        RELEASE_TAG: ${{ github.ref_name }}
+        BUILD_COMMIT: ${{ github.sha }}
+      run: cmake -DROOT="$GITHUB_WORKSPACE" -DTAG="$RELEASE_TAG" -DCOMMIT="$BUILD_COMMIT" -P cmake/CheckReleaseTag.cmake
   portable:
     needs: audit
+    if: ${{ needs.audit.outputs.mode == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitize: [false, true]
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Install pinned Ninja
-        run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
-      - name: Configure portable tests
-        env:
-          SANITIZE: ${{ matrix.sanitize }}
-        run: |
-          if [ "$SANITIZE" = true ]; then
-            cmake --preset native -DALLPOWERS_SANITIZERS=ON
-          else
-            cmake --preset native
-          fi
-      - name: Build portable and firmware host tests
-        run: cmake --build --preset native --parallel 2
-      - name: Test portable logic and build contracts
-        run: ctest --preset native
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Build and test portable code and build contracts
+      run: |-
+        cmake --preset native
+        cmake --build --preset native --parallel 2
+        ctest --preset native
+    - name: Test maintenance tooling
+      run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v
+  sanitizers:
+    needs: audit
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Build and test with ASan and UBSan
+      run: |-
+        cmake --preset sanitizers-linux
+        cmake --build --preset sanitizers-linux --parallel 2
+        ctest --preset sanitizers-linux
   fuzz:
     needs: audit
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Install pinned Ninja and LLVM 18 fuzz runtime
-        run: |
-          cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
-          sudo apt-get update -qq
-          sudo apt-get install -y clang-18 libclang-rt-18-dev
-      - name: Build fuzzers and seed corpora
-        run: |
-          cmake --preset fuzz-linux
-          cmake --build --preset fuzz-linux --parallel 2
-      - name: Fuzz BLE and CDC under ASan and UBSan
-        run: ctest --preset fuzz-linux --verbose
-      - name: Save fuzz corpora, crashes and diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz-linux
-          retention-days: 14
-          path: |
-            build/fuzz-linux/fuzz/
-            build/fuzz-linux/Testing/
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Install pinned Ninja and LLVM 18 fuzz runtime
+      run: |
+        cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+        sudo apt-get update -qq
+        sudo apt-get install -y clang-${{ steps.tools.outputs.fuzz-llvm }} libclang-rt-${{ steps.tools.outputs.fuzz-llvm }}-dev
+    - name: Build fuzzers and seed corpora
+      run: |
+        cmake --preset fuzz-linux
+        cmake --build --preset fuzz-linux --parallel 2
+    - name: Fuzz BLE and CDC under ASan and UBSan
+      run: ctest --preset fuzz-linux --verbose
+    - name: Record analysis tool versions
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Save fuzz corpora, crashes and diagnostics
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: fuzz-linux
+        retention-days: 14
+        path: |
+          build/fuzz-linux/fuzz/
+          build/fuzz-linux/Testing/
+    if: ${{ needs.audit.outputs.mode == 'full' }}
   valgrind:
     needs: audit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Install pinned Ninja and Valgrind
-        run: |
-          cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
-          sudo apt-get update -qq
-          sudo apt-get install -y valgrind
-      - name: Build uninstrumented Debug tests
-        run: |
-          cmake --preset valgrind-linux
-          cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
-      - name: Verify Valgrind version and error exit policy
-        run: cmake -DCONTROL="$GITHUB_WORKSPACE/build/valgrind-linux/tests/native/valgrind_control" -DWORK="$GITHUB_WORKSPACE/build/valgrind-linux/valgrind-policy" -P tests/cmake/valgrind_policy_test.cmake
-      - name: Check native tests for memory errors and leaks
-        run: >-
-          ctest --test-dir build/valgrind-linux -T memcheck -L coverage
-          --output-on-failure --timeout 180 --parallel 2
-          --overwrite MemoryCheckCommand=/usr/bin/valgrind
-          --overwrite "MemoryCheckCommandOptions=--tool=memcheck --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=99 --num-callers=30"
-      - name: Save Memcheck reports and policy diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: valgrind-linux
-          retention-days: 14
-          path: |
-            build/valgrind-linux/Testing/
-            build/valgrind-linux/valgrind-policy/
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Install pinned Ninja and Valgrind
+      run: |
+        cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+        sudo apt-get update -qq
+        sudo apt-get install -y valgrind
+    - name: Build uninstrumented Debug tests
+      run: |
+        cmake --preset valgrind-linux
+        cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
+    - name: Verify Valgrind version and error exit policy
+      run: cmake -DCONTROL="$GITHUB_WORKSPACE/build/valgrind-linux/tests/native/valgrind_control" -DWORK="$GITHUB_WORKSPACE/build/valgrind-linux/valgrind-policy"
+        -P tests/cmake/valgrind_policy_test.cmake
+    - name: Check native tests for memory errors and leaks
+      run: ctest --test-dir build/valgrind-linux -T memcheck -L coverage --output-on-failure --timeout 180 --parallel 2 --overwrite MemoryCheckCommand=/usr/bin/valgrind
+        --overwrite "MemoryCheckCommandOptions=--tool=memcheck --leak-check=full --show-leak-kinds=all --errors-for-leak-kinds=definite,indirect,possible --track-origins=yes
+        --error-exitcode=99 --num-callers=30"
+    - name: Record analysis tool versions
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Save Memcheck reports and policy diagnostics
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: valgrind-linux
+        retention-days: 14
+        path: |
+          build/valgrind-linux/Testing/
+          build/valgrind-linux/valgrind-policy/
+    if: ${{ needs.audit.outputs.mode == 'full' }}
   mutation:
     needs: audit
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Install pinned Ninja and LLVM 18
-        run: |
-          cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
-          sudo apt-get update -qq
-          sudo apt-get install -y clang-18 libclang-cpp18 llvm-18-dev libclang-18-dev
-      - name: Extract verified Mull package
-        run: cmake -DWORK="$GITHUB_WORKSPACE/build/mutation-linux/tools/mull" -P cmake/SetupMutation.cmake
-      - name: Configure mutation tests
-        run: cmake --preset mutation-linux
-      - name: Test mutation report tooling
-        run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_mutation_report.py" -v
-      - name: Run mutation analysis and reject unreviewed survivors
-        run: cmake --build --preset mutation-linux --parallel 2
-      - name: Save mutation reports and diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mutation-linux
-          retention-days: 14
-          path: |
-            build/mutation-linux/mutation/
-            build/mutation-linux/mutation-policy/
-  coverage:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Install pinned Ninja and LLVM 18
+      run: |
+        cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+        sudo apt-get update -qq
+        sudo apt-get install -y clang-${{ steps.tools.outputs.mull-llvm }} libclang-cpp${{ steps.tools.outputs.mull-llvm }} llvm-${{ steps.tools.outputs.mull-llvm }}-dev libclang-${{ steps.tools.outputs.mull-llvm }}-dev
+    - name: Extract verified Mull package
+      run: cmake -DWORK="$GITHUB_WORKSPACE/build/mutation-linux/tools/mull" -P cmake/SetupMutation.cmake
+    - name: Configure mutation tests
+      run: cmake --preset mutation-linux
+    - name: Test mutation report tooling
+      run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_mutation_report.py" -v
+    - name: Run mutation analysis and reject unreviewed survivors
+      run: cmake --build --preset mutation-linux --parallel 2
+    - name: Record analysis tool versions
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Save mutation reports and diagnostics
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: mutation-linux
+        retention-days: 14
+        path: |
+          build/mutation-linux/mutation/
+          build/mutation-linux/mutation-policy/
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+  windows-sdk:
     needs: audit
-    runs-on: ${{ matrix.os }}
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: windows-2025-vs2026
     timeout-minutes: 180
+    steps:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Set up MSVC and Windows SDK
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      with:
+        arch: x64
+        toolset: ${{ steps.tools.outputs.msvc }}
+        sdk: ${{ steps.tools.outputs.sdk }}
+    - name: Verify MSVC and Windows SDK
+      run: cmake -P cmake/CheckMsvcToolchain.cmake
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Identify dependency cache keys
+      id: keys
+      run: cmake -P cmake/DependencyFingerprint.cmake
+    - name: Identify compatible Qt SDK
+      id: qt-key
+      shell: pwsh
+      run: ./cmake/QtCache.ps1 -Mode Key
+    - name: Restore qt-sources
+      id: qt-sources
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/deps/downloads/*everywhere-src-*.tar.xz
+        key: Windows-X64-v2-qt-sources-${{ steps.keys.outputs.qt-sources }}
+      continue-on-error: true
+    - name: Restore wdk
+      id: wdk
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/deps/downloads/microsoft.windows.wdk*.nupkg
+        key: Windows-X64-v2-wdk-${{ steps.keys.outputs.wdk }}
+      continue-on-error: true
+    - name: Restore qt
+      id: qt
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/windows/deps/qt/install/
+        key: ${{ steps.qt-key.outputs.key }}
+      continue-on-error: true
+    - name: Prepare and validate complete SDKs
+      shell: pwsh
+      run: ./cmake/PrepareWindowsSdk.ps1
+    - name: Save complete qt
+      if: ${{ steps.qt.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/windows/deps/qt/install/
+        key: ${{ steps.qt-key.outputs.key }}
+      continue-on-error: true
+    - name: Save complete qt-sources
+      if: ${{ steps.qt-sources.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/deps/downloads/*everywhere-src-*.tar.xz
+        key: Windows-X64-v2-qt-sources-${{ steps.keys.outputs.qt-sources }}
+      continue-on-error: true
+    - name: Save complete wdk
+      if: ${{ steps.wdk.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/deps/downloads/microsoft.windows.wdk*.nupkg
+        key: Windows-X64-v2-wdk-${{ steps.keys.outputs.wdk }}
+      continue-on-error: true
+    - name: Save windows-sdk
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: windows-sdk
+        path: |-
+          build/deps/downloads/*everywhere-src-*.tar.xz
+          build/deps/downloads/microsoft.windows.wdk*.nupkg
+          build/deps/wdk/
+          build/windows/deps/qt/install/
+        if-no-files-found: error
+        retention-days: 1
+        include-hidden-files: true
+  coverage-linux:
+    needs: audit
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Install verified coverage tool
+      id: coverage-tools
+      run: cmake -DWORK="$GITHUB_WORKSPACE/build/coverage-linux/tools/coverage" -P cmake/SetupCoverage.cmake
+    - name: Configure coverage
+      env:
+        QT_ROOT: ''
+      run: cmake --preset coverage-linux -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+    - name: Build coverage binaries
+      run: cmake --build --preset coverage-linux --parallel 2
+    - name: Measure fresh line coverage
+      run: ctest --preset coverage-linux --verbose
+    - continue-on-error: true
+      id: codecov
+      name: Upload coverage to Codecov
+      uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac
+      with:
+        disable_search: true
+        fail_ci_if_error: true
+        files: build/coverage-linux/coverage/coverage.xml
+        flags: linux
+        use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        version: ${{ steps.coverage-tools.outputs.codecov-version }}
+    - if: steps.codecov.outcome == 'failure'
+      name: Report Codecov upload failure
+      run: |
+        echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
+        echo "Codecov upload failed. Download the coverage artifact for the measured result." >> "$GITHUB_STEP_SUMMARY"
+    - if: always()
+      name: Save coverage and test diagnostics
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: coverage-linux
+        path: |
+          build/coverage-linux/coverage/
+          build/coverage-linux/**/Testing/Temporary/LastTest.log
+          build/coverage-linux/**/*-tests.xml
+          build/coverage-linux/**/*-err.log
+          build/coverage-linux/**/*-out.log
+        retention-days: 14
     permissions:
       contents: read
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux
-          - os: windows-2025
-            platform: windows
+  coverage-windows:
+    needs:
+    - audit
+    - windows-sdk
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Set up MSVC and Windows SDK
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # MSVC environment
-        with:
-          arch: x64
-          toolset: '14.51'
-          sdk: '10.0.26100.0'
-      - name: Verify pinned MSVC toolset
-        if: runner.os == 'Windows'
-        run: cmake -P cmake/CheckMsvcToolchain.cmake
-      - name: Install pinned Ninja
-        run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
-      - name: Check build tools
-        run: |
-          cmake --version
-          ninja --version
-      - name: Cache dependency downloads and Arduino SDK
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            build/deps/downloads
-            build/deps/arduino
-            build/deps/arduino-cli
-            build/deps/firmware-legal
-          key: ${{ runner.os }}-${{ runner.arch }}-downloads-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/SetupArduino.cmake') }}
-      - name: Identify compatible static Qt SDK
-        if: runner.os == 'Windows'
-        id: qt-key
-        shell: pwsh
-        run: ./cmake/QtCache.ps1 -Mode Key
-      - name: Restore static Qt SDK
-        if: runner.os == 'Windows'
-        id: qt-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.qt-key.outputs.path }}
-          key: ${{ steps.qt-key.outputs.key }}
-      - name: Verify restored static Qt SDK
-        if: runner.os == 'Windows'
-        id: qt-verified
-        shell: pwsh
-        run: ./cmake/QtCache.ps1 -Mode Restore
-      - name: Configure Qt SDK bootstrap
-        if: runner.os == 'Windows'
-        env:
-          QT_ROOT: ${{ steps.qt-verified.outputs.root }}
-        run: cmake --preset windows -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
-      - name: Build and verify static Qt SDK on cache miss
-        if: runner.os == 'Windows' && steps.qt-verified.outputs.root == ''
-        shell: pwsh
-        run: |
-          cmake --build build/windows --target qt-static
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          ./cmake/QtCache.ps1 -Mode Seal
-      - name: Save verified static Qt SDK
-        if: runner.os == 'Windows' && steps.qt-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.qt-key.outputs.path }}
-          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
-      - name: Install verified coverage tool
-        id: coverage-tools
-        run: cmake -DWORK="$GITHUB_WORKSPACE/build/coverage-${{ matrix.platform }}/tools/coverage" -P cmake/SetupCoverage.cmake
-      - name: Configure coverage
-        env:
-          QT_ROOT: ${{ runner.os == 'Windows' && format('{0}/build/windows/deps/qt/install', github.workspace) || '' }}
-        run: cmake --preset coverage-${{ matrix.platform }} -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
-      - name: Build coverage binaries
-        run: cmake --build --preset coverage-${{ matrix.platform }} --parallel 2
-      - name: Measure fresh line coverage
-        run: ctest --preset coverage-${{ matrix.platform }} --verbose
-      - name: Upload coverage to Codecov
-        id: codecov
-        continue-on-error: true
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
-        with:
-          version: ${{ steps.coverage-tools.outputs.codecov-version }}
-          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          files: build/coverage-${{ matrix.platform }}/coverage/coverage.xml
-          flags: ${{ matrix.platform }}
-          disable_search: true
-          fail_ci_if_error: true
-      - name: Report Codecov upload failure
-        if: steps.codecov.outcome == 'failure'
-        run: |
-          echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
-          echo "Codecov upload failed. Download the coverage artifact for the measured result." >> "$GITHUB_STEP_SUMMARY"
-      - name: Save coverage and test diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-${{ matrix.platform }}
-          retention-days: 14
-          path: |
-            build/coverage-${{ matrix.platform }}/coverage/
-            build/coverage-${{ matrix.platform }}/**/Testing/Temporary/LastTest.log
-            build/coverage-${{ matrix.platform }}/**/*-tests.xml
-            build/coverage-${{ matrix.platform }}/**/*-err.log
-            build/coverage-${{ matrix.platform }}/**/*-out.log
-  maintenance:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Set up MSVC and Windows SDK
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      with:
+        arch: x64
+        toolset: ${{ steps.tools.outputs.msvc }}
+        sdk: ${{ steps.tools.outputs.sdk }}
+    - name: Verify MSVC and Windows SDK
+      run: cmake -P cmake/CheckMsvcToolchain.cmake
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Download this run's Windows SDK
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: windows-sdk
+        path: build
+    - name: Verify SDK or rebuild for this runner
+      shell: pwsh
+      run: ./cmake/PrepareWindowsSdk.ps1
+    - name: Install verified coverage tool
+      id: coverage-tools
+      run: cmake -DWORK="$GITHUB_WORKSPACE/build/coverage-windows/tools/coverage" -P cmake/SetupCoverage.cmake
+    - name: Configure coverage
+      env:
+        QT_ROOT: ${{ github.workspace }}/build/windows/deps/qt/install
+      run: cmake --preset coverage-windows -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+    - name: Build coverage binaries
+      run: cmake --build --preset coverage-windows --parallel 2
+    - name: Measure fresh line coverage
+      run: ctest --preset coverage-windows --verbose
+    - continue-on-error: true
+      id: codecov
+      name: Upload coverage to Codecov
+      uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac
+      with:
+        disable_search: true
+        fail_ci_if_error: true
+        files: build/coverage-windows/coverage/coverage.xml
+        flags: windows
+        use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        version: ${{ steps.coverage-tools.outputs.codecov-version }}
+    - if: steps.codecov.outcome == 'failure'
+      name: Report Codecov upload failure
+      run: |
+        echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
+        echo "Codecov upload failed. Download the coverage artifact for the measured result." >> "$GITHUB_STEP_SUMMARY"
+    - if: always()
+      name: Save coverage and test diagnostics
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: coverage-windows
+        path: |
+          build/coverage-windows/coverage/
+          build/coverage-windows/**/Testing/Temporary/LastTest.log
+          build/coverage-windows/**/*-tests.xml
+          build/coverage-windows/**/*-err.log
+          build/coverage-windows/**/*-out.log
+        retention-days: 14
+    permissions:
+      contents: read
+      id-token: write
+  firmware:
     needs: audit
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Select pinned host compiler
+      run: |-
+        g++-${{ steps.tools.outputs.gcc }} --version
+        echo "CXX=g++-${{ steps.tools.outputs.gcc }}" >> "$GITHUB_ENV"
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Identify firmware cache keys
+      id: keys
+      run: cmake -P cmake/DependencyFingerprint.cmake
+    - name: Restore arduino
+      id: arduino
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |-
+          build/deps/arduino/
+          build/deps/arduino-cli/
+        key: Linux-X64-v2-arduino-${{ steps.keys.outputs.arduino }}
+      continue-on-error: true
+    - name: Restore firmware-legal
+      id: firmware-legal
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/deps/firmware-legal/
+        key: Linux-X64-v2-firmware-legal-${{ steps.keys.outputs.firmware-legal }}
+      continue-on-error: true
+    - name: Configure both firmware boards
+      env:
+        RELEASE_TAG: ${{ needs.audit.outputs.release == 'true' && github.ref_name || '' }}
+        RELEASE_COMMIT: ${{ github.sha }}
+      run: cmake --preset firmware-linux -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT" -DARDUINO_CLI="$GITHUB_WORKSPACE/build/deps/arduino-cli/Linux/arduino-cli"
+        -DARDUINO_DATA_DIR="$GITHUB_WORKSPACE/build/deps/arduino/Linux/data"
+    - name: Prepare Arduino toolchain
+      run: cmake --build build/firmware-linux --target arduino-setup
+    - name: Build both boards in parallel
+      run: cmake --build --preset firmware-linux --parallel 2
+    - name: Save complete arduino
+      if: ${{ steps.arduino.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |-
+          build/deps/arduino/
+          build/deps/arduino-cli/
+        key: Linux-X64-v2-arduino-${{ steps.keys.outputs.arduino }}
+      continue-on-error: true
+    - name: Save complete firmware-legal
+      if: ${{ steps.firmware-legal.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/deps/firmware-legal/
+        key: Linux-X64-v2-firmware-legal-${{ steps.keys.outputs.firmware-legal }}
+      continue-on-error: true
+    - name: Ensure build did not modify public sources
+      run: |-
+        git diff --exit-code
+        test -z "$(git ls-files --others --exclude-standard)"
+    - name: Save firmware-linux
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: firmware-linux
+        path: build/firmware-linux/dist/firmware/
+        if-no-files-found: error
+        retention-days: 14
+      if: ${{ needs.audit.outputs.release == 'true' }}
+  windows:
+    needs:
+    - audit
+    - windows-sdk
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 180
+    steps:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Set up MSVC and Windows SDK
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      with:
+        arch: x64
+        toolset: ${{ steps.tools.outputs.msvc }}
+        sdk: ${{ steps.tools.outputs.sdk }}
+    - name: Verify MSVC and Windows SDK
+      run: cmake -P cmake/CheckMsvcToolchain.cmake
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+    - name: Download this run's Windows SDK
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: windows-sdk
+        path: build
+    - name: Verify SDK or rebuild for this runner
+      shell: pwsh
+      run: ./cmake/PrepareWindowsSdk.ps1
+    - name: Configure Windows Release
+      env:
+        RELEASE_TAG: ${{ needs.audit.outputs.release == 'true' && github.ref_name || '' }}
+        RELEASE_COMMIT: ${{ github.sha }}
+      run: cmake --preset windows -DALLPOWERS_QT_ROOT="$GITHUB_WORKSPACE/build/windows/deps/qt/install" -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT"
+        -DALLPOWERS_BUILD_JOBS=2
+    - name: Build Windows applications and host tests
+      run: cmake --build --preset windows --parallel 2
+    - name: Test Windows products and build contracts
+      if: ${{ needs.audit.outputs.release != 'true' }}
+      run: ctest --preset windows --verbose
+    - name: Test release contracts; release target runs desktop unit tests
+      if: ${{ needs.audit.outputs.release == 'true' }}
+      run: ctest --preset windows --verbose -E "^windows-unit$"
+    - name: Package and independently rebuild corresponding sources
+      if: ${{ needs.audit.outputs.release == 'true' }}
+      run: cmake --build --preset release --parallel 2
+    - name: Ensure build did not modify public sources
+      run: |-
+        git diff --exit-code
+        test -z "$(git ls-files --others --exclude-standard)"
+    - name: Save windows-products
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: windows-products
+        path: |-
+          dist/AllpowersMonitor-*.zip
+          dist/AllpowersMonitor-*.zip.sha256
+        if-no-files-found: error
+        retention-days: 14
+      if: ${{ needs.audit.outputs.release == 'true' }}
+    - name: Save test diagnostics on failure
+      if: failure() || cancelled()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: windows-diagnostics
+        retention-days: 14
+        path: |
+          build/**/Testing/Temporary/LastTest.log
+          build/**/desktop-tests.*
+          build/**/widget-tests.*
+          build/**/archive-transport-tests.*
+          build/**/windows-identity-graph/*.log
+          build/**/source-kit-check/*.log
+          build/**/compliance/relink/relink.log
+          build/**/*-err.log
+          build/**/*-out.log
+  ci-result:
+    name: ${{ needs.audit.outputs.mode == 'delegated' && 'CI delegated to PR' || 'CI result' }}
+    needs:
+    - audit
+    - portable
+    - sanitizers
+    - fuzz
+    - valgrind
+    - mutation
+    - windows-sdk
+    - coverage-linux
+    - coverage-windows
+    - firmware
+    - windows
+    if: ${{ always() && needs.audit.outputs.mode != 'delegated' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Test maintenance contracts using only the Python standard library
-        run: python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v
-  products:
-    needs: [audit, portable, maintenance, mutation, valgrind, fuzz]
-    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-2025
-            preset: windows
-            products: all-windows
-          - os: ubuntu-24.04
-            preset: native
-            products: all-linux
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Set up MSVC and Windows SDK
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # MSVC environment
-        with:
-          arch: x64
-          toolset: '14.51'
-          sdk: '10.0.26100.0'
-      - name: Verify pinned MSVC toolset
-        if: runner.os == 'Windows'
-        run: cmake -P cmake/CheckMsvcToolchain.cmake
-      - name: Install pinned Ninja
-        run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
-      - name: Check build tools
-        run: |
-          cmake --version
-          ninja --version
-      - name: Cache dependency downloads and Arduino SDK
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            build/deps/downloads
-            build/deps/arduino
-            build/deps/arduino-cli
-            build/deps/firmware-legal
-          key: ${{ runner.os }}-${{ runner.arch }}-downloads-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/SetupArduino.cmake') }}
-      - name: Identify compatible static Qt SDK
-        if: runner.os == 'Windows'
-        id: qt-key
-        shell: pwsh
-        run: ./cmake/QtCache.ps1 -Mode Key
-      - name: Restore static Qt SDK
-        if: runner.os == 'Windows'
-        id: qt-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.qt-key.outputs.path }}
-          key: ${{ steps.qt-key.outputs.key }}
-      - name: Verify restored static Qt SDK
-        if: runner.os == 'Windows'
-        id: qt-verified
-        shell: pwsh
-        run: ./cmake/QtCache.ps1 -Mode Restore
-      - name: Configure
-        env:
-          RELEASE_TAG: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && github.ref_name || '' }}
-          RELEASE_COMMIT: ${{ github.sha }}
-          QT_ROOT: ${{ steps.qt-verified.outputs.root }}
-        run: cmake --preset ${{ matrix.preset }} -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT" -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2 -DALLPOWERS_ARDUINO_JOBS=2 -DALLPOWERS_FIRMWARE_PARALLEL_BOARDS=1
-      - name: Build and verify static Qt SDK on cache miss
-        if: runner.os == 'Windows' && steps.qt-verified.outputs.root == ''
-        shell: pwsh
-        run: |
-          cmake --build build/windows --target qt-static
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          ./cmake/QtCache.ps1 -Mode Seal
-      - name: Save verified static Qt SDK
-        if: runner.os == 'Windows' && steps.qt-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.qt-key.outputs.path }}
-          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
-      - name: Prepare Arduino toolchain
-        run: cmake --build build/${{ matrix.preset }} --target arduino-setup
-      - name: Build products
-        run: cmake --build --preset ${{ matrix.products }} --parallel 2
-      - name: Run tests
-        run: ctest --preset ${{ matrix.preset }} --verbose --stop-on-failure
-      - name: Package Windows release and verify source rebuild
-        if: runner.os == 'Windows'
-        run: cmake --build --preset release
-      - name: Audit tracked publication files
-        run: cmake --build build/${{ matrix.preset }} --target audit
-      - name: Check for modified source files
-        run: git diff --exit-code
-      - name: Check for unexpected public files
-        run: test -z "$(git ls-files --others --exclude-standard)"
-      - name: Upload checked products
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: allpowers-${{ runner.os }}
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            dist/firmware/
-            dist/AllpowersMonitor-*.zip
-            dist/AllpowersMonitor-*.zip.sha256
-      - name: Save test diagnostics on failure
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: test-diagnostics-${{ runner.os }}
-          retention-days: 7
-          path: |
-            build/**/Testing/Temporary/LastTest.log
-            build/**/desktop-tests.*
-            build/**/widget-tests.*
-            build/**/archive-transport-tests.*
-            build/**/windows-identity-graph/*.log
-            build/**/source-kit-check/*.log
-            build/**/compliance/relink/relink.log
-            build/**/*-err.log
-            build/**/*-out.log
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Require all planned checks
+      env:
+        CI_MODE: ${{ needs.audit.outputs.mode }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: python3 cmake/ci_policy.py gate
   release:
-    needs: [audit, products, maintenance]
-    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: windows-2025
+    needs:
+    - audit
+    - ci-result
+    if: ${{ needs.audit.outputs.release == 'true' }}
+    runs-on: windows-2025-vs2026
     timeout-minutes: 20
     defaults:
       run:
@@ -445,31 +736,47 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out source and tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-        with:
-          cmake-version: '4.4.4'
-      - name: Verify release tag
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          BUILD_COMMIT: ${{ github.sha }}
-        run: cmake "-DROOT=$env:GITHUB_WORKSPACE" "-DTAG=$env:RELEASE_TAG" "-DCOMMIT=$env:BUILD_COMMIT" -P cmake/CheckReleaseTag.cmake
-      - name: Download this run's checked Windows artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: allpowers-Windows
-          path: build/release-input
-      - name: Prepare and verify release assets
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: cmake "-DINPUT=$env:GITHUB_WORKSPACE/build/release-input" "-DOUTPUT=$env:GITHUB_WORKSPACE/build/release-assets" "-DTAG=$env:RELEASE_TAG" -P cmake/PrepareRelease.cmake
-      - name: Publish complete release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: ./cmake/PublishRelease.ps1 -Repository "$env:GITHUB_REPOSITORY" -Tag "$env:RELEASE_TAG" -Assets build/release-assets
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+    - name: Verify release tag
+      id: release-identity
+      env:
+        RELEASE_TAG: ${{ github.ref_name }}
+        BUILD_COMMIT: ${{ github.sha }}
+      run: |
+        cmake "-DROOT=$env:GITHUB_WORKSPACE" "-DTAG=$env:RELEASE_TAG" "-DCOMMIT=$env:BUILD_COMMIT" -P cmake/CheckReleaseTag.cmake
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        $commit = git rev-parse --verify "$env:BUILD_COMMIT^{commit}"
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        "commit=$commit" >> $env:GITHUB_OUTPUT
+    - name: Download this run's checked Windows artifacts
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: windows-products
+        path: build/release-input
+    - name: Download checked Linux firmware
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: firmware-linux
+        path: build/release-input/firmware
+    - name: Prepare and verify release assets
+      env:
+        RELEASE_TAG: ${{ github.ref_name }}
+        BUILD_COMMIT: ${{ steps.release-identity.outputs.commit }}
+      run: cmake "-DINPUT=$env:GITHUB_WORKSPACE/build/release-input" "-DOUTPUT=$env:GITHUB_WORKSPACE/build/release-assets" "-DTAG=$env:RELEASE_TAG" "-DCOMMIT=$env:BUILD_COMMIT"
+        -DEXPECTED_FIRMWARE_HOST=Linux -P cmake/PrepareRelease.cmake
+    - name: Publish complete release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.ref_name }}
+      run: ./cmake/PublishRelease.ps1 -Repository "$env:GITHUB_REPOSITORY" -Tag "$env:RELEASE_TAG" -Assets build/release-assets

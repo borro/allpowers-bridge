@@ -224,7 +224,7 @@ The reviewed survivors are recorded in `tests/mutation/accepted.json`, with a
 reason and category for each mutation. The job fails for any unreviewed survivor,
 any uncovered mutation, or a baseline/tool/report error. There is no minimum
 percentage: acceptance leaves the original statuses and mutation score unchanged.
-The mutation job also gates tagged product builds and releases.
+The mutation job gates CI result and release publication.
 
 An acceptance matches the exact file, Mull mutation ID (operator and coordinates),
 replacement and SHA-256 of the entire source file, normalized to LF. Changing
@@ -308,7 +308,7 @@ Use build/native on Linux. Setup downloads a checksum-verified Arduino CLI 1.5.1
 and installs ESP32 Core 3.3.11. ARDUINO_CLI and ARDUINO_DATA_DIR are cache paths;
 ALLPOWERS_ARDUINO_JOBS controls compiler jobs per board (default 2).
 ALLPOWERS_FIRMWARE_PARALLEL_BOARDS bounds concurrent board builds through a Ninja
-pool (default 2 locally, 1 in CI; CI also uses two compiler jobs per board).
+pool (default 2 locally and in CI, with two compiler jobs per board).
 These limits are independent of application/Qt compilation. Each board owns its
 sketch copy and compiler directory. Staging copies only changed contents, removes
 deleted inputs and retains timestamps of unchanged inputs and generated identity;
@@ -351,7 +351,7 @@ Firmware's generated sorted relative inventory is itself a build input, so a
 deletion-only change runs the actual board target even while the version remains
 dirty. Unchanged inputs keep their no-op build. Isolated EXE checks read expected
 version from that artifact's generated identity at test execution, covering
-clean → source-only dirty → clean revert without a manual configure.
+clean Р Р†РІР‚В РІР‚в„ў source-only dirty Р Р†РІР‚В РІР‚в„ў clean revert without a manual configure.
 
 Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
 contains user history or private recovery storage. Do not delete .local/ or the
@@ -361,7 +361,7 @@ external preservation folders when cleaning build output.
 
 The `fuzz` job exercises the portable BLE notification decoder and CDC command
 collector/controller with Clang 18 libFuzzer plus fatal ASan/UBSan. It runs on
-every push, PR and manual dispatch and gates tagged product builds. Each target
+full push/PR and manual runs and gates release publication. Each target
 runs for 120 seconds, with a 5-second per-input timeout and a 1024 MiB RSS limit;
 CTest runs both targets in parallel with a 180-second outer timeout per target.
 The CI job has a 20-minute limit including dependency installation. Crashes,
@@ -406,7 +406,7 @@ depending on timing or re-running the entire random search.
 ## Memory checking with Valgrind
 
 The `valgrind` job runs the five portable native tests through CTest Memcheck on
-Ubuntu 24.04, on every push, PR and manual run. It uses a separate Debug build,
+Ubuntu 24.04, in full push/PR and manual runs. It uses a separate Debug build,
 without ASan/UBSan, coverage or Mull instrumentation. It checks the portable
 core/shared ABI, UPS logic and host firmware, not Windows/Qt or physical devices.
 The supported Valgrind version is recorded in `cmake/Dependencies.cmake` and
@@ -433,74 +433,43 @@ Memcheck findings cannot silently pass. The control is excluded from normal
 builds and from the five passing tests.
 
 Logs and CTest XML are retained for 14 days in the `valgrind-linux` Actions
-artifact, including on failure. The Valgrind job also gates tagged product builds.
+artifact, including on failure. The Valgrind job gates release publication.
 
 ## GitHub Actions and publication
 
-`.github/workflows/build.yml` checks all branch pushes, tags, pull requests and
-manual runs. Branches, including `main`, pull requests and manual branch runs
-use audit, portable, maintenance, fuzz, Valgrind, mutation and coverage jobs. Full Windows/Linux product
-builds, packaging and publication run only for version tags (`v*`), including
-manual runs against a version tag. A PR and its branch push can each produce a
-quick run. After the audit, a portable tier runs core/ABI/UPS tests, RAM-only
-firmware self-tests and build regressions on Linux, both normally and with ASan/UBSan.
-`-DALLPOWERS_SANITIZERS=ON` adds fatal UBSan (`-fno-sanitize-recover=undefined`)
-and ASan. A deliberate recoverable-UB control must fail under those production
-flags while retaining its diagnostic; ordinary tests must pass. CI leaves
-LeakSanitizer enabled.
+The complete job graph, event selection, runner images and cache ownership are
+specified in [CI builds and dependency caches](ci.md). Every full run builds the
+Windows applications and both Linux firmware profiles alongside portable tests,
+sanitisers, coverage, Mull, Valgrind and fuzzing. Maintenance tooling tests run
+with the portable job using only Python's standard library; they install no
+HID/serial/esptool backend and perform no device discovery.
 
-An independent `maintenance` job runs
-`python3 -I -S -B -m unittest discover -s tests/maintenance -p "test_*.py" -v` with only the
-standard library. It installs no HID/serial/esptool backend and performs no
-discovery. This checks synthetic image ranges, schema/checksum, history metadata
-and rollback rejection before device access. It is separate from the Python-free
-CMake product build. On version tags, portable, maintenance, fuzz, mutation and Valgrind jobs gate
-the complete Windows/Linux product matrix and publication.
-New branch/PR runs cancel superseded runs; tag runs do not interrupt an active
-release for the same tag. Shared build commands use Bash with fail-fast behavior
-on both platforms; Windows-specific scripts and the release job use PowerShell.
-The audit job checks the index and working tree, rejects unexpected public files,
-scans reachable history, and runs checksum-pinned Gitleaks. The build matrix uses
-Windows Server 2025 (Visual Studio 2026, MSVC 14.51 x64, SDK 10.0.26100.0) and
-Ubuntu 24.04. CI validates the selected toolset before configuring Qt; it must
-not silently switch to a newer Visual Studio installed on the hosted image. Both compile
-the core and both firmware profiles, and run CTest. Windows bootstraps static Qt,
-builds the driver/monitor/widget and verifies the CPack source-kit rebuild.
-Before configuration, `cmake/SetupNinja.cmake` installs the exact Ninja version
-from `cmake/Dependencies.cmake` into the runner's temporary directory, verifies
-the platform archive's pinned SHA256 and the executable's reported version,
-then adds that directory to `GITHUB_PATH`. Windows and Linux builds therefore
-use the same pinned Ninja release instead of the runner image's bundled version.
+The audit checks tracked/working files and reachable history with checksum-pinned
+Gitleaks. Product builds and analyzers then run in parallel. **CI result** requires
+all planned checks, including Windows and Linux coverage, before publication.
+Documentation-only runs permit explicit skips; unrelated unexpected skips fail.
 
-Actions are pinned to commit hashes; Dependabot proposes monthly updates. The
-build/test jobs have read-only repository permissions, do not persist Git credentials,
-and require no user secrets. Dependency downloads/Arduino packages and the installed
-static Qt SDK are cached separately. `cmake/QtCache.ps1` computes an exact SDK key
-from the dependency pins and Qt recipe/check scripts, actual compiler SHA256 and
-path, full MSVC toolset and Windows SDK/UCRT versions, architecture, CMake/Ninja
-versions and absolute SDK install path. There are no partial restore keys. Including
-paths avoids treating an SDK built in a different location as relocatable.
+Windows uses `windows-2025-vs2026`, MSVC 14.51 x64, SDK 10.0.26100.0 and static
+Qt with the WinRT backend. Linux uses `ubuntu-24.04`. CMake/Ninja and dependencies
+are pinned in `cmake/Dependencies.cmake`, and actual image/toolchain versions are
+recorded in job summaries. Actions are pinned to commit hashes; Dependabot proposes
+monthly updates. Product jobs have read-only repository access and no user secrets.
 
-Before selecting `ALLPOWERS_QT_ROOT`, CI compares the SDK's compatibility manifest,
-checks the exact Qt version, static modules and Core/Bluetooth WinRT features,
-then compiles/links a small `/MT` consumer. It checks PE imports and runs offline
-Widgets/SQLite/plugin checks with a system-only PATH; it never scans or connects
-Bluetooth. A missing, incomplete or rejected cache falls back to the normal Qt
-source build. Rejected installs are moved aside inside the build directory.
-Only a successfully checked install is saved, before the application/firmware
-build, so unrelated later failures do not discard a usable SDK. Object directories
-and ExternalProject stamps are never cached. An invalid existing exact-key entry
-cannot be overwritten by Actions: remove that entry in GitHub's cache settings
-to let the next successful build replace it. Qt source archives remain available
-through the separate download cache for notices and source packaging.
+The Windows SDK producer owns the Qt binary, Qt source and WDK archive caches.
+Its verified SDK artifact feeds the Release and coverage jobs. Firmware owns the
+Arduino and legal-source caches. Component-specific fingerprints and explicit
+save steps prevent a faster job from publishing an incomplete shared cache.
+Qt fingerprints include actual compiler, header and library contents and absolute
+paths; SDKs are validated by source identity and static compile/link/offline probes.
+A rejected SDK is quarantined and rebuilt. Objects and ExternalProject stamps are
+never shared. Qt keeps its two-process default, and firmware uses two boards with
+two compiler processes each. No build installs a driver/service or accesses devices.
 
-Qt defaults to two parallel compiler jobs (`ALLPOWERS_QT_JOBS`).
-Qt Core C++/WinRT and the Qt Bluetooth WinRT backend are required explicitly;
-unsupported compiler/SDK combinations fail configuration instead of disabling
-WinRT and failing later on a missing private Qt header.
-Artifacts contain the two firmware packages and, on Windows, runtime/source ZIPs
-and SHA256 files. They expire after 14 days. The tag-only release job publishes
-the checked files as described below. No build installs a driver/service or accesses devices.
+Version-tag runs additionally create and verify distribution packages, including
+an independent build of the Windows source kit. The release job combines the
+Windows applications and Linux firmware from that same run. Diagnostic and release transport artifacts expire after 14 days; the temporary
+SDK transport expires after one day. Branch/PR runs do not upload product
+distribution packages. See below for release notes and the public asset contract.
 
 ## Tagged releases
 
@@ -513,7 +482,7 @@ notes; an already published release and its assets remain unchanged on a rerun.
 
 A push of a SemVer tag (`v1.2.3`, `v1.2.3-alpha.1`) containing this workflow
 publishes a GitHub Release after the audit and both platform builds/tests pass.
-Manual workflow dispatch against such a tag uses the same checks. Branch/PR
+Manual workflow dispatch runs checks without publication. Branch/PR
 events cannot publish. Only the release job receives `contents: write`, using
 the built-in `GITHUB_TOKEN`; no personal token is needed. The official
 `download-artifact` action retrieves artifacts from the same workflow run without
@@ -521,7 +490,7 @@ an additional GitHub token or `actions: read` permission.
 
 Tag builds pass `ALLPOWERS_RELEASE_TAG` to CMake. It must resolve to the actual
 clean checkout's HEAD and be a valid version fitting Windows VERSIONINFO.
-`ALLPOWERS_RELEASE_COMMIT` pins the checkout to the push/dispatch event's Git object,
+`ALLPOWERS_RELEASE_COMMIT` pins the checkout to the tag-push event's Git object,
 including when an annotated tag object is supplied.
 The requested tag takes precedence over other tags on that commit. The `v`
 prefix is removed for the application version, PE ProductVersion/FileVersion,
@@ -597,3 +566,5 @@ compiler compatibility module selects it instead of enabling draft features
 through `/std:c++latest`. Qt uses the same language mode, including its
 C++/WinRT configuration probes. C ABI v1 and the firmware USB/flash contracts
 remain unchanged.
+
+See [CI selection, runner images and cache ownership](ci.md) for branch/PR deduplication, documentation-only checks and release gates.

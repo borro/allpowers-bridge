@@ -5,11 +5,10 @@
 <h1 align="center">ALLPOWERS</h1>
 
 <p align="center">
-  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Покрытие строк C++ на ПК"></a><br>
-  <sub><a href="docs/building.md#test-coverage">Ядро, логика прошивки в тестах на ПК и Windows/Qt; выполнение на оборудовании не измеряется.</a><br>
-  <a href="docs/building.md#mutation-testing">Мутационные тесты запускаются на каждый push/PR: разобранные мутанты приняты, новые выжившие вызывают ошибку CI. Отчёты доступны в GitHub Actions.</a><br>
-  <a href="docs/building.md#memory-checking-with-valgrind">Valgrind проверяет переносимые тесты на ошибки памяти и утечки при каждом push/PR.</a><br>
-  <a href="docs/building.md#parser-fuzzing">Парсеры BLE и CDC проходят фаззинг под ASan/UBSan при каждом push/PR.</a></sub>
+  <a href="https://github.com/borro/allpowers-bridge/actions/workflows/build.yml?query=branch%3Amain"><img src="https://github.com/borro/allpowers-bridge/actions/workflows/build.yml/badge.svg?branch=main&amp;event=push" alt="Сборка и тесты main"></a>
+  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Покрытие строк C++ на ПК"></a>
+  <a href="https://github.com/borro/allpowers-bridge/releases/latest"><img src="https://img.shields.io/github/v/release/borro/allpowers-bridge" alt="Последний релиз"></a>
+  <a href="https://github.com/borro/allpowers-bridge/releases"><img src="https://img.shields.io/github/downloads/borro/allpowers-bridge/total" alt="Загрузки релизов"></a>
 </p>
 
 <p align="center">Телеметрия зарядной станции на рабочем столе. USB-ИБП через поддерживаемую плату.</p>
@@ -91,6 +90,8 @@
 Qt-приложения Windows. Сборка использует CMake Presets/Ninja, CTest и CPack;
 Linux поддерживает ядро и сборку прошивок, приложения для рабочего стола Linux
 пока нет. Сборка и тесты не прошивают платы и не подключаются к станциям.
+
+Сборки и анализаторы выполняются параллельно; релизные пакеты публикуются только по корректным тегам `v`. Для изменений только документации выполняются короткие проверки. Windows-приложения собираются с MSVC/WinRT, обе прошивки — в Linux. Подробнее: [jobs, образы и владение кэшами](docs/ci.md).
 
 ## Лицензия
 

@@ -5,12 +5,41 @@ Set-StrictMode -Version Latest
 $scratch = Join-Path $Work ([guid]::NewGuid().ToString('N'))
 $source = Join-Path $scratch 'source'
 New-Item -ItemType Directory -Path "$source/cmake" -Force | Out-Null
+# Exercise content invalidation on a tiny independent toolchain, never real SDK files.
+. "$Root/cmake/ToolchainFingerprint.ps1"
+$savedToolchain = @{}
+foreach ($name in 'VCToolsInstallDir', 'WindowsSdkDir', 'WindowsSDKVersion') {
+    $savedToolchain[$name] = [Environment]::GetEnvironmentVariable($name)
+}
+try {
+    $env:VCToolsInstallDir = "$scratch/toolchain/vc"
+    $env:WindowsSdkDir = "$scratch/toolchain/sdk"
+    $env:WindowsSDKVersion = '1.0'
+    foreach ($directory in 'vc/bin', 'vc/include', 'vc/lib/x64', 'sdk/Include/1.0',
+                           'sdk/Lib/1.0/um/x64', 'sdk/Lib/1.0/ucrt/x64', 'sdk/bin/1.0/x64') {
+        New-Item -ItemType Directory -Path "$scratch/toolchain/$directory" -Force | Out-Null
+    }
+    $compiler = "$scratch/toolchain/vc/bin/cl.exe"
+    Set-Content -LiteralPath $compiler -Value 'synthetic compiler, never executed'
+    $before = Get-ToolchainFingerprint $compiler
+    Set-Content -LiteralPath "$scratch/toolchain/sdk/Include/1.0/test.h" -Value 'changed header'
+    $header = Get-ToolchainFingerprint $compiler
+    Set-Content -LiteralPath "$scratch/toolchain/vc/lib/x64/test.lib" -Value 'changed library'
+    if ($before -eq $header -or $header -eq (Get-ToolchainFingerprint $compiler)) {
+        throw 'Toolchain headers/libraries did not invalidate the fingerprint'
+    }
+} finally {
+    foreach ($name in $savedToolchain.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $savedToolchain[$name])
+    }
+}
 foreach ($file in 'Dependencies.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
+                  'DependencyFingerprint.cmake', 'ToolchainFingerprint.ps1',
                   'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     Copy-Item -LiteralPath "$Root/cmake/$file" -Destination "$source/cmake/$file"
 }
 $savedOutput = $env:GITHUB_OUTPUT
-$savedSdk = $env:WindowsSDKVersion
+$savedSdk = $env:UCRTVersion
 $powershell = (Get-Process -Id $PID).Path
 try {
     $env:GITHUB_OUTPUT = Join-Path $scratch 'outputs.txt'
@@ -27,9 +56,13 @@ try {
     }
     $baseline = Get-Key
     if (!$baseline -or (Get-Key) -cne $baseline) { throw 'Identical inputs did not produce a stable key' }
-    $env:WindowsSDKVersion = '0.0.0.0'
+    $env:UCRTVersion = '0.0.0.0'
     if ((Get-Key) -ceq $baseline) { throw 'SDK version did not invalidate the key' }
-    $env:WindowsSDKVersion = $savedSdk
+    $env:UCRTVersion = $savedSdk
+    $dependencies = Get-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Raw
+    Set-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Value ($dependencies.Replace('"0.35.0"', '"0.99.0"'))
+    if ((Get-Key) -cne $baseline) { throw 'Mull version invalidated unrelated Qt SDK' }
+    Set-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Value $dependencies
     Add-Content -LiteralPath "$source/cmake/QtStatic.cmake" -Value '# changed build recipe'
     if ((Get-Key) -ceq $baseline) { throw 'Qt build recipe did not invalidate the key' }
     $recipeKey = Get-Key
@@ -52,5 +85,5 @@ try {
     Write-Host 'Qt cache key, invalidation, miss, and rejection checks passed'
 } finally {
     $env:GITHUB_OUTPUT = $savedOutput
-    $env:WindowsSDKVersion = $savedSdk
+    $env:UCRTVersion = $savedSdk
 }

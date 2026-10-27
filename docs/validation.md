@@ -31,6 +31,18 @@ partitions and reconnect policy are unchanged.
   no forced station switch or disconnect was used to manufacture that evidence.
   The previous Widget was restored and current fresh history writes confirmed.
 
+Coverage follow-up: the initial hosted Linux report for `e00b897` measured the
+new logger at 50/62 lines (80.64%), with twelve diagnostic naming paths missed.
+The native suite now runs 150 recording-to-DIAG scenarios: 25 raw stack reasons,
+three application-close intents and both callback orders, retaining each event
+across reconnection. These include unknown/zero reasons, host/HCI numeric
+collisions and the NimBLE HCI range boundaries. Fresh local GCC coverage measures
+the logger at 63/63 lines and the complete portable host scope at 1167/1167,
+up from 1155/1167 with identical settings. MSVC/OpenCppCoverage measures the
+logger at 68/68 lines; all five native Windows tests pass. Compiler-dependent
+line totals differ from the hosted report. No coverage filters, thresholds,
+product code or on-device firmware changed for this follow-up.
+
 ## License export latency under Windows coverage — 2026-10-28
 
 Run [40585431988](https://github.com/borro/allpowers-bridge/actions/runs/40585431988)

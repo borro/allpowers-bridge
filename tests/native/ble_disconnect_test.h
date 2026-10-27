@@ -5,7 +5,67 @@
 #include <string>
 
 namespace BleDisconnectTests {
+inline void diagnosticReasons(){
+  using namespace BleDisconnects;
+  // These are the user-visible meanings of the SDK reason domains. Exercise
+  // them through recording and DIAG output, including zero versus unavailable
+  // and NimBLE host errors whose numbers overlap ordinary HCI reason codes.
+  struct Reason {Backend backend;uint16_t raw;const char *name;};
+  const Reason reasons[]={
+    {Backend::Bluedroid,0,"UNKNOWN"},
+    {Backend::Bluedroid,1,"L2CAP_FAILURE"},
+    {Backend::Bluedroid,0x08,"CONNECTION_TIMEOUT"},
+    {Backend::Bluedroid,0x13,"PEER_TERMINATED"},
+    {Backend::Bluedroid,0x16,"LOCAL_HOST_TERMINATED"},
+    {Backend::Bluedroid,0x22,"LMP_TIMEOUT"},
+    {Backend::Bluedroid,0x3e,"FAILED_TO_ESTABLISH"},
+    {Backend::Bluedroid,0x100,"CONNECTION_CANCELLED"},
+    {Backend::Bluedroid,0x101,"NO_CONNECTION"},
+    {Backend::Bluedroid,0xffff,"UNRECOGNIZED"},
+    {Backend::Nimble,0x208,"CONNECTION_TIMEOUT"},
+    {Backend::Nimble,0x213,"PEER_TERMINATED"},
+    {Backend::Nimble,0x216,"LOCAL_HOST_TERMINATED"},
+    {Backend::Nimble,0x222,"LMP_TIMEOUT"},
+    {Backend::Nimble,0x23e,"FAILED_TO_ESTABLISH"},
+    {Backend::Nimble,0x2ff,"UNRECOGNIZED"},
+    {Backend::Nimble,0,"UNKNOWN"},
+    {Backend::Nimble,11,"HOST_OS_ERROR"},
+    {Backend::Nimble,12,"HOST_CONTROLLER_ERROR"},
+    {Backend::Nimble,19,"HOST_HCI_TIMEOUT"},
+    {Backend::Nimble,22,"HOST_NOT_SYNCED"},
+    {Backend::Nimble,1,"HOST_ERROR"},
+    {Backend::Nimble,0x200,"HOST_ERROR"},
+    {Backend::Nimble,0x300,"HOST_ERROR"},
+    {Backend::Nimble,0xffff,"HOST_ERROR"},
+  };
+  struct Intent {Request value;const char *name;};
+  const Intent intents[]={{Request::None,"none"},{Request::TelemetryTimeout,"telemetry_timeout"},
+                          {Request::TargetChanged,"target_changed"}};
+  const uint8_t peer[6]={2,0,0,0,0,1};
+  for(const auto &reason:reasons)for(const auto &intent:intents)for(bool rawFirst:{false,true}){
+    Log log;log.connected(1,2,peer,7,reason.backend);log.request(intent.value);
+    if(rawFirst)assert(log.reason(1,2,peer,reason.raw));
+    log.disconnected({12345,20,100,true,true,-89});
+    if(!rawFirst)assert(log.reason(1,2,peer,reason.raw));
+    // Reconnection must preserve the previous event, reason and request even
+    // after the active binding has moved to another connection.
+    log.connected(1,3,peer,8,reason.backend);
+    const auto snapshot=log.snapshot();assert(snapshot.count==1);
+    assert(snapshot.events[0].reasonKnown&&snapshot.events[0].reason==reason.raw);
+    assert(snapshot.events[0].requested==intent.value&&snapshot.events[0].connection==7);
+    char output[1024],expected[160];
+    const int size=appendDiagnosticRows(output,sizeof(output),snapshot);
+    assert(size>0&&size<int(sizeof(output)));
+    snprintf(expected,sizeof(expected),"reason=0x%04X %s request=%s",unsigned(reason.raw),reason.name,intent.name);
+    assert(strstr(output,expected));
+    assert(strstr(output,reason.backend==Backend::Nimble?"stack=nimble":"stack=bluedroid"));
+    assert(strstr(output,"up_ms=12345 conn=7 peer=02:00:00:00:00:01"));
+    assert(strstr(output,"main_ms=20 cfg_ms=100 scan_dbm=-89"));
+    assert(!strstr(output,"unavailable"));
+  }
+}
 inline void run(){
+  diagnosticReasons();
   using namespace BleDisconnects;
   const uint8_t peer[6]={2,0,0,0,0,1},other[6]={2,0,0,0,0,2};
   Log log;

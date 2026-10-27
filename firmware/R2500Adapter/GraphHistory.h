@@ -4,7 +4,7 @@
 
 namespace GraphHistory {
 constexpr uint32_t kLiveKeep=3600,kCapacity=HistoryFormat::kKeep+kLiveKeep,kHorizon=48*60*60;
-struct Point {HistoryFormat::Record sample;uint32_t age=0;bool joinPrevious=false,unknownBefore=false;};
+struct Point {HistoryFormat::Record sample{};uint32_t age=0;bool joinPrevious=false,unknownBefore=false;};
 // log(1 + age) gives a defined position for "now" and expands recent seconds.
 inline int x(uint32_t age){
   if(age>=kHorizon)return 32;

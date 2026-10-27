@@ -21,11 +21,24 @@ separately; do not require individual conditionally skipped jobs.
 - Only a pushed, valid `v` release tag publishes. Manual dispatch never publishes;
   rerunning the original tag workflow retains its release behavior.
 
-After the audit, portable tests, sanitizers, Linux coverage, Mull, Valgrind, fuzzing,
+After the audit (including actionlint/ShellCheck), static analysis, portable tests,
+sanitizers, Linux coverage, Mull, Valgrind, fuzzing,
 firmware and Windows SDK preparation run independently. Windows Release and Windows
 coverage depend on the SDK producer, not on the Linux analyzers. All mandatory
 results join at **CI result**; unexpected skips, failures or cancellations fail it.
 Codecov service availability does not replace the local coverage requirement.
+
+The `static-analysis` job runs clang-tidy 18 and Cppcheck 2.22.0 sequentially,
+each with at most four workers. MSVC `/analyze` runs inside the existing Windows
+Release compilation; SDK preparation and Windows coverage do not enable it.
+The audit runs actionlint 1.7.12 with an explicit ShellCheck 0.11.0 executable,
+including on documentation-only changes. ShellCheck reports errors and warnings;
+PowerShell is outside this check. Analyzer versions, completed units, durations
+and up to ten unique findings appear in summaries. MSVC compilation and analysis
+share a build timer; report validation has a separate timer. Raw logs, XML, SARIF
+and structured reports are retained for 14 days, also on failure. Missing,
+truncated or incomplete reports fail the checks. Code scanning permissions are
+not requested. See [local analysis commands](building.md#static-analysis).
 
 Every executed job publishes a result in the run's **Summary** tab, including
 failures and cancellations when the runner can still execute its final step.
@@ -69,6 +82,13 @@ language, exit status and diagnostic JSON; reports are retained with the Windows
 test artifact.
 
 ## Images and cache ownership
+
+Only `static-analysis` writes the separate Cppcheck tool cache. Its exact key
+includes Linux/architecture, compiler version, CMake, pinned source hash and build
+recipe. The source archive is checksum-verified; restored/built executables must
+pass version and memory-defect controls before saving. Concurrent workflow runs
+use the normal first-successful-save policy. Analysis results and Cppcheck work
+data are never cached. Existing Qt/Arduino/WDK cache keys are unchanged.
 
 Linux uses `ubuntu-24.04` with GCC 13 (LLVM 18 for Mull/fuzz); Windows uses
 `windows-2025-vs2026`, x64 MSVC, static CRT

@@ -41,7 +41,7 @@
       ]
     },
     "firmware/R2500Adapter/GraphHistory.h": {
-      "sha256": "157645c028d9795e4dd41de5dadd49fb19cf7895823a4545497e54a315e34e51",
+      "sha256": "8bf225e8a0440a6c7323e49d418d0254e3c996f93b2da41561e67810db582c3b",
       "mutants": [
         {
           "id": "cxx_add_to_sub:firmware/R2500Adapter/GraphHistory.h:66:83:66:84",
@@ -94,28 +94,28 @@
       ]
     },
     "firmware/R2500Adapter/HistoryExport.h": {
-      "sha256": "a1016620f6a5c191d8e81b1fd1025ec7dc3f509c60bd2b7d50c6e722e26619db",
+      "sha256": "31bc6e6f892989fc8d8cce6e2a6efce77deba6282efb7f7063a1527461c1e5c5",
       "mutants": [
         {
-          "id": "cxx_eq_to_ne:firmware/R2500Adapter/HistoryExport.h:188:11:188:13",
+          "id": "cxx_eq_to_ne:firmware/R2500Adapter/HistoryExport.h:191:11:191:13",
           "replacement": "!=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryExport.h:144:40:144:42",
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryExport.h:147:40:147:42",
           "replacement": ">",
           "category": "equivalent",
           "reason": "Проверено ограничениями текущих форматов: record <=303, prefix <=175, сумма <=478, очередь <=477 байт. Форматы непустые, prefix>0 и record>1. Границы 512/768 и нулевые размеры недостижимы. См. docs/building.md#mutation-testing."
         },
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryExport.h:144:77:144:79",
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryExport.h:147:77:147:79",
           "replacement": ">",
           "category": "equivalent",
           "reason": "Проверено ограничениями текущих форматов: record <=303, prefix <=175, сумма <=478, очередь <=477 байт. Форматы непустые, prefix>0 и record>1. Границы 512/768 и нулевые размеры недостижимы. См. docs/building.md#mutation-testing."
         },
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryExport.h:170:19:170:21",
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryExport.h:173:19:173:21",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
@@ -127,13 +127,13 @@
           "reason": "Проверено ограничениями текущих форматов: record <=303, prefix <=175, сумма <=478, очередь <=477 байт. Форматы непустые, prefix>0 и record>1. Границы 512/768 и нулевые размеры недостижимы. См. docs/building.md#mutation-testing."
         },
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/HistoryExport.h:154:33:154:34",
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/HistoryExport.h:157:33:157:34",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/HistoryExport.h:158:20:158:21",
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/HistoryExport.h:161:20:161:21",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
@@ -145,13 +145,13 @@
           "reason": "Равенство ordinal == count уже обработано предыдущим return End."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryExport.h:144:14:144:16",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryExport.h:147:14:147:16",
           "replacement": "<",
           "category": "equivalent",
           "reason": "Проверено ограничениями текущих форматов: record <=303, prefix <=175, сумма <=478, очередь <=477 байт. Форматы непустые, prefix>0 и record>1. Границы 512/768 и нулевые размеры недостижимы. См. docs/building.md#mutation-testing."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryExport.h:144:23:144:25",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryExport.h:147:23:147:25",
           "replacement": "<",
           "category": "equivalent",
           "reason": "Проверено ограничениями текущих форматов: record <=303, prefix <=175, сумма <=478, очередь <=477 байт. Форматы непустые, prefix>0 и record>1. Границы 512/768 и нулевые размеры недостижимы. См. docs/building.md#mutation-testing."
@@ -163,43 +163,43 @@
           "reason": "Проверено ограничениями текущих форматов: record <=303, prefix <=175, сумма <=478, очередь <=477 байт. Форматы непустые, prefix>0 и record>1. Границы 512/768 и нулевые размеры недостижимы. См. docs/building.md#mutation-testing."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:169:31:169:32",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:172:31:172:32",
           "replacement": "<=",
           "category": "equivalent",
           "reason": "Выбор min(length, chunk): равные аргументы дают одинаковый размер."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:174:21:174:22",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:177:21:177:22",
           "replacement": "<=",
           "category": "sanitizer-confirmed",
           "reason": "Цикл selfTest записывает input[3] при массиве из трёх записей. Подтверждено отдельным Clang ASan/UBSan replay; для HistoryExport нужен ASan field-padding=2. Исходная программа прошла тот же контроль."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:181:45:181:46",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:184:45:184:46",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:195:45:195:46",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:198:45:198:46",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:200:42:200:43",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:203:42:203:43",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:208:25:208:26",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:211:25:211:26",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:225:53:225:54",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryExport.h:228:53:228:54",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
@@ -295,7 +295,7 @@
       ]
     },
     "firmware/R2500Adapter/OutputController.h": {
-      "sha256": "b0802e73b198c80af8d8e89851e7d921bf77db9857886f05ea71305f9a020af0",
+      "sha256": "c4e709e67c33c448b8f77e3f7a382953f9461791e61f2bae1aa10f27f27a7b64",
       "mutants": [
         {
           "id": "cxx_gt_to_ge:firmware/R2500Adapter/OutputController.h:54:16:54:17",
@@ -310,7 +310,7 @@
           "reason": "Только STATUS-строки 0..12; каждый формат непустой. Нулевой результат возможен только для недопустимого индекса, который контроллер не передаёт."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/OutputController.h:122:44:122:45",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/OutputController.h:129:44:129:45",
           "replacement": "<=",
           "category": "equivalent",
           "reason": "queueOptional допускает только буфер с завершающим LF: цикл всегда останавливается до optionalSize."

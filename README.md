@@ -93,6 +93,8 @@ never flash boards or connect to stations.
 
 Builds and analyzers run in parallel; release packages are published only for valid `v` tags. Documentation-only changes use short checks. Windows applications use MSVC/WinRT, and both firmware boards build on Linux. See [CI jobs, images and cache ownership](docs/ci.md).
 
+Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/analyze` for Windows products, and actionlint/ShellCheck for workflows and Bash. [Local commands and scope](docs/building.md#static-analysis).
+
 ## License
 
 Original project code is [MIT](LICENSE); the adapted Windows driver is MS-PL.

@@ -71,14 +71,20 @@ bool testSigning() {
     ULONG length, options;
   } info{sizeof(Info), 0};
   using Query = LONG(WINAPI *)(ULONG, PVOID, ULONG, PULONG);
+  const auto module = GetModuleHandleW(L"ntdll.dll");
+  if (!module)
+    return false;
   auto query = reinterpret_cast<Query>(
-      GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQuerySystemInformation"));
+      GetProcAddress(module, "NtQuerySystemInformation"));
   return query && query(103, &info, sizeof(info), nullptr) >= 0 && (info.options & 2);
 }
 bool supportedWindows() {
   using GetVersion = LONG(WINAPI *)(OSVERSIONINFOW *);
+  const auto module = GetModuleHandleW(L"ntdll.dll");
+  if (!module)
+    return false;
   auto getVersion =
-      reinterpret_cast<GetVersion>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
+      reinterpret_cast<GetVersion>(GetProcAddress(module, "RtlGetVersion"));
   OSVERSIONINFOW version{sizeof(version)};
   return sizeof(void *) == 8 && getVersion && getVersion(&version) >= 0 &&
          version.dwMajorVersion >= 10 && version.dwBuildNumber >= 22000;
@@ -428,13 +434,13 @@ QString integrationAction(const QString &operation) {
         error = winError("Set service SID");
     }
   }
-  if (error.isEmpty()) {
+  if (error.isEmpty() && service.value) {
     SC_ACTION restart{SC_ACTION_RESTART, 5000};
     SERVICE_FAILURE_ACTIONSW actions{86400, nullptr, nullptr, 1, &restart};
     if (!ChangeServiceConfig2W(service.value, SERVICE_CONFIG_FAILURE_ACTIONS, &actions))
       error = winError("Set service recovery");
   }
-  if (error.isEmpty() && !StartServiceW(service.value, 0, nullptr) &&
+  if (error.isEmpty() && service.value && !StartServiceW(service.value, 0, nullptr) &&
       GetLastError() != ERROR_SERVICE_ALREADY_RUNNING)
     error = winError("StartService");
   if (error.isEmpty())
@@ -482,7 +488,7 @@ bool elevateIntegrationAction(const QString &operation) {
   info.lpParameters = args.c_str();
   info.nShow = SW_HIDE;
   const auto com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-  if (!ShellExecuteExW(&info)) {
+  if (!ShellExecuteExW(&info) || !info.hProcess) {
     if (SUCCEEDED(com))
       CoUninitialize();
     return false;

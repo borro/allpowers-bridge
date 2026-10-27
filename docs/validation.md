@@ -2,6 +2,38 @@
 
 [Documentation](README.md)
 
+## Static analysis rollout — 2026-10-28
+
+Local validation on Windows 11 / MSVC 19.51 and WSL Ubuntu, with the existing
+static Qt SDK. These are local measurements; the new GitHub jobs have not run yet.
+
+| Check | Result |
+| --- | --- |
+| clang-tidy 18.1.3 | 6/6 host translation units, no product findings; repeated runs about 2–3 s |
+| Cppcheck 2.22.0 | 6/6 units, no product findings; repeated runs about 3–5 s |
+| MSVC `/analyze` | 26/26 product units, no findings; separate SARIF per target/unit |
+| actionlint 1.7.12 + ShellCheck 0.11.0 | All workflows passed; about 0.2 s excluding installation and controls |
+| Analyzer controls | Passing C++, null dereference, invalid workflow dependency and unsafe Bash substitution; missing tools/reports, stale source hashes, truncated SARIF, rule changes and parallel report writes |
+| Maintenance tooling | 54 tests passed, including CI policy and bounded failure summaries |
+| Runtime/build contracts | Linux native 5/5; Windows root 25/25, including the nested 16-test desktop suite and identity rebuilds |
+| Firmware and packaging | Both boards built/relinked offline; Windows CPack ZIP and both packed EXE smoke checks passed |
+| Mutation regression | 771 mutations; 56 reviewed survivors, no unreviewed survivors/uncovered mutations or inactive acceptance entries |
+| Dependency caches | Analyzer version changes left Qt/Arduino/WDK fingerprints unchanged |
+
+One paired local Windows product rebuild with the same ready Qt SDK took 56.27 s
+with analysis OFF and 125.54 s with it ON (about 69 s additional). This includes
+compilation/linking and nested product builds, not a second Qt build. It is one
+local sample, not a hosted-runner estimate. CI records the combined Windows build
+duration; first-time Cppcheck installation is also outside the per-analyzer times.
+
+The first pass prompted explicit Windows module/process-handle checks, guarded
+service-handle use and default initialization of graph sample records. Windows
+failure paths have regression tests with fake platform calls. Five Cppcheck
+cross-caller bounds false positives have local, rule-specific explanations;
+there is no broad static-analysis baseline. Existing mutation acceptance was
+remapped only to identical code lines after comments moved their locations.
+Neither the firmware builds nor tests accessed hardware.
+
 ## Client-restart operation collision follow-up: R3 — 2026-10-25
 
 Baseline and fetched remote branch: `17794dc4eff416e162152fcb3020c93a55be2424`,

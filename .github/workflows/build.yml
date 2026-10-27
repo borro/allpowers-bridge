@@ -53,12 +53,16 @@ jobs:
       run: cmake -P cmake/CiEnvironment.cmake
       id: record-actual-runner-and-toolchain
     - name: Audit public files and reachable history
+      # Workflow checks run even when the subsequent policy selects docs only.
       run: |
         cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/Audit.cmake
         cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=worktree -P cmake/Audit.cmake
         cmake -DROOT="$GITHUB_WORKSPACE" -DMODE=history -P cmake/Audit.cmake
         cmake -DROOT="$GITHUB_WORKSPACE" -P cmake/CheckSecrets.cmake
       id: audit-public-files-and-reachable-history
+    - name: Analyze workflows and Bash commands
+      run: cmake -DROOT="$GITHUB_WORKSPACE" -DWORK="$GITHUB_WORKSPACE/build/workflow-lint" -P cmake/RunWorkflowLint.cmake
+      id: analyze-workflows
     - name: Test CI selection and final gate
       run: |-
         mkdir -p build/ci-reports
@@ -83,6 +87,8 @@ jobs:
         name: audit-tests
         path: |
           build/ci-reports/
+          build/workflow-lint/*.json
+          build/workflow-lint/*.log
         retention-days: 14
       id: save-test-reports
     - name: Publish job summary
@@ -97,6 +103,86 @@ jobs:
           python3 -I -S -B cmake/ci_summary.py
         else
           printf '## %s — %s\n\nCheckout did not complete; test reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+        fi
+  static-analysis:
+    needs: audit
+    if: ${{ needs.audit.outputs.mode == 'full' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - name: Check out source and tags
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+      id: checkout
+    - name: Read pinned tool versions
+      id: tools
+      run: cmake -P cmake/CiTools.cmake
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3
+      with:
+        cmake-version: ${{ steps.tools.outputs.cmake }}
+      id: cmake
+    - name: Install pinned Ninja
+      run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      id: ninja
+    - name: Install Clang and clang-tidy
+      run: |-
+        sudo apt-get update -qq
+        sudo apt-get install -y clang-${{ steps.tools.outputs.tidy-llvm }} clang-tidy-${{ steps.tools.outputs.tidy-llvm }}
+        clang-tidy-${{ steps.tools.outputs.tidy-llvm }} --version
+      id: clang
+    - name: Record actual runner and toolchain
+      run: cmake -P cmake/CiEnvironment.cmake
+      id: environment
+    - name: Compute Cppcheck tool key
+      run: cmake -P cmake/AnalysisToolKey.cmake
+      id: key
+    - name: Restore Cppcheck tool
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/static-analysis-linux/tools/cppcheck/install
+        key: ${{ steps.key.outputs.key }}
+      continue-on-error: true
+      id: cppcheck-cache
+    - name: Prepare and validate Cppcheck
+      run: |-
+        mkdir -p build/static-analysis-linux/analysis
+        cmake -DKIND=cppcheck -DWORK="$GITHUB_WORKSPACE/build/static-analysis-linux/tools/cppcheck" -P cmake/SetupAnalysisTools.cmake 2>&1 | tee build/static-analysis-linux/analysis/tool-setup.log
+      id: cppcheck
+    - name: Save validated Cppcheck tool
+      if: ${{ steps.cppcheck.outcome == 'success' && steps.cppcheck-cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: build/static-analysis-linux/tools/cppcheck/install
+        key: ${{ steps.key.outputs.key }}
+      continue-on-error: true
+      id: save-cppcheck
+    - name: Analyze portable C++
+      run: |-
+        cmake --preset static-analysis-linux 2>&1 | tee build/static-analysis-linux/analysis/configure.log
+        cmake --build --preset static-analysis-linux --parallel 4 2>&1 | tee build/static-analysis-linux/analysis/run.log
+      id: analyze
+    - name: Save analysis diagnostics
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: static-analysis-linux
+        path: build/static-analysis-linux/analysis/
+        retention-days: 14
+      id: save-analysis
+    - name: Publish job summary
+      if: always()
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+        CI_STEPS: ${{ toJSON(steps) }}
+        CI_NEEDS: ${{ toJSON(needs) }}
+      run: |-
+        if [ -f cmake/ci_summary.py ]; then
+          python3 -I -S -B cmake/ci_summary.py
+        else
+          printf '## %s — %s\n\nCheckout did not complete; analysis reports are unavailable.\n' "$GITHUB_JOB" "$CI_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
         fi
   portable:
     needs: audit
@@ -935,11 +1021,23 @@ jobs:
         RELEASE_TAG: ${{ needs.audit.outputs.release == 'true' && github.ref_name || '' }}
         RELEASE_COMMIT: ${{ github.sha }}
       run: cmake --preset windows -DALLPOWERS_QT_ROOT="$GITHUB_WORKSPACE/build/windows/deps/qt/install" -DALLPOWERS_RELEASE_TAG="$RELEASE_TAG" -DALLPOWERS_RELEASE_COMMIT="$RELEASE_COMMIT"
-        -DALLPOWERS_BUILD_JOBS=4
+        -DALLPOWERS_BUILD_JOBS=4 -DALLPOWERS_STATIC_ANALYSIS=ON
       id: configure-windows-release
     - name: Build Windows applications and host tests
-      run: cmake --build --preset windows --parallel 2
+      run: |-
+        started=$SECONDS
+        status=0
+        cmake --build --preset windows --parallel 2 || status=$?
+        mkdir -p build/windows/analysis
+        printf '{"seconds":%s}\n' "$((SECONDS-started))" > build/windows/analysis/build-time.json
+        exit "$status"
       id: build-windows-applications-and-host-tests
+    - name: Check MSVC analysis reports
+      if: ${{ !cancelled() && steps.configure-windows-release.outcome == 'success' }}
+      env:
+        ANALYSIS_BUILD_STATUS: ${{ steps.build-windows-applications-and-host-tests.outcome }}
+      run: python -I -S -B cmake/static_analysis.py msvc --root "$GITHUB_WORKSPACE" --build build/windows --output build/windows/analysis --build-status "$ANALYSIS_BUILD_STATUS"
+      id: check-msvc-analysis
     - name: Test Windows products and build contracts
       if: ${{ needs.audit.outputs.release != 'true' }}
       run: ctest --preset windows --verbose --output-junit "$GITHUB_WORKSPACE/build/windows/ci-tests.xml"
@@ -980,6 +1078,10 @@ jobs:
           build/**/widget-tests.*
           build/**/archive-transport-tests.*
           build/**/*-tests.xml
+          build/windows/analysis/
+          build/windows/**/analysis/**/*.sarif
+          build/windows/**/analysis/**/analysis-manifest-*.json
+          build/windows/**/analysis-index.json
           build/**/windows-identity-graph/*.log
           build/**/source-kit-check/*.log
           build/**/single-exe-check/report*.json
@@ -1008,6 +1110,7 @@ jobs:
     needs:
     - audit
     - portable
+    - static-analysis
     - sanitizers
     - fuzz
     - valgrind

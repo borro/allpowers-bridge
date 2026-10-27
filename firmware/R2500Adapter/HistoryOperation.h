@@ -12,6 +12,9 @@ inline bool validOperationNonce(const char *value,size_t length){
 }
 inline size_t historyCommandLength(const char *line){
   if(!line)return kHistoryCommandCapacity;
+  // Cppcheck 2.22 combines short string callers with the capacity bound; the
+  // terminating NUL stops this scan before that bound for those callers.
+  // cppcheck-suppress arrayIndexOutOfBoundsCond
   size_t length=0;while(length<kHistoryCommandCapacity&&line[length])++length;return length;
 }
 // The real CDC collector and host tests share the same bounded line grammar.

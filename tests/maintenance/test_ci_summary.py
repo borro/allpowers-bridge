@@ -44,6 +44,18 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("Report unavailable or incomplete", text)
         self.assertNotIn("0 passed", text)
 
+    def test_analysis_summary_is_bounded_and_marks_incomplete(self):
+        data = dict(analyzer="Cppcheck", version="2.22.0", expected=6, completed=5, complete=False,
+                    seconds=3.5, errors=[], findings=[dict(file=f"core/f{i}.h", line=i, rule="nullPointer",
+                    message="null") for i in range(15)])
+        path = self.write("analysis.json", json.dumps(data))
+        text = summary.analysis(path)
+        self.assertIn("5/6", text)
+        self.assertIn("15 findings", text)
+        self.assertIn("incomplete", text)
+        self.assertEqual(text.count("— nullPointer"), 10)
+        self.assertNotIn("core/f10.h", text)
+
     def test_malformed_report_does_not_hide_failure_or_artifact(self):
         self.write("build/native/ci-tests.xml", "<broken")
         text = summary.render(self.root, "portable", "cancelled", {

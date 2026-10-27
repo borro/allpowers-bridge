@@ -17,6 +17,7 @@ include(cmake/Fuzzing.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/Coverage.cmake)
 include(cmake/Mutation.cmake)
+include(cmake/StaticAnalysis.cmake)
 add_subdirectory(core)
 add_dependencies(core product-identity)
 if(BUILD_TESTING)
@@ -52,6 +53,13 @@ if(BUILD_TESTING)
     "-DWORK=${PROJECT_BINARY_DIR}/release-tag-tests"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/release_tag_test.cmake")
   if(WIN32 AND MSVC)
+    if(ALLPOWERS_STATIC_ANALYSIS)
+      add_test(NAME static-analysis-controls COMMAND "${CMAKE_COMMAND}"
+        "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/static-analysis-controls"
+        "-DCXX=${CMAKE_CXX_COMPILER}" "-DNINJA=${CMAKE_MAKE_PROGRAM}"
+        "-DPython3_EXECUTABLE=${Python3_EXECUTABLE}"
+        -P "${PROJECT_SOURCE_DIR}/tests/cmake/static_analysis_test.cmake")
+    endif()
     add_test(NAME upx-staging COMMAND "${CMAKE_COMMAND}"
       "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/upx-staging-tests"
       -P "${PROJECT_SOURCE_DIR}/tests/cmake/upx_staging_test.cmake")
@@ -88,6 +96,7 @@ if(ALLPOWERS_BUILD_WINDOWS)
 endif()
 ap_add_coverage_test()
 ap_add_mutation_target()
+ap_add_analysis_targets()
 add_custom_target(audit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
 add_custom_target(audit-worktree COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"

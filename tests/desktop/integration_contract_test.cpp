@@ -20,7 +20,7 @@ struct State {
   QString fail, root;
   QStringList calls;
   bool vm = true, modern = true, signing = true, service = false, device = false;
-  bool trusted = true, reparse = false, rollbackFails = false;
+  bool trusted = true, reparse = false, rollbackFails = false, processHandle = true;
   DWORD status = SERVICE_STOPPED, error = ERROR_ACCESS_DENIED, pid = 42, exitCode = 0;
   QString inf = "oem12.inf";
 } s;
@@ -73,7 +73,7 @@ LONG WINAPI query(ULONG, PVOID data, ULONG, PULONG) {
 LONG WINAPI version(OSVERSIONINFOW *v) {
   v->dwMajorVersion = 10; v->dwBuildNumber = s.modern ? 22000 : 19045; return 0;
 }
-HMODULE GetModuleHandleW(LPCWSTR) { return reinterpret_cast<HMODULE>(handle); }
+HMODULE GetModuleHandleW(LPCWSTR) { return ok("module") ? reinterpret_cast<HMODULE>(handle) : nullptr; }
 FARPROC GetProcAddress(HMODULE, LPCSTR name) {
   if (!ok("procedure")) return nullptr;
   return QString(name) == "RtlGetVersion" ? reinterpret_cast<FARPROC>(version)
@@ -147,7 +147,7 @@ void CoUninitialize() { ok("com-close"); }
 BOOL ShellExecuteExW(SHELLEXECUTEINFOW *info) {
   Q_ASSERT(QString::fromWCharArray(info->lpVerb) == "runas");
   Q_ASSERT(QString::fromWCharArray(info->lpParameters).startsWith("--integration-action "));
-  info->hProcess = handle; return ok("elevate");
+  info->hProcess = s.processHandle ? handle : nullptr; return ok("elevate");
 }
 DWORD WaitForSingleObject(HANDLE, DWORD) { ok("wait-process"); return WAIT_OBJECT_0; }
 BOOL GetExitCodeProcess(HANDLE, LPDWORD code) { *code = s.exitCode; return TRUE; }
@@ -332,6 +332,19 @@ private slots:
     Fake::s.calls.clear(); Fake::s.fail = "elevate";
     QVERIFY(!elevateIntegrationAction("start"));
     QVERIFY(Fake::s.calls.contains("com-close")); QVERIFY(!Fake::s.calls.contains("wait-process"));
+  }
+  void missingSystemModule() {
+    Fake::s.fail = "module";
+    QVERIFY(!supportedWindows());
+    QVERIFY(!testSigning());
+    QVERIFY(!Fake::s.calls.contains("procedure"));
+  }
+  void elevationWithoutProcessHandle() {
+    Fake::s.processHandle = false;
+    QVERIFY(!elevateIntegrationAction("install"));
+    QVERIFY(Fake::s.calls.contains("com-close"));
+    QVERIFY(!Fake::s.calls.contains("wait-process"));
+    QVERIFY(!Fake::s.calls.contains("close-process"));
   }
 };
 QTEST_GUILESS_MAIN(IntegrationContract)

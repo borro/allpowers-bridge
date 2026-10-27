@@ -7,7 +7,7 @@ import subprocess
 import urllib.parse
 import urllib.request
 
-JOBS = ("portable", "sanitizers", "fuzz", "valgrind", "mutation",
+JOBS = ("portable", "static-analysis", "sanitizers", "fuzz", "valgrind", "mutation",
         "coverage-linux", "windows-sdk", "windows", "coverage-windows", "firmware")
 LEGAL_DOCS = {"docs/firmware-licenses.md", "docs/windows-runtime-terms.md", "docs/relinking.md"}
 

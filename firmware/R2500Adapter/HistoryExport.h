@@ -78,6 +78,9 @@ public:
   void start(uint32_t id,uint32_t now,uint32_t legacyFirst=0,uint32_t legacySpan=0,const char *nonce=nullptr){
     size_t nonceLength=0;
     if(nonce){
+      // Short invalid nonces stop at NUL; Cppcheck 2.22 carries the upper bound
+      // from another caller into the short-string context.
+      // cppcheck-suppress arrayIndexOutOfBoundsCond
       while(nonceLength<=kHistoryNonceHexLength&&nonce[nonceLength])++nonceLength;
       if(legacyFirst||!validOperationNonce(nonce,nonceLength))return;
     }

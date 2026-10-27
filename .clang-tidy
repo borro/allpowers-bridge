@@ -1,0 +1,5 @@
+Checks: '-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-deadcode.DeadStores,bugprone-use-after-move,bugprone-dangling-handle,bugprone-sizeof-expression,bugprone-suspicious-memset-usage,bugprone-suspicious-memory-comparison,bugprone-undefined-memory-manipulation'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(core|firmware/R2500Adapter)/'
+SystemHeaders: false
+InheritParentConfig: false

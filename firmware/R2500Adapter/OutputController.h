@@ -68,12 +68,19 @@ public:
   bool paused()const{return paused_;}
   uint32_t acknowledged()const{return archive.acknowledged();}
   bool queueOptional(const char *bytes,size_t size){
+    // Callers supply size valid bytes. Cppcheck 2.22 combines a short caller's
+    // array extent with another caller's size (the optional buffer capacity).
+    // cppcheck-suppress arrayIndexOutOfBoundsCond
     if(!size||size>sizeof(optional)||bytes[size-1]!='\n'||optionalSize)return false;
+    // cppcheck-suppress bufferAccessOutOfBounds
     memcpy(optional,bytes,size);optionalSize=size;optionalPosition=0;return true;
   }
   bool command(const char *line,uint32_t now){
     const auto commandSize=historyCommandLength(line);
     if(commandSize>=kHistoryCommandCapacity)return false;
+    // historyCommandLength stops at this string's NUL; its capacity bound is
+    // not the returned length for the short-string callers.
+    // cppcheck-suppress pointerOutOfBoundsCond
     const char *end=line+commandSize;
     if(!strcmp(line,"STATUS")||!strcmp(line,"HISTORY")){
       if(paused_){paused_=false;boundaryTracking=false;}

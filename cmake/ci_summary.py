@@ -19,6 +19,19 @@ def cell(value):
     return escape(str(value)).replace("|", "&#124;").replace("\n", " ")
 
 
+def analysis(path):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    complete = data["complete"] and data["expected"] > 0 and data["completed"] == data["expected"] and not data["errors"]
+    state = "complete" if complete else "**incomplete — not a passing result**"
+    text = (f"{cell(data['analyzer'])} ({cell(data['version'])}): **{data['completed']}/{data['expected']} units**, "
+              f"**{len(data['findings'])} findings**, {data['seconds']:.1f}s {cell(data.get('timing_scope', 'analysis'))}; {state}.")
+    for item in data["findings"][:10]:
+        text += f"\n\n- `{cell(item['file'])}:{item['line']}` — {cell(item['rule'])}: {cell(item['message'])}"
+    for error in data["errors"][:3]:
+        text += f"\n\nError: {cell(error)}"
+    return text
+
+
 def test_totals(cases):
     counts = Counter(status for _, status, _ in cases)
     result = [f"**{len(cases)} checks:** {counts['passed']} passed, "
@@ -174,6 +187,16 @@ def render(root, job, status, steps, needs):
         text.append("")
 
     directory = root / "build" / BUILD_DIRS.get(job, job)
+    if job == "audit":
+        report("Workflow static analysis", lambda: analysis(root / "build/workflow-lint/workflow-lint.json"))
+    if job == "static-analysis":
+        for analyzer in ("clang-tidy", "cppcheck"):
+            report(analyzer, lambda analyzer=analyzer: analysis(root / f"build/static-analysis-linux/analysis/{analyzer}.json"))
+    if job == "windows":
+        report("MSVC static analysis", lambda: analysis(directory / "analysis/msvc.json"))
+        report("Build with MSVC analysis", lambda:
+               f"{json.loads((directory / 'analysis/build-time.json').read_text(encoding='utf-8'))['seconds']:.1f}s "
+               "for compilation and analysis together; report validation is timed separately.")
     if job in CTEST_JOBS and not job.startswith("coverage-"):
         report("CTest checks", lambda: junit(directory / "ci-tests.xml"))
     if job in {"audit", "portable", "mutation"}:

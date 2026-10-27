@@ -403,6 +403,57 @@ build/fuzz-linux/tests/fuzz/fuzz_cdc path/to/crash-input -runs=1
 For a BLE failure use `fuzz_ble`. Replay uses the exact saved bytes rather than
 depending on timing or re-running the entire random search.
 
+## Static analysis
+
+On Linux x64, install Clang/clang-tidy 18, GCC 13, Python 3, Ninja and the pinned
+CMake. CMake builds checksum-pinned Cppcheck 2.22.0 on first use:
+
+```sh
+cmake --preset static-analysis-linux
+cmake --build --preset static-analysis-linux --parallel 4
+cmake --build build/static-analysis-linux --target workflow-lint
+```
+
+The `static-analysis` target always reruns both analyzers on `core/native/api.cpp`
+and the five native test translation units. Their included product headers cover
+host firmware logic. Test harness findings and external headers are not product
+findings; parse/tool failures still fail the run. A tidy failure does not skip
+Cppcheck. Cppcheck uses its own parser, C++23/unix64 and the actual compilation
+database, with error/warning/portability diagnostics and exhaustive branch analysis
+of that configuration, without enumerating other macro configurations. Style,
+performance and inconclusive checks are disabled. Exact tidy rules live in
+`.clang-tidy`; no automatic fixes run. Temporary Cppcheck analysis data is discarded.
+
+In an MSVC developer shell, enable analysis in the ordinary Windows build:
+
+```powershell
+cmake --preset windows -DALLPOWERS_STATIC_ANALYSIS=ON
+cmake --build --preset windows --parallel 2
+cmake --build build/windows --target static-analysis
+ctest --test-dir build/windows -R static-analysis-controls --output-on-failure
+```
+
+The option defaults to OFF, propagates to apps/driver and cannot combine with
+coverage, sanitizers, mutations or fuzzing. MSVC uses NativeMinimumRules with
+C26819 disabled and C26800 enabled. Only first-party source files receive analysis
+flags; generated Qt code and dependencies do not. Per-target/per-source SARIF
+files avoid parallel write races, and changing analysis rules recompiles affected
+sources. The report gate rejects missing target manifests or unit reports;
+ordinary compiler warnings remain warnings. Linux always reanalyzes every unit;
+MSVC uses normal incremental compilation and validates all expected reports.
+
+`workflow-lint` is available in any Linux root build (use WSL on Windows), and
+downloads checksum-pinned actionlint/ShellCheck. Missing tools are errors. Its
+control fixtures verify a valid workflow, invalid `needs` and an unsafe Bash
+command substitution at warning severity. C++ controls verify valid code and a
+null dereference; MSVC controls additionally test parallel reports, changed rules
+and damaged/missing SARIF. Parser/CI-policy tests run with the maintenance suite.
+
+Reports are in the build's `analysis/` or `workflow-lint/` directory. These checks
+do not cover device-only ESP32 execution or hardware, and do not enable Clazy,
+CodeQL, PVS-Studio or Coverity. Any suppression must name one rule at its exact
+source location and explain why the reported path is impossible.
+
 ## Memory checking with Valgrind
 
 The `valgrind` job runs the five portable native tests through CTest Memcheck on

@@ -5,6 +5,7 @@ include("${ROOT}/cmake/Dependencies.cmake")
 project(AllpowersUps LANGUAGES CXX)
 ap_add_build_identity()
 include("${ROOT}/cmake/WindowsCompiler.cmake")
+include("${ROOT}/cmake/StaticAnalysis.cmake")
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "The UPS driver requires x64 MSVC and Windows SDK 10.0.26100.0")
 endif()
@@ -20,11 +21,13 @@ if(NOT EXISTS "${sdk}/Include/${kit}/shared/batclass.h")
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(AllpowersUps driver.cpp)
+ap_enable_static_analysis(AllpowersUps)
 add_dependencies(AllpowersUps product-identity)
 target_compile_features(AllpowersUps PRIVATE cxx_std_23)
 set_target_properties(AllpowersUps PROPERTIES SUFFIX .sys
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/package")
-target_include_directories(AllpowersUps PRIVATE "${ROOT}/core/src"
+target_include_directories(AllpowersUps PRIVATE "${ROOT}/core/src")
+target_include_directories(AllpowersUps SYSTEM PRIVATE
   "${wdk}/Include/${kit}/km" "${wdk}/Include/wdf/kmdf/${ALLPOWERS_KMDF_VERSION}"
   "${sdk}/Include/${kit}/shared" "${sdk}/Include/${kit}/ucrt")
 string(REPLACE "." ";" kmdf_parts "${ALLPOWERS_KMDF_VERSION}")

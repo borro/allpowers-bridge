@@ -14,9 +14,20 @@ $rootLine = @($lines | Where-Object { $_ -is [string] -and $_.StartsWith('root='
 if ($rootLine.Count -ne 1) { throw 'Missing Qt SDK restore result' }
 $qtRoot = $rootLine[0].Substring(5)
 if (!$qtRoot) {
+    Write-Host 'Building static Qt from source. Qt progress is sampled every 30 seconds; [n/total] is the outer build graph.'
     & cmake --preset windows -S $Root '-DALLPOWERS_QT_ROOT=' -DALLPOWERS_BUILD_JOBS=2
     if ($LASTEXITCODE) { throw 'Qt bootstrap configure failed' }
-    & cmake --build "$Root/build/windows" --target qt-static --parallel 2
-    if ($LASTEXITCODE) { throw 'Qt bootstrap build failed' }
+    . "$Root/cmake/QtBuildProgress.ps1"
+    $progress = Start-QtBuildProgress -BuildDirectory "$Root/build/windows"
+    try {
+        & cmake --build "$Root/build/windows" --target qt-static --parallel 2
+        $qtBuildExit = $LASTEXITCODE
+    } finally {
+        if ($progress.State -eq 'Failed') { Write-Warning 'Qt progress observer stopped; full logs remain in the build directory.' }
+        Stop-Job -Job $progress -ErrorAction SilentlyContinue
+        Remove-Job -Job $progress -Force -ErrorAction SilentlyContinue
+    }
+    if ($qtBuildExit) { throw "Qt bootstrap build failed (exit $qtBuildExit)" }
+    Write-Host 'Qt build and installation completed; verifying source identity, linking and offline runtime before caching.'
     & "$Root/cmake/QtCache.ps1" -Mode Seal -Root $Root
 }

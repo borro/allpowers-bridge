@@ -83,6 +83,13 @@ SDK transport artifacts are retained for one day; reports and release transport
 artifacts for 14 days. An expired SDK
 artifact requires rerunning its producer as well as failed consumers.
 
+Cold Qt builds keep full ExternalProject logs and print a short progress sample
+every 30 seconds: component/phase, elapsed time, last log update and up to three
+tail lines from a changed log. The outer Ninja `[n/total]` counts build-graph steps, not individual
+Qt compiler checks or source files. An unchanged log age is reported honestly;
+it is not proof of progress or a hang. SDK diagnostics are uploaded separately.
+The observer does not alter Qt build options or dependency cache fingerprints.
+
 ## Local entry points
 
 ```sh

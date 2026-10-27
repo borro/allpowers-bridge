@@ -557,6 +557,17 @@ jobs:
         retention-days: 1
         include-hidden-files: true
       id: save-windows-sdk
+    - name: Save Qt build diagnostics
+      id: save-qt-build-diagnostics
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: windows-sdk-diagnostics
+        retention-days: 14
+        if-no-files-found: ignore
+        path: |
+          build/windows/deps/qt*/src/*-stamp/*.log
+          build/windows/deps/qt*/src/*-build/CMakeFiles/CMakeConfigureLog.yaml
     - name: Publish job summary
       if: always()
       shell: bash

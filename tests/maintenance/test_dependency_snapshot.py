@@ -62,6 +62,35 @@ class DependencySnapshotTests(unittest.TestCase):
             self.assertEqual(packages["qt/qtbase"]["package_url"], "pkg:github/qt/qtbase@v9.8.7")
             self.assertIn("https://example.org/9.8.7/", packages["qt/qtbase"]["metadata"]["source_url"])
 
+    def test_metadata_limits_and_explicit_provenance(self):
+        result = graph.snapshot(self.values, ENV)
+        manifest = result["manifests"][graph.MANIFEST]
+        self.assertFalse(result["metadata"]["complete_sbom"])
+        self.assertFalse(manifest["metadata"]["complete_sbom"])
+        for metadata in [result["metadata"], manifest["metadata"], *[
+                item["metadata"] for item in manifest["resolved"].values()]]:
+            self.assertLessEqual(len(metadata), 8)
+            self.assertTrue(all(isinstance(value, (str, int, float, bool)) for value in metadata.values()))
+        packages = graph.inventory(self.values)
+        wdk = packages["microsoft/wdk"]
+        self.assertEqual(wdk["package_url"], f"pkg:nuget/Microsoft.Windows.WDK.x64@{self.values['ALLPOWERS_WDK_VERSION'][0]}")
+        self.assertEqual(wdk["metadata"]["sha256"], self.values["ALLPOWERS_WDK_SHA256"][0])
+        self.assertTrue(wdk["metadata"]["source_url"].endswith(".nupkg"))
+        self.assertNotIn("sha256", packages["microsoft/windows-sdk"]["metadata"])
+        self.assertEqual(packages["espressif/esp_diagnostics"]["metadata"]["repository_url"],
+                         "https://github.com/espressif/esp-insights")
+        for item in manifest["resolved"].values():
+            self.assertIn(ENV["GITHUB_SHA"], item["metadata"]["notice_url"])
+        report = graph.summary(result)
+        self.assertEqual(report.count("[Notices]"), len(packages))
+        self.assertIn("[qt/qtbase](https://github.com/qt/qtbase)", report)
+        self.assertIn("[Microsoft.Windows.WDK.x64](https://www.nuget.org/packages/", report)
+
+    def test_rejects_metadata_that_the_api_cannot_accept(self):
+        for metadata in ({str(index): "value" for index in range(9)}, {"list": []}, {"null": None}):
+            with self.assertRaises(ValueError):
+                graph.check_metadata(metadata)
+
     def test_rejects_unknown_urls_bad_hashes_and_duplicate_components(self):
         for replacement in ("http://api.github.com", "https://unknown.example", "https://api.github.com:443"):
             values = copy.deepcopy(self.values)
@@ -99,7 +128,10 @@ class DependencySnapshotTests(unittest.TestCase):
             subprocess.run([sys.executable, "-I", "-S", "-B", str(ROOT / "cmake/dependency_snapshot.py"),
                             "--cmake", CMAKE, "--output", str(output)], env=env, check=True,
                            capture_output=True, timeout=30)
-            self.assertEqual(json.loads(output.read_text())["ref"], ENV["GITHUB_REF"])
+            result = json.loads(output.read_text())
+            self.assertEqual(result["ref"], ENV["GITHUB_REF"])
+            self.assertRegex(result["manifests"][graph.MANIFEST]["metadata"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue(output.with_suffix(".md").is_file())
 
     def test_rejects_missing_or_invalid_commit_identity(self):
         for env in ({**ENV, "GITHUB_SHA": "short"}, {**ENV, "GITHUB_REF": "main"},

@@ -96,15 +96,18 @@ status and does not change the required **CI result** build gate.
 variable expansion; `dependency_snapshot.py` converts those values to a snapshot
 associated with the run's exact SHA and ref. Stable detector/correlator values
 replace the previous inventory instead of creating independent graphs on reruns.
-The JSON snapshot is retained for 14 days as `cpp-dependency-snapshot`.
+The JSON snapshot and a Markdown inventory with clickable repository/package,
+source and notice links are retained for 14 days as `cpp-dependency-snapshot`.
+The same inventory appears in the workflow job summary.
 
 The inventory covers Qt Base/Connectivity/Tools, Windows SDK/WDK, all firmware
 source archives, and binary library identities from the pinned license-source
 URLs. SDKs, Qt Tools and the ESP32 library builder have development scope; linked
 libraries have runtime scope. Firmware children describe containment in the
 Arduino SDK, rather than a reconstructed upstream dependency tree. GitHub source
-packages use `pkg:github` with the actual source tag/revision; Espressif registry
-components and Microsoft SDKs use `pkg:generic`. Versions and revisions are not
+packages use `pkg:github` with the actual source tag/revision. WDK retains the
+`pkg:nuget/Microsoft.Windows.WDK.x64` identity actually downloaded by the build;
+the Windows SDK and Espressif registry component use `pkg:generic`. Versions and revisions are not
 duplicated in the generator. Unsupported source URLs, duplicate components or
 Arduino/ESP-IDF version drift fail validation instead of silently omitting entries.
 
@@ -114,6 +117,20 @@ Build executables and analyzers such as CMake, Ninja and Cppcheck are excluded.
 Binary license-source revisions identify the catalog's attribution evidence.
 Graph visibility does not guarantee Dependabot alerts or automatic CMake updates;
 those depend on ecosystem and advisory support.
+
+All supported snapshot fields are populated where evidence is available:
+commit/ref, detector, run/attempt and run URL, manifest location, package identity,
+relationship, scope and child dependencies. Snapshot/manifest metadata records
+the repository, workflow, platforms, inventory scope and dependency-file checksum.
+Package metadata adds the upstream repository or registry/documentation URL,
+pinned source location/ref, source or license checksum, evidence kind, component
+kind, target platform and commit-specific notice URL. Each metadata object is
+validated against the API's limit of eight scalar fields. Windows SDK has no
+fabricated source checksum; binary library license hashes remain explicitly
+identified as license evidence. The API has no writable package repository or
+license field: custom metadata does not set GraphQL's `repository` mapping or
+populate native license columns. GitHub determines those mappings and displays
+the `pkg:github`/`pkg:generic` ecosystems under `other`.
 
 Local validation (no API request):
 

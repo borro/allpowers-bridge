@@ -40,7 +40,9 @@ jobs:
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: cpp-dependency-snapshot
-        path: build/dependency-graph/snapshot.json
+        path: |
+          build/dependency-graph/snapshot.json
+          build/dependency-graph/snapshot.md
         retention-days: 14
         if-no-files-found: error
   submit:

@@ -96,6 +96,8 @@ Linux поддерживает ядро и сборку прошивок, при
 
 Статический анализ блокирует сборку при дефектах: clang-tidy и Cppcheck проверяют переносимый C++, MSVC `/analyze` — Windows-продукты, actionlint/ShellCheck — workflow и Bash. [Локальный запуск и охват](docs/building.md#static-analysis).
 
+CI отправляет закреплённые зависимости C/C++ из `cmake/Dependencies.cmake` в [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). В pull request проверяется снимок; отправка выполняется только из основной ветки. [Охват и локальная проверка](docs/ci.md#cc-dependency-graph).
+
 ## Лицензия
 
 Исходный код проекта — [MIT](LICENSE), адаптированный драйвер Windows — MS-PL.

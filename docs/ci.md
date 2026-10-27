@@ -81,6 +81,52 @@ in parallel in separate directories. Failed standalone checks report the exact
 language, exit status and diagnostic JSON; reports are retained with the Windows
 test artifact.
 
+## C/C++ dependency graph
+
+The separate `C/C++ dependency graph` workflow validates snapshots on pull requests
+and pushes to `main` that change the dependency catalog, exporter, generator,
+tests or workflow. It can also be dispatched manually. Only a push or manual
+dispatch on the repository's default branch submits to the Dependency Submission
+API; PRs and manual runs on other branches only validate. The submission job
+alone has `contents: write`, using the run's `GITHUB_TOKEN` without extra secrets.
+API errors or a non-success response fail the job. This workflow has its own
+status and does not change the required **CI result** build gate.
+
+`ExportDependencies.cmake` evaluates `Dependencies.cmake` with CMake, including
+variable expansion; `dependency_snapshot.py` converts those values to a snapshot
+associated with the run's exact SHA and ref. Stable detector/correlator values
+replace the previous inventory instead of creating independent graphs on reruns.
+The JSON snapshot is retained for 14 days as `cpp-dependency-snapshot`.
+
+The inventory covers Qt Base/Connectivity/Tools, Windows SDK/WDK, all firmware
+source archives, and binary library identities from the pinned license-source
+URLs. SDKs, Qt Tools and the ESP32 library builder have development scope; linked
+libraries have runtime scope. Firmware children describe containment in the
+Arduino SDK, rather than a reconstructed upstream dependency tree. GitHub source
+packages use `pkg:github` with the actual source tag/revision; Espressif registry
+components and Microsoft SDKs use `pkg:generic`. Versions and revisions are not
+duplicated in the generator. Unsupported source URLs, duplicate components or
+Arduino/ESP-IDF version drift fail validation instead of silently omitting entries.
+
+This is an inventory of explicitly pinned components, not a complete binary SBOM:
+it does not enumerate every bundled Qt/ESP-IDF library or host compiler runtime.
+Build executables and analyzers such as CMake, Ninja and Cppcheck are excluded.
+Binary license-source revisions identify the catalog's attribution evidence.
+Graph visibility does not guarantee Dependabot alerts or automatic CMake updates;
+those depend on ecosystem and advisory support.
+
+Local validation (no API request):
+
+```sh
+python3 -I -S -B -m unittest discover -s tests/maintenance -p test_dependency_snapshot.py -v
+```
+
+To generate the JSON locally, supply `GITHUB_SHA` (full 40-character commit),
+`GITHUB_REF`, `GITHUB_REPOSITORY`, and `GITHUB_RUN_ID`, then run
+`python3 -I -S -B cmake/dependency_snapshot.py --output build/dependency-graph/snapshot.json`.
+CMake 3.25 or later must be on PATH (or supplied through `--cmake`; tests also
+accept `CMAKE_COMMAND`). Generation does not need a token or download SDKs.
+
 ## Images and cache ownership
 
 Only `static-analysis` writes the separate Cppcheck tool cache. Its exact key

@@ -96,6 +96,8 @@ Builds and analyzers run in parallel; release packages are published only for va
 
 Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/analyze` for Windows products, and actionlint/ShellCheck for workflows and Bash. [Local commands and scope](docs/building.md#static-analysis).
 
+CI submits the pinned C/C++ dependencies from `cmake/Dependencies.cmake` to the [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). Pull requests validate the snapshot; submission runs only from the default branch. [Scope and local validation](docs/ci.md#cc-dependency-graph).
+
 ## License
 
 Original project code is [MIT](LICENSE); the adapted Windows driver is MS-PL.

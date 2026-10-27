@@ -10,17 +10,30 @@
     {"name": "native", "inherits": "base", "displayName": "Portable core and firmware targets"},
     {"name": "windows", "inherits": "base", "displayName": "Static Windows monitor + portable targets",
      "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows"},
-     "cacheVariables": {"ALLPOWERS_BUILD_WINDOWS": "ON"}}
+     "cacheVariables": {"ALLPOWERS_BUILD_WINDOWS": "ON"}},
+    {"name": "coverage-linux", "inherits": "native", "displayName": "Linux host line coverage",
+     "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux"},
+     "cacheVariables": {"ALLPOWERS_COVERAGE": "ON", "ALLPOWERS_SANITIZERS": "OFF",
+       "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}},
+    {"name": "coverage-windows", "inherits": "windows", "displayName": "Windows host line coverage",
+     "cacheVariables": {"ALLPOWERS_COVERAGE": "ON", "ALLPOWERS_SANITIZERS": "OFF",
+       "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}}
   ],
   "buildPresets": [
     {"name": "native", "configurePreset": "native", "targets": ["core", "native-tests"]},
     {"name": "windows", "configurePreset": "windows", "targets": ["core", "native-tests", "windows"]},
     {"name": "all-windows", "configurePreset": "windows", "targets": ["products"]},
     {"name": "all-linux", "configurePreset": "native", "targets": ["products"]},
-    {"name": "release", "configurePreset": "windows", "targets": ["release"]}
+    {"name": "release", "configurePreset": "windows", "targets": ["release"]},
+    {"name": "coverage-linux", "configurePreset": "coverage-linux", "targets": ["core", "native-tests"]},
+    {"name": "coverage-windows", "configurePreset": "coverage-windows", "targets": ["core", "native-tests", "windows"]}
   ],
   "testPresets": [
     {"name": "native", "configurePreset": "native", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}},
-    {"name": "windows", "configurePreset": "windows", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}}
+    {"name": "windows", "configurePreset": "windows", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}},
+    {"name": "coverage-linux", "configurePreset": "coverage-linux",
+     "filter": {"include": {"name": "^coverage-report$"}}, "output": {"outputOnFailure": true}},
+    {"name": "coverage-windows", "configurePreset": "coverage-windows",
+     "filter": {"include": {"name": "^coverage-report$"}}, "output": {"outputOnFailure": true}}
   ]
 }

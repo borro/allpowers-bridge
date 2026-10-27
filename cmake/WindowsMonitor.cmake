@@ -24,6 +24,7 @@ ExternalProject_Add(windows-monitor
     "-DCMAKE_INSTALL_PREFIX=${windows_output}"
     "-DALLPOWERS_DRIVER_PACKAGE_DIR=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     "-DBUILD_TESTING=${BUILD_TESTING}"
+    "-DALLPOWERS_COVERAGE=${ALLPOWERS_COVERAGE}"
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_BUILD_JOBS}"
   BUILD_ALWAYS TRUE
   INSTALL_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe" "${windows_output}/AllpowersWidget.exe"
@@ -46,8 +47,15 @@ ExternalProject_Add_Step(windows-monitor prepare-notices
 add_custom_target(windows ALL)
 add_dependencies(windows windows-monitor)
 if(BUILD_TESTING)
-  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure --parallel 2)
+  set(windows_coverage_filter)
+  if(ALLPOWERS_COVERAGE)
+    set(windows_coverage_filter -L "^coverage$")
+  endif()
+  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure --parallel 2 --no-tests=error ${windows_coverage_filter})
   set_tests_properties(windows-unit PROPERTIES TIMEOUT 900 PROCESSORS 2)
+  if(ALLPOWERS_COVERAGE)
+    set_tests_properties(windows-unit PROPERTIES LABELS coverage TIMEOUT 1800)
+  endif()
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
     "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
     "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"

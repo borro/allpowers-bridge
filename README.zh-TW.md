@@ -4,6 +4,11 @@
 
 <h1 align="center">ALLPOWERS</h1>
 
+<p align="center">
+  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="主機 C++ 行覆蓋率"></a><br>
+  <sub><a href="docs/building.md#test-coverage">包含核心、在主機上測試的韌體邏輯和 Windows/Qt；不衡量硬體上的執行情況。</a></sub>
+</p>
+
 <p align="center">在桌面檢視電源裝置遙測。透過支援的板卡提供 USB UPS 狀態回報。</p>
 
 <p align="center">

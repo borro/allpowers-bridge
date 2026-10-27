@@ -19,6 +19,7 @@ function(ap_check_public_path name)
 endfunction()
 
 set(AP_PUBLIC_SPECIAL_FILES
+  codecov.yml
   core/src/AllpowersModels.LICENSE.txt
   firmware/R2500Adapter/AllpowersModels.LICENSE.txt
   drivers/windows/LICENSE.MS-PL.txt

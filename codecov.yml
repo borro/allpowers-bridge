@@ -1,0 +1,26 @@
+codecov:
+  require_ci_to_pass: true
+  notify:
+    after_n_builds: 2
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+flags:
+  linux:
+    carryforward: false
+  windows:
+    carryforward: false
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  after_n_builds: 2
+  require_changes: false
+ignore:
+  - "tests/**"
+  - "build/**"
+  - "drivers/**"

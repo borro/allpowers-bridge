@@ -14,6 +14,7 @@ set(ALLPOWERS_RELEASE_DIR "${PROJECT_BINARY_DIR}/dist" CACHE PATH "Release artif
 set(ALLPOWERS_DEPS_DIR "${PROJECT_BINARY_DIR}/deps" CACHE PATH "Dependency cache")
 option(ALLPOWERS_BUILD_WINDOWS "Build the static Windows BLE monitor" OFF)
 include(cmake/Sanitizers.cmake)
+include(cmake/Coverage.cmake)
 add_subdirectory(core)
 add_dependencies(core product-identity)
 if(BUILD_TESTING)
@@ -30,7 +31,11 @@ if(BUILD_TESTING)
     "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DWORK=${PROJECT_BINARY_DIR}/incremental-test" "-DCXX=${CMAKE_CXX_COMPILER}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/incremental_test.cmake")
-  foreach(check build-identity firmware-staging firmware-graph partitions)
+  set(build_checks build-identity firmware-staging firmware-graph partitions)
+  if(MSVC OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
+    list(APPEND build_checks coverage-policy)
+  endif()
+  foreach(check IN LISTS build_checks)
     string(REPLACE "-" "_" script "${check}")
     add_test(NAME ${check} COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
       "-DBUILD_ROOT=${PROJECT_BINARY_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/${check}-tests"
@@ -72,6 +77,7 @@ if(ALLPOWERS_BUILD_WINDOWS)
   include(cmake/WindowsMonitor.cmake)
   add_dependencies(products windows)
 endif()
+ap_add_coverage_test()
 add_custom_target(audit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
 add_custom_target(audit-worktree COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"

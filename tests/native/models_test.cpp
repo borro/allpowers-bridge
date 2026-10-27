@@ -48,6 +48,24 @@ int main() {
   const uint8_t prMain[] = {0xa5, 0x65, 0xb1, 0, 1, 8, 1, 2, 0x2a, 0, 0, 0, 5, 4, 0x41, 0x11};
   const uint8_t prSettings[] = {0xa5, 0x65, 0xb1, 0, 1, 6, 3, 0, 0, 0, 0, 0x14, 0x30, 0x51};
   Decoded main, settings, generic;
+  {
+    Decoded unchanged;
+    unchanged.soc = 77;
+    assert(decode(static_cast<Model>(255), ownMain, sizeof ownMain, 100, unchanged) ==
+           Result::UnsupportedFrame);
+    assert(unchanged.soc == 77);
+    // Generic Settings packets must accumulate their supported fields without
+    // claiming the R2500-specific mains/battery interpretation.
+    Telemetry telemetry;
+    auto model = Model::Legacy16;
+    assert(decodeStationTelemetry(telemetry, ownMain, sizeof ownMain, 100, model));
+    const auto mainKnown = telemetry.known;
+    assert(decodeStationTelemetry(telemetry, ownSettings, sizeof ownSettings, 200, model));
+    assert(telemetry.settingsSeen && telemetry.settingsAt == 200);
+    assert((telemetry.known & mainKnown) == mainKnown);
+    assert(telemetry.source == PowerSource::Unknown && !(telemetry.known & MainsSource));
+    assert(telemetry.validFrames == 2 && telemetryFresh(telemetry, 201));
+  }
   assert(decode(Model::R2500V2, ownMain, 16, 100, main) == Result::Decoded);
   assert(main.soc == 100 && main.inputWatts == 0 && main.outputWatts == 230 &&
          main.runtimeSeconds() == 2304000);

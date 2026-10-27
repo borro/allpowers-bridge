@@ -3,6 +3,8 @@
 #include "widget.h"
 #include <QApplication>
 #include <QDialog>
+#include <QComboBox>
+#include <QCheckBox>
 #include <QFile>
 #include <QJsonDocument>
 #include <QMouseEvent>
@@ -181,6 +183,45 @@ static QByteArray widgetUsbStatus(const QString &board, int frames, int output =
 class WidgetTests : public QObject {
   Q_OBJECT
 private slots:
+  void settingsAcceptAndCancelPreserveConnectionChoices() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("settings.json");
+    QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("{\"transport\":\"usb\",\"endpoint\":\"R2500-000000000001\","
+               "\"name\":\"Synthetic USB\",\"profile\":0,\"ui_language\":\"en\"}"); file.close();
+    WidgetController widget(dir.path(), true, false);
+    auto read = [&] {
+      QFile saved(path); if (!saved.open(QIODevice::ReadOnly)) return QJsonObject{};
+      return QJsonDocument::fromJson(saved.readAll()).object();
+    };
+    auto configure = [&](bool accept, bool changeLanguage) {
+      bool visited = false;
+      QTimer::singleShot(0, &widget, [&] {
+        auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+        if (!dialog) return;
+        QTimer::singleShot(0, dialog, &QDialog::reject); // close even after an assertion fails
+        QComboBox *profile = nullptr, *language = nullptr;
+        for (auto *combo : dialog->findChildren<QComboBox *>()) {
+          if (combo->findText("R2500 V2") >= 0) profile = combo;
+          if (combo->findData("zh-TW") >= 0) language = combo;
+        }
+        QVERIFY(profile && language);
+        for (auto *check : dialog->findChildren<QCheckBox *>()) QVERIFY(!check->isEnabled());
+        if (changeLanguage) language->setCurrentIndex(language->findData("ru"));
+        else profile->setCurrentIndex(3);
+        visited = true;
+        if (accept) dialog->accept(); else dialog->reject();
+      });
+      QVERIFY(QMetaObject::invokeMethod(&widget, "configure", Qt::DirectConnection));
+      QVERIFY(visited);
+    };
+    configure(false, false); QCOMPARE(read()["profile"].toInt(), 0);
+    configure(true, false); QCOMPARE(read()["profile"].toInt(), 3);
+    QCOMPARE(read()["endpoint"].toString(), QString("R2500-000000000001"));
+    configure(true, true); QCOMPARE(read()["ui_language"].toString(), QString("ru"));
+    QCOMPARE(read()["profile"].toInt(), 3);
+    QVERIFY(!widget.diagnostics()["bluetooth_used"].toBool());
+  }
   void realControllerCoalescesSlowWorkerAcrossStationAndSession() {
     QTemporaryDir dir;
     const auto base=QDateTime::currentSecsSinceEpoch();qint64 now=base;

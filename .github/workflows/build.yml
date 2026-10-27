@@ -62,6 +62,130 @@ jobs:
         run: cmake --build --preset native --parallel 2
       - name: Test portable logic and build contracts
         run: ctest --preset native
+  coverage:
+    needs: audit
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+          - os: windows-2025
+            platform: windows
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+        with:
+          cmake-version: '4.4.4'
+      - name: Set up MSVC and Windows SDK
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # MSVC environment
+        with:
+          arch: x64
+          toolset: '14.51'
+          sdk: '10.0.26100.0'
+      - name: Verify pinned MSVC toolset
+        if: runner.os == 'Windows'
+        run: cmake -P cmake/CheckMsvcToolchain.cmake
+      - name: Install pinned Ninja
+        run: cmake -DDESTINATION="$RUNNER_TEMP/allpowers-ninja" -P cmake/SetupNinja.cmake
+      - name: Check build tools
+        run: |
+          cmake --version
+          ninja --version
+      - name: Cache dependency downloads and Arduino SDK
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/deps/downloads
+            build/deps/arduino
+            build/deps/arduino-cli
+            build/deps/firmware-legal
+          key: ${{ runner.os }}-${{ runner.arch }}-downloads-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/SetupArduino.cmake') }}
+      - name: Identify compatible static Qt SDK
+        if: runner.os == 'Windows'
+        id: qt-key
+        shell: pwsh
+        run: ./cmake/QtCache.ps1 -Mode Key
+      - name: Restore static Qt SDK
+        if: runner.os == 'Windows'
+        id: qt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.qt-key.outputs.path }}
+          key: ${{ steps.qt-key.outputs.key }}
+      - name: Verify restored static Qt SDK
+        if: runner.os == 'Windows'
+        id: qt-verified
+        shell: pwsh
+        run: ./cmake/QtCache.ps1 -Mode Restore
+      - name: Configure Qt SDK bootstrap
+        if: runner.os == 'Windows'
+        env:
+          QT_ROOT: ${{ steps.qt-verified.outputs.root }}
+        run: cmake --preset windows -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+      - name: Build and verify static Qt SDK on cache miss
+        if: runner.os == 'Windows' && steps.qt-verified.outputs.root == ''
+        shell: pwsh
+        run: |
+          cmake --build build/windows --target qt-static
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./cmake/QtCache.ps1 -Mode Seal
+      - name: Save verified static Qt SDK
+        if: runner.os == 'Windows' && steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.qt-key.outputs.path }}
+          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
+      - name: Install verified coverage tool
+        id: coverage-tools
+        run: cmake -DWORK="$GITHUB_WORKSPACE/build/coverage-${{ matrix.platform }}/tools/coverage" -P cmake/SetupCoverage.cmake
+      - name: Configure coverage
+        env:
+          QT_ROOT: ${{ runner.os == 'Windows' && format('{0}/build/windows/deps/qt/install', github.workspace) || '' }}
+        run: cmake --preset coverage-${{ matrix.platform }} -DALLPOWERS_QT_ROOT="$QT_ROOT" -DALLPOWERS_BUILD_JOBS=2
+      - name: Build coverage binaries
+        run: cmake --build --preset coverage-${{ matrix.platform }} --parallel 2
+      - name: Measure fresh line coverage
+        run: ctest --preset coverage-${{ matrix.platform }} --verbose
+      - name: Upload coverage to Codecov
+        id: codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          version: ${{ steps.coverage-tools.outputs.codecov-version }}
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          files: build/coverage-${{ matrix.platform }}/coverage/coverage.xml
+          flags: ${{ matrix.platform }}
+          disable_search: true
+          fail_ci_if_error: true
+      - name: Report Codecov upload failure
+        if: steps.codecov.outcome == 'failure'
+        run: |
+          echo "::warning::Codecov upload failed; coverage reports remain available in this run's artifacts."
+          echo "Codecov upload failed. Download the coverage artifact for the measured result." >> "$GITHUB_STEP_SUMMARY"
+      - name: Save coverage and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ matrix.platform }}
+          retention-days: 14
+          path: |
+            build/coverage-${{ matrix.platform }}/coverage/
+            build/coverage-${{ matrix.platform }}/**/Testing/Temporary/LastTest.log
+            build/coverage-${{ matrix.platform }}/**/*-tests.xml
+            build/coverage-${{ matrix.platform }}/**/*-err.log
+            build/coverage-${{ matrix.platform }}/**/*-out.log
   maintenance:
     needs: audit
     runs-on: ubuntu-24.04

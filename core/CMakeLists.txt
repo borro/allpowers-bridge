@@ -1,5 +1,6 @@
 add_library(allpowers_core SHARED native/api.cpp)
 add_library(Allpowers::Core ALIAS allpowers_core)
+ap_enable_coverage(allpowers_core)
 target_include_directories(allpowers_core PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/native>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>")

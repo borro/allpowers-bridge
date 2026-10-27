@@ -4,6 +4,11 @@
 
 <h1 align="center">ALLPOWERS</h1>
 
+<p align="center">
+  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Покрытие строк C++ на ПК"></a><br>
+  <sub><a href="docs/building.md#test-coverage">Ядро, логика прошивки в тестах на ПК и Windows/Qt; выполнение на оборудовании не измеряется.</a></sub>
+</p>
+
 <p align="center">Телеметрия зарядной станции на рабочем столе. USB-ИБП через поддерживаемую плату.</p>
 
 <p align="center">

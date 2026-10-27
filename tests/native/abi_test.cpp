@@ -31,6 +31,43 @@ struct Session {
 };
 int main() {
   assert(ap_abi_version() == 1 && ap_self_test());
+  {
+    // The exported C boundary must reject invalid handles/buffer sizes without
+    // touching a caller's output, and expose a self-consistent model catalog.
+    ap_destroy(nullptr);
+    ap_reset(nullptr, 3);
+    assert(!ap_receive(nullptr, nullptr, 0, 0));
+    assert(!ap_poll(nullptr, nullptr, 0));
+    Session s;
+    ap_snapshot sentinel{};
+    sentinel.soc = 77;
+    assert(!ap_get_snapshot(s.handle, 0, nullptr, sizeof sentinel));
+    assert(!ap_get_snapshot(s.handle, 0, &sentinel, sizeof sentinel + 1));
+    assert(sentinel.soc == 77);
+    assert(!ap_receive(s.handle, nullptr, 513, 0));
+    assert(!ap_receive(s.handle, nullptr, 0, 0));
+    uint8_t small[2] = {0x12, 0x34};
+    assert(!ap_poll(s.handle, small, sizeof small));
+    assert(small[0] == 0x12 && small[1] == 0x34);
+    ap_reset(s.handle, 3);
+    assert(!ap_poll(s.handle, nullptr, 512));
+    ap_reset(s.handle, UINT32_MAX);
+    assert(s.snapshot(0).model == 0 && !s.snapshot(0).fresh);
+    for (uint32_t i = 0; i < ap_catalog_count(); ++i) {
+      const auto *name = ap_catalog_name(i);
+      assert(name && *name);
+      assert(ap_catalog_model(i) >= 1 && ap_catalog_model(i) <= 3);
+      assert(ap_model_hint(name) == ap_catalog_model(i));
+    }
+    assert(!ap_catalog_name(ap_catalog_count()));
+    assert(!ap_catalog_model(UINT32_MAX));
+    for (uint32_t kind = 0; kind < 3; ++kind)
+      assert(ap_uuid(kind) && std::string(ap_uuid(kind)).size() == 36);
+    assert(std::string(ap_uuid(1)) != ap_uuid(2));
+    assert(!ap_uuid(3));
+    assert(ap_poll_interval_ms() > 0);
+    assert(ap_reconnect_silence_ms() > ap_poll_interval_ms());
+  }
   const auto main = hex("a565b1000108010264000000e696006f");
   const auto mains = hex("a565b10001060300010000030275");
   const auto battery = hex("a565b1000106030001ffff030275");

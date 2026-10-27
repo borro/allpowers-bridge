@@ -4,6 +4,11 @@
 
 <h1 align="center">ALLPOWERS</h1>
 
+<p align="center">
+  <a href="https://app.codecov.io/gh/borro/allpowers-bridge"><img src="https://codecov.io/gh/borro/allpowers-bridge/branch/main/graph/badge.svg" alt="Host C++ line coverage"></a><br>
+  <sub><a href="docs/building.md#test-coverage">Core, host-tested firmware logic and Windows/Qt; hardware execution is not measured.</a></sub>
+</p>
+
 <p align="center">Power-station telemetry on your desktop. USB UPS reporting through a supported board.</p>
 
 <p align="center">

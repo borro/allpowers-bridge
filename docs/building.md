@@ -106,6 +106,79 @@ localized Windows, where CMake's automatic output decoding can corrupt it.
 Header changes no longer alter artificial compile definitions or trigger CMake
 reconfiguration and recompilation of every application source.
 
+## Test coverage
+
+Every push and PR measures **line coverage** with GCC/gcovr on Linux and
+MSVC/OpenCppCoverage on Windows. Codecov merges repository-relative files and
+lines under the `linux` and `windows` flags. The README badge shows `main`; PR
+statuses are informational, with no minimum percentage. Notifications wait for
+both reports; old flag results are not carried forward.
+
+The denominator contains product lines represented in measured host binaries:
+`core/`, firmware logic included by host tests, and Windows/Qt code linked into
+test binaries. Unexecuted instrumented lines count as uncovered. Tests, frozen
+fixtures, generated files, Qt and SDKs are excluded. Device-only firmware, kernel
+driver execution, code absent from tested binaries and hardware behavior are
+**not measured**. This is not a whole-device coverage claim.
+
+Windows coverage also runs six offline contract suites: integration installation
+and rollback, serial-port configuration and worker lifetime, battery sampling,
+service lifecycle, CLI reports, and service IPC. The native-boundary suites compile
+the original production `.cpp` files against test-only Win32 substitutes; the CLI
+suite supplies synthetic transports. This executes the production control flow
+and counts its original source lines without copying or excluding product code.
+It does not validate Windows driver installation, signatures, real SCM operation,
+physical serial I/O or Bluetooth interoperability. File writes use temporary
+directories; IPC tests use uniquely named local pipes. No test flashes a board,
+installs a service/driver, elevates privileges or connects to a station.
+
+Coverage is opt-in (`ALLPOWERS_COVERAGE=ON`) and isolated under `build/coverage-*`.
+GCC coverage and sanitizers use separate builds. Windows retains Release static
+Qt, `/MT` and WinRT; measured product targets have PDBs and no optimization,
+inlining or folding. Ordinary release flags are unchanged. Report processing
+needs Python 3.10+; Linux also needs Python's `venv` module. CMake/CTest drive
+compilation and tests.
+
+Linux:
+
+```sh
+cmake -DWORK=build/coverage-linux/tools/coverage -P cmake/SetupCoverage.cmake
+cmake --preset coverage-linux
+cmake --build --preset coverage-linux
+ctest --preset coverage-linux --verbose
+```
+
+Windows (x64 Developer PowerShell with Python on PATH):
+
+```powershell
+cmake -DWORK=build/coverage-windows/tools/coverage -P cmake/SetupCoverage.cmake
+cmake --preset coverage-windows
+cmake --build --preset coverage-windows
+ctest --preset coverage-windows --verbose
+```
+
+Pass `-DALLPOWERS_QT_ROOT=<verified-static-Qt-install>` when configuring Windows
+to reuse an SDK. CI uses the existing verified Qt cache; a cache miss builds Qt
+from source and takes considerably longer.
+
+The `coverage-report` CTest test resets counters, runs suites with the `coverage`
+label (including Qt child processes on Windows), and writes `coverage/coverage.xml`,
+`coverage/summary.md` and detailed HTML in the build directory. Do not run another
+test invocation concurrently in that directory. Contract, packaging and sanitizer
+tests keep their existing jobs and presets.
+
+Actions shows covered/measured line counts and saves reports and diagnostics for
+14 days. Test/report errors fail CI. Codecov upload failures produce a warning;
+reports remain available as artifacts. Failed-test reports are marked incomplete
+and never uploaded to Codecov. Branch coverage is not the shared metric.
+
+For initial hosted setup, enable `borro/allpowers-bridge` in Codecov and grant its
+GitHub App repository access for PR reporting. Uploads use OIDC (`id-token: write`
+only in coverage jobs), without a stored secret. Public fork PRs use tokenless
+uploads; enable public tokenless uploads in Codecov if the organization requires
+it. Confirm both flags on the first `main` run, a numeric badge and a PR report
+before considering hosted setup verified.
+
 ## Firmware
 
 ```sh

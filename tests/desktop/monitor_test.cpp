@@ -28,6 +28,9 @@
 #include <QScreen>
 #include <QScrollBar>
 #include <QSignalSpy>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QDialog>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
@@ -211,6 +214,287 @@ class MonitorTests : public QObject {
   Q_OBJECT
   QTemporaryDir temp;
 private slots:
+  void usbUnknownValuesAndStationChangeRemainExplicit() {
+    auto *io = new FakeUsbChannel;
+    UsbTransport usb(nullptr, false, io, fakeUsbPorts);
+    QSignalSpy snapshots(&usb, &TelemetryTransport::snapshot);
+    usb.start(fakeUsbPorts().first().serial, 0);
+    auto send = [&](const QJsonObject &row) {
+      io->feed(QJsonDocument(row).toJson(QJsonDocument::Compact) + '\n');
+    };
+    for (const auto &line : usbCycle().split('\n')) {
+      if (line.isEmpty()) continue;
+      auto row = QJsonDocument::fromJson(line).object();
+      if (row.contains("adapter")) {
+        row.remove("ac_output"); row.remove("usb_output"); row.remove("dc_output");
+        row["source"] = "unknown"; row["runtime_s"] = double(0x80000000u);
+      }
+      if (row.contains("telemetry_known")) row["ups_source_known"] = false;
+      send(row);
+    }
+    QVERIFY(usb.connected());
+    const auto unknown = qvariant_cast<ap_snapshot>(snapshots.last()[0]);
+    QCOMPARE(unknown.source, 0u);
+    QVERIFY(!(unknown.known & (AllpowersModels::AcOutput | AllpowersModels::UsbOutput |
+        AllpowersModels::DcOutput | AllpowersModels::MainsSource | AllpowersModels::RuntimeMinutes)));
+    QCOMPARE(unknown.soc, 50u); // unrelated known telemetry is retained
+    io->feed(usbCycle());
+    usb.requestHistory(); QVERIFY(usb.diagnostics()["usb_history_busy"].toBool());
+    auto status = QJsonDocument::fromJson(usbCycle().split('\n').first()).object();
+    send(status);
+    send({{"station_address", "02:00:00:00:00:02"}, {"station_name", "Other fixture"}});
+    QCOMPARE(usb.address(), QString("02:00:00:00:00:02"));
+    QCOMPARE(usb.diagnostics()["usb_history_result"].toString(), QString("partial"));
+    QVERIFY(!usb.diagnostics()["usb_history_busy"].toBool());
+    const int bad = usb.diagnostics()["usb_bad_lines"].toInt();
+    send(status); send({{"station_address", "not an address"}});
+    QCOMPARE(usb.address(), QString("02:00:00:00:00:02"));
+    QCOMPARE(usb.diagnostics()["usb_bad_lines"].toInt(), bad + 1);
+    QJsonArray tooMany;
+    for (int i=0; i<65; ++i) tooMany.append(QJsonObject{{"label", "x"}, {"value", "y"}});
+    send({{"diagnostic", true}, {"rows", tooMany}});
+    QCOMPARE(usb.diagnostics()["usb_bad_lines"].toInt(), bad + 2);
+    send({{"board", "unsupported-board"}});
+    QVERIFY(!usb.connected()); QVERIFY(!usb.diagnostics()["error"].toString().isEmpty());
+  }
+  void usbRejectsMalformedStatusAndRecovers_data() {
+    QTest::addColumn<QString>("field");
+    QTest::addColumn<QJsonValue>("value");
+    QTest::newRow("product") << QString("adapter") << QJsonValue("foreign");
+    QTest::newRow("version-type") << QString("version") << QJsonValue(1);
+    QTest::newRow("fresh-type") << QString("fresh") << QJsonValue("true");
+    QTest::newRow("charge-range") << QString("soc") << QJsonValue(101);
+    QTest::newRow("fractional-watts") << QString("charge_w") << QJsonValue(1.5);
+    QTest::newRow("negative-runtime") << QString("runtime_s") << QJsonValue(-1);
+  }
+  void usbRejectsMalformedStatusAndRecovers() {
+    QFETCH(QString, field); QFETCH(QJsonValue, value);
+    auto *io = new FakeUsbChannel;
+    UsbTransport usb(nullptr, false, io, fakeUsbPorts);
+    QSignalSpy snapshots(&usb, &TelemetryTransport::snapshot);
+    usb.start(fakeUsbPorts().first().serial, 0);
+    io->feed(usbCycle()); QVERIFY(usb.connected());
+    auto bad = QJsonDocument::fromJson(usbCycle().split('\n').first()).object();
+    bad[field] = value;
+    const int before = snapshots.count();
+    io->feed(QJsonDocument(bad).toJson(QJsonDocument::Compact) + '\n');
+    QCOMPARE(snapshots.count(), before);
+    QCOMPARE(usb.diagnostics()["usb_bad_lines"].toInt(), 1);
+    io->feed(usbCycle("waveshare-147", 11));
+    QCOMPARE(qvariant_cast<ap_snapshot>(snapshots.last()[0]).valid_frames, 11u);
+    QVERIFY(usb.connected());
+  }
+  void usbFramingDeadlinesAndLateCallbacks() {
+    auto *io = new FakeUsbChannel; qint64 now = 0;
+    UsbTransport usb(nullptr, false, io, fakeUsbPorts, [&] { return now; });
+    QSignalSpy snapshots(&usb, &TelemetryTransport::snapshot);
+    usb.start(fakeUsbPorts().first().serial, 0);
+    io->feed(QByteArray(65537, 'x'));
+    io->feed(QByteArray(8193, 'x') + '\n');
+    io->feed(QByteArray(8193, 'x'));
+    io->feed("not json\n[]\n\n");
+    QCOMPARE(usb.diagnostics()["usb_bad_lines"].toInt(), 5);
+    const auto cycle = usbCycle();
+    io->feed(cycle.left(20)); QVERIFY(!usb.connected());
+    io->feed(cycle.mid(20)); QVERIFY(usb.connected());
+    usb.requestHistory(); QVERIFY(usb.diagnostics()["usb_history_busy"].toBool());
+    now = 120001; usb.refresh();
+    QCOMPARE(usb.diagnostics()["usb_history_result"].toString(), QString("error"));
+    QVERIFY(!usb.diagnostics()["usb_history_complete"].toBool());
+    QVERIFY(!usb.diagnostics()["usb_history_error"].toString().isEmpty());
+    usb.refresh(); QVERIFY(!usb.connected()); // stale status closes the port
+    const int closed = io->closes;
+    now += 2000; usb.refresh(); io->feed(usbCycle("waveshare-147", 12));
+    QVERIFY(usb.connected()); QCOMPARE(io->closes, closed);
+    usb.requestHistory(); emit io->failed("synthetic cable removal");
+    QVERIFY(!usb.connected()); QCOMPARE(usb.diagnostics()["error"].toString(), QString("synthetic cable removal"));
+    QCOMPARE(usb.diagnostics()["usb_history_result"].toString(), QString("error"));
+    usb.stop(); const auto writes = io->writes; const int count = snapshots.count();
+    emit io->opened(); emit io->failed("late failure"); io->feed(cycle); usb.refresh();
+    QCOMPARE(io->writes, writes); QCOMPARE(snapshots.count(), count); QVERIFY(!usb.active());
+  }
+  void historyTransactionsRollbackAndRecover() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    auto sql = [&](const QString &statement) {
+      const auto connection = QUuid::createUuid().toString();
+      bool ok = false;
+      {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+        db.setDatabaseName(path);
+        if (db.open()) { QSqlQuery query(db); ok = query.exec(statement); }
+        db.close();
+      }
+      QSqlDatabase::removeDatabase(connection);
+      return ok;
+    };
+    HistoryStore store(path);
+    QVERIFY(store.valid());
+    ap_snapshot sample{}; sample.abi_version = 1; sample.soc = 42;
+    // A failure of the second write must roll back the first table as well.
+    QVERIFY(sql("CREATE TRIGGER reject_minutes BEFORE INSERT ON minutes BEGIN "
+                "SELECT RAISE(ABORT, 'synthetic write failure'); END"));
+    QVERIFY(!store.record("fixture", sample, 10000, 1));
+    QCOMPARE(store.stats()["live"].toInt(), 0);
+    QVERIFY(sql("DROP TRIGGER reject_minutes"));
+    QVERIFY(store.record("fixture", sample, 10000, 1));
+    QCOMPARE(store.points("fixture", 10000).size(), 1);
+
+    HistoryPoint point;
+    point.address = "usb-board:synthetic"; point.session = "usb-1";
+    point.wall = 9960; point.tick = 60; point.stride = 60; point.data = sample;
+    auto invalid = point; invalid.wall = 10000; invalid.tick = 120; invalid.data.soc = 101;
+    QVERIFY(!store.importPoints({point, invalid}, 10000));
+    QVERIFY(store.points(point.address, 10000).isEmpty());
+    QVERIFY(sql("CREATE TRIGGER reject_archive BEFORE INSERT ON usb_minutes BEGIN "
+                "SELECT RAISE(ABORT, 'synthetic archive failure'); END"));
+    QVERIFY(!store.importPoints({point}, 10000));
+    QVERIFY(sql("DROP TRIGGER reject_archive"));
+    QVERIFY(store.importPoints({point}, 10000));
+    QCOMPARE(store.points(point.address, 10000).size(), 1);
+    QCOMPARE(store.points("fixture", 10000).size(), 1);
+  }
+  void historyWorkerReportsFailuresAndRotatesLogs() {
+    QTemporaryDir dir;
+    HistoryWorker unopened;
+    QSignalSpy problems(&unopened, &HistoryWorker::problem);
+    QSignalSpy exported(&unopened, &HistoryWorker::exported);
+    QSignalSpy finished(&unopened, &HistoryWorker::sampleFinished);
+    unopened.log("ignored before open");
+    unopened.newSession();
+    unopened.sample("fixture", {}, 1, 1);
+    QCOMPARE(finished.count(), 1);
+    unopened.importPoints({}, 1); QCOMPARE(problems.count(), 1);
+    unopened.exportFile("fixture", 1, dir.filePath("missing.csv"));
+    QCOMPARE(exported.count(), 1); QVERIFY(!exported.last()[1].toBool());
+    unopened.exportPoints({}, dir.filePath("empty.csv"));
+    QCOMPARE(exported.count(), 2); QVERIFY(exported.last()[1].toBool());
+    unopened.saveSettings(dir.path(), {}); QCOMPARE(problems.count(), 2);
+    {
+      HistoryWorker broken;
+      QSignalSpy errors(&broken, &HistoryWorker::problem);
+      broken.open(dir.path()); // A directory cannot be a SQLite database.
+      QCOMPARE(errors.count(), 1);
+    }
+    {
+      QFile corrupt(dir.filePath("corrupt.sqlite3"));
+      QVERIFY(corrupt.open(QIODevice::WriteOnly)); corrupt.write(QByteArray(512, 'x')); corrupt.close();
+      HistoryStore broken(corrupt.fileName()); QVERIFY(!broken.valid());
+    }
+    HistoryWorker worker;
+    worker.open(dir.filePath("history.sqlite3"));
+    QSignalSpy errors(&worker, &HistoryWorker::problem);
+    ap_snapshot sample{}; sample.abi_version = 1;
+    worker.sample("fixture", sample, 1000, 1);
+    worker.sample("fixture", sample, 1000, 1);
+    QCOMPARE(errors.count(), 1); // duplicate write reports failure and still completes
+    worker.newSession(); worker.sample("fixture", sample, 1000, 1);
+    QCOMPARE(errors.count(), 1);
+    QFile log(dir.filePath("monitor.log")), old(dir.filePath("monitor.log.1"));
+    QVERIFY(log.open(QIODevice::WriteOnly)); log.write(QByteArray(1024*1024+1, 'a')); log.close();
+    QVERIFY(old.open(QIODevice::WriteOnly)); old.write("previous log"); old.close();
+    worker.log("rotation marker");
+    QCOMPARE(QFileInfo(old).size(), qint64(1024*1024+1));
+    QFile older(dir.filePath("monitor.log.2")); QVERIFY(older.open(QIODevice::ReadOnly));
+    QCOMPARE(older.readAll(), QByteArray("previous log"));
+    QVERIFY(log.open(QIODevice::ReadOnly)); QVERIFY(log.readAll().contains("rotation marker"));
+  }
+  void usbDiagnosticsUpdateWithoutDuplicateRowsAndOfflineIntegrationIsDisabled() {
+    auto *io = new FakeUsbChannel;
+    auto *usb = new UsbTransport(nullptr, false, io, fakeUsbPorts);
+    MonitorWindow window(true, nullptr, usb);
+    window.show();
+    usb->start(fakeUsbPorts().first().serial, 0);
+    io->feed(usbCycle());
+    auto *pages = window.findChild<QStackedWidget *>(); QVERIFY(pages);
+    pages->setCurrentIndex(2);
+    auto *table = window.findChild<QTableWidget *>("diagnosticState"); QVERIFY(table);
+    auto send = [&](QString value) {
+      io->feed(QJsonDocument(QJsonObject{{"diagnostic", true}, {"rows", QJsonArray{
+        QJsonObject{{"label", "test counter"}, {"value", value}}}}}).toJson(QJsonDocument::Compact) + '\n');
+      io->feed(usbCycle());
+    };
+    auto cell = [&]() -> QTableWidgetItem * {
+      for (int row=0; row<table->rowCount(); ++row) {
+        auto *item = table->item(row, 1);
+        if (item && item->data(Qt::UserRole) == "usb_detail:test counter") return item;
+      }
+      return nullptr;
+    };
+    send("first"); QTRY_VERIFY(cell()); QTRY_COMPARE(cell()->text(), QString("first"));
+    const int rows = table->rowCount();
+    send("second"); QTRY_COMPARE(cell()->text(), QString("second"));
+    QCOMPARE(table->rowCount(), rows); QCOMPARE(cell()->toolTip(), QString("second"));
+    auto *button = window.findChild<QPushButton *>("integrationManagement"); QVERIFY(button);
+    button->click();
+    auto *dialog = window.findChild<QDialog *>(); QVERIFY(dialog); QVERIFY(dialog->isVisible());
+    const auto actions = dialog->findChildren<QPushButton *>(); QCOMPARE(actions.size(), 4);
+    for (auto *action : actions) QVERIFY(!action->isEnabled());
+    dialog->close();
+  }
+  void chartInteractionPreservesLiveViewAndShowsDetails() {
+    HistoryChart chart;
+    chart.resize(800, 360);
+    const qint64 now = 1700000000;
+    HistoryPoints points;
+    for (int i = 0; i < 3; ++i) {
+      HistoryPoint p;
+      p.address = "usb-board:synthetic";
+      p.session = "chart-test";
+      p.wall = now - 60 + i * 20;
+      p.tick = i * 20;
+      p.stride = 1;
+      p.data.fresh = i != 0;
+      p.data.known = i ? 7 : 0;
+      p.data.source = i;
+      p.data.soc = 40 + i;
+      p.data.input_w = 100;
+      p.data.output_w = 50;
+      points.append(p);
+    }
+    chart.setHorizon(90);
+    chart.setPoints(points, now);
+    chart.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&chart));
+    QSignalSpy changed(&chart, &HistoryChart::viewChanged);
+    auto move = [&](QPointF position, Qt::MouseButtons buttons = Qt::NoButton) {
+      QMouseEvent event(QEvent::MouseMove, position, chart.mapToGlobal(position),
+                        Qt::NoButton, buttons, Qt::NoModifier);
+      QApplication::sendEvent(&chart, &event);
+    };
+    const auto base = chart.grab().toImage();
+    for (int x : {280, 420, 590, 730}) {
+      move(QPointF(x, 100));
+      QVERIFY(chart.grab().toImage() != base); // crosshair and nearest sample details
+    }
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(&chart, &leave);
+    QCOMPARE(chart.grab().toImage(), base);
+    QTest::mousePress(&chart, Qt::LeftButton, Qt::NoModifier, QPoint(400, 150));
+    move(QPointF(300, 150), Qt::LeftButton);
+    QTest::mouseRelease(&chart, Qt::LeftButton, Qt::NoModifier, QPoint(300, 150));
+    QVERIFY(!chart.following()); QVERIFY(changed.count() > 0);
+    chart.setPoints(points, now + 1); QVERIFY(!chart.following());
+    auto wheel = [&](QPointF position, int delta) {
+      QWheelEvent event(position, chart.mapToGlobal(position), {}, QPoint(0, delta),
+                        Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+      QApplication::sendEvent(&chart, &event);
+      return event.isAccepted();
+    };
+    const int before = changed.count();
+    QVERIFY(!wheel(QPointF(2, 2), 120)); QCOMPARE(changed.count(), before);
+    for (bool logarithmic : {false, true}) {
+      chart.setLogarithmic(logarithmic);
+      QVERIFY(wheel(QPointF(400, 150), 120));
+      QVERIFY(!chart.following());
+      chart.followLive(); QVERIFY(chart.following());
+    }
+    chart.setSeries(-1, false); chart.setSeries(3, false);
+    for (int i = 0; i < 3; ++i) chart.setSeries(i, false);
+    const auto hidden = chart.grab().toImage();
+    for (int i = 0; i < 3; ++i) chart.setSeries(i, true);
+    QVERIFY(chart.grab().toImage() != hidden);
+  }
   void usbOperationIdentityNegotiationFailsClosed() {
     for(int mode=0;mode<9;++mode){
       auto *io=new FakeUsbChannel;int calls=0;

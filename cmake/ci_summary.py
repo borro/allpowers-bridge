@@ -32,7 +32,8 @@ def test_totals(cases):
 
 def junit(path):
     cases = []
-    for test in ET.parse(path).getroot().iter("testcase"):
+    tests = list(ET.parse(path).getroot().iter("testcase"))
+    for test in tests:
         status = "passed"
         if test.find("failure") is not None or test.find("error") is not None:
             status = "failed"
@@ -42,6 +43,11 @@ def junit(path):
     if not cases:
         raise ValueError("report contains no test cases")
     result = test_totals(cases)
+    timings = sorted(((float(test.get("time", "0")), test.get("name", "unnamed"))
+                      for test in tests), reverse=True)
+    slow = [f"{cell(name)} **{seconds:.1f}s**" for seconds, name in timings[:3] if seconds >= 5]
+    if slow:
+        result += "\n\nSlowest checks: " + "; ".join(slow) + "."
     # libFuzzer prints these only for completed runs; crashes remain failed tests.
     for name, _, output in cases:
         runs = re.findall(r"Done (\d+) runs in (\d+) second", output)
@@ -133,6 +139,9 @@ def render(root, job, status, steps, needs):
                  f"release requested: **{cell(policy.get('release', 'unavailable'))}**.", ""]
     if job == "windows-sdk":
         text += [f"Complete SDK validation: **{outcome('prepare-and-validate-complete-sdks')}**.", ""]
+        key_seconds = steps.get("qt-key", {}).get("outputs", {}).get("key-seconds")
+        if key_seconds:
+            text += [f"Cache identity computation: **{cell(key_seconds)}s**.", ""]
     if job in {"windows-sdk", "firmware"}:
         keys = ("qt", "qt-sources", "wdk") if job == "windows-sdk" else ("arduino", "firmware-legal")
         caches = []

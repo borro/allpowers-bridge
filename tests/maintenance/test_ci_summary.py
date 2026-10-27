@@ -24,7 +24,7 @@ class SummaryTests(unittest.TestCase):
 
     def test_junit_failures_errors_skips_and_fuzz_counts(self):
         path = self.write("tests.xml", '''<testsuites><testsuite>
-          <testcase name="fuzz-ble"><system-out>Done 1234 runs in 120 second(s)</system-out></testcase>
+          <testcase name="fuzz-ble" time="120"><system-out>Done 1234 runs in 120 second(s)</system-out></testcase>
           <testcase name="bad|&lt;script&gt;"><failure>details</failure></testcase>
           <testcase name="crash"><error/></testcase>
           <testcase name="disabled"><skipped/></testcase>
@@ -33,6 +33,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("4 checks:** 1 passed, 2 failed, 1 skipped", text)
         self.assertIn("bad&#124;&lt;script&gt;", text)
         self.assertIn("1,234 inputs", text)
+        self.assertIn("Slowest checks: fuzz-ble **120.0s**", text)
         self.assertNotIn("<script>", text)
 
     def test_setup_failure_and_missing_reports_never_look_like_passes(self):
@@ -90,11 +91,13 @@ class SummaryTests(unittest.TestCase):
 
     def test_sdk_cache_restore_is_distinct_from_validation(self):
         text = summary.render(self.root, "windows-sdk", "failure", {
+            "qt-key": {"outcome": "success", "outputs": {"key-seconds": "0.150"}},
             "qt": {"outcome": "success", "outputs": {"cache-hit": "true"}},
             "qt-sources": {"outcome": "success", "outputs": {"cache-hit": ""}},
             "wdk": {"outcome": "failure", "conclusion": "success"},
             "prepare-and-validate-complete-sdks": {"outcome": "failure"}}, {})
         self.assertIn("SDK validation: **failure**", text)
+        self.assertIn("Cache identity computation: **0.150s**", text)
         self.assertIn("qt: **hit**", text)
         self.assertIn("qt-sources: **miss**", text)
         self.assertIn("wdk: **unavailable**", text)

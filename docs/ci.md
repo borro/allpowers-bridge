@@ -37,6 +37,7 @@ never interpreted as zero failures. Uploaded reports are linked directly;
 environment details and step statuses are collapsed. **CI result** lists every
 required job, including jobs skipped by policy or blocked by a failed dependency.
 Jobs skipped before starting cannot publish their own summary.
+CTest summaries also list up to three slow checks (at least five seconds).
 SDK preparation reports validation and cache restores; firmware reports each
 board's version and application size; release publication lists prepared assets.
 
@@ -51,6 +52,14 @@ running that same suite twice. Publication combines these Windows packages with
 the Linux firmware from the same workflow run, checking tag, commit, host and
 checksums. Nothing in CI flashes a device or opens a station connection.
 
+The Windows identity regression keeps independent root and standalone builds
+through clean, dirty and reverted states. Its standalone fixture builds only the
+two product executables it exercises; the ordinary Windows job still builds and
+runs the full desktop test suite. Monitor and Widget packaging smoke checks run
+in parallel in separate directories. Failed standalone checks report the exact
+language, exit status and diagnostic JSON; reports are retained with the Windows
+test artifact.
+
 ## Images and cache ownership
 
 Linux uses `ubuntu-24.04` with GCC 13 (LLVM 18 for Mull/fuzz); Windows uses
@@ -62,9 +71,16 @@ Hosted image labels are maintained images, not immutable VM snapshots.
 The Windows SDK job is the only writer of the Qt binary, Qt source archive and WDK
 caches within a run. Firmware is the only writer of Arduino and firmware legal
 source caches. Component fingerprints avoid invalidating Qt when analyzer
-versions change. Qt additionally hashes the installed compiler tools, headers and
-libraries, records absolute installation paths and validates static linkage,
-WinRT features, source identity and offline execution.
+versions change. Qt cache schema v3 records the full PE versions of `cl.exe` and
+`link.exe`, MSVC toolset, Windows SDK/UCRT, CMake/Ninja, absolute toolchain and
+installation paths, and static CRT/architecture/build settings. Pinned Qt source
+checksums and build recipes remain part of the key. It does not scan the entire
+toolchain tree: replacing an SDK header/library without changing its version is
+outside this identity policy. The cache is intended for managed GitHub-hosted
+toolchains. Restore still checks Qt binary/source hashes, static linkage, WinRT,
+compile/link compatibility and offline execution. Key computation time appears
+in logs and the SDK job summary. The v3 transition creates a new Qt cache once;
+source and WDK archive caches keep their existing keys.
 
 Consumers download this run's complete Windows SDK artifact into `build/` and
 validate it again. A runner toolchain mismatch rebuilds Qt locally without writing

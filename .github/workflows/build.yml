@@ -987,6 +987,8 @@ jobs:
           build/**/archive-transport-tests.*
           build/**/windows-identity-graph/*.log
           build/**/source-kit-check/*.log
+          build/**/single-exe-check/report*.json
+          build/**/widget-single-exe-check/report*.json
           build/**/compliance/relink/relink.log
           build/**/*-err.log
           build/**/*-out.log

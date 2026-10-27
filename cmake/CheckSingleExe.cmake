@@ -39,11 +39,31 @@ foreach(name IN LISTS names)
   endif()
 endforeach()
 file(WRITE "${WORK}/imports.txt" "${imports}")
-execute_process(COMMAND "${CMAKE_COMMAND}" -E env
-  --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
-  "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"
-  --self-test --report "${WORK}/report.json" -platform offscreen
-  WORKING_DIRECTORY "${WORK}" TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
+function(run_smoke language report_path)
+  set(language_args)
+  if(NOT language STREQUAL "system")
+    set(language_args --language "${language}")
+  endif()
+  # Never mistake a report from an earlier run for this process's result.
+  file(REMOVE "${report_path}")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
+    "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"
+    --self-test ${language_args} --report "${report_path}" -platform offscreen
+    WORKING_DIRECTORY "${WORK}" TIMEOUT 20 RESULT_VARIABLE result
+    OUTPUT_VARIABLE stdout ERROR_VARIABLE stderr)
+  file(WRITE "${WORK}/self-test-${language}-out.log" "${stdout}")
+  file(WRITE "${WORK}/self-test-${language}-err.log" "${stderr}")
+  if(NOT result STREQUAL "0")
+    set(diagnostics "No JSON report was produced.")
+    if(EXISTS "${report_path}")
+      file(READ "${report_path}" diagnostics LIMIT 12000)
+    endif()
+    message(FATAL_ERROR "${exe_name} standalone self-test failed: language=${language}, result=${result}\n"
+      "${stdout}\n${stderr}\n${diagnostics}")
+  endif()
+endfunction()
+run_smoke(system "${WORK}/report.json")
 file(READ "${WORK}/report.json" report)
 string(JSON status GET "${report}" status)
 string(JSON notices GET "${report}" embedded_notices)
@@ -52,11 +72,7 @@ if(NOT status STREQUAL "PASS" OR notices LESS 1 OR NOT lgpl)
   message(FATAL_ERROR "Standalone EXE smoke test failed")
 endif()
 foreach(language ru en zh-CN zh-TW)
-  execute_process(COMMAND "${CMAKE_COMMAND}" -E env
-    --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
-    "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"
-    --self-test --language "${language}" --report "${WORK}/report-${language}.json" -platform offscreen
-    WORKING_DIRECTORY "${WORK}" TIMEOUT 20 COMMAND_ERROR_IS_FATAL ANY)
+  run_smoke("${language}" "${WORK}/report-${language}.json")
   file(READ "${WORK}/report-${language}.json" localized_report)
   string(JSON localized_status GET "${localized_report}" status)
   string(JSON resolved_language GET "${localized_report}" ui_language)

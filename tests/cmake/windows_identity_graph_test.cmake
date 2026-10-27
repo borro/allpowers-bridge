@@ -67,6 +67,7 @@ function(build phase)
     --target windows --parallel "${ALLPOWERS_BUILD_JOBS}"
     OUTPUT_FILE "${scratch}/${phase}-root-build.log" ERROR_FILE "${scratch}/${phase}-root-build.log")
   timed_step("${phase}-standalone-build" COMMAND "${CMAKE_COMMAND}" --build "${source}/build/standalone"
+    --target AllpowersMonitor AllpowersWidget
     --parallel "${ALLPOWERS_BUILD_JOBS}"
     OUTPUT_FILE "${scratch}/${phase}-standalone-build.log" ERROR_FILE "${scratch}/${phase}-standalone-build.log")
 endfunction()
@@ -88,7 +89,7 @@ function(check expected phase)
         -Path "${folder}/${app}.exe" -ExpectedVersion "${expected}" OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
     endforeach()
     execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${source}/build/${layout}"
-      -R "^(single-exe|widget-single-exe)$" --output-on-failure
+      -R "^(single-exe|widget-single-exe)$" --output-on-failure --parallel 2 --no-tests=error
       OUTPUT_VARIABLE tests ERROR_VARIABLE error RESULT_VARIABLE result)
     file(WRITE "${scratch}/${phase}-${layout}-ctest.log" "${tests}\n${error}")
     if(result)

@@ -18,6 +18,7 @@ function Write-OutputValue([string]$Name, [string]$Value) {
 
 # Exact keys only. Include paths because Qt's installed CMake files can retain
 # absolute toolchain/build paths; never assume an SDK is freely relocatable.
+$identityTimer = [Diagnostics.Stopwatch]::StartNew()
 $compiler = Get-Command cl.exe -ErrorAction Stop
 $cmakeVersion = & cmake --version
 if ($LASTEXITCODE) { throw 'Cannot identify CMake' }
@@ -27,17 +28,25 @@ foreach ($name in 'VCToolsVersion', 'WindowsSDKVersion', 'VSCMD_ARG_TGT_ARCH') {
     if (![Environment]::GetEnvironmentVariable($name)) { throw "Missing MSVC environment variable: $name" }
 }
 if ($env:VSCMD_ARG_TGT_ARCH -ne 'x64') { throw 'The Qt cache requires an x64 MSVC environment' }
-. (Join-Path $PSScriptRoot 'ToolchainFingerprint.ps1')
-$toolchainDigest = Get-ToolchainFingerprint -Compiler $compiler.Source
+function Get-ToolVersion([string]$Path) {
+    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing toolchain binary: $Path" }
+    $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+    if (!$version.FileVersion) { throw "Missing toolchain binary version: $Path" }
+    return '{0}.{1}.{2}.{3}' -f $version.FileMajorPart, $version.FileMinorPart, $version.FileBuildPart, $version.FilePrivatePart
+}
+$linker = Join-Path (Split-Path $compiler.Source -Parent) 'link.exe'
+$compilerVersion = Get-ToolVersion $compiler.Source
+$linkerVersion = Get-ToolVersion $linker
 $dependencies = & cmake -DGROUP=qt -P (Join-Path $Root 'cmake/DependencyFingerprint.cmake')
 if ($LASTEXITCODE) { throw 'Cannot identify Qt dependency inputs' }
 $inputs = [ordered]@{
-    schema = 2
+    schema = 3
     platform = 'Windows-x64-Release-static-MT-WinRT'
     install = $install.Replace('\', '/').ToLowerInvariant()
     compiler = $compiler.Source.Replace('\', '/').ToLowerInvariant()
-    compilerSha256 = (Get-FileHash -LiteralPath $compiler.Source -Algorithm SHA256).Hash
-    toolchainSha256 = $toolchainDigest
+    compilerVersion = $compilerVersion
+    linker = $linker.Replace('\', '/').ToLowerInvariant()
+    linkerVersion = $linkerVersion
     dependencies = "$dependencies"
     toolset = $env:VCToolsVersion
     sdk = $env:WindowsSDKVersion
@@ -46,7 +55,7 @@ $inputs = [ordered]@{
     cmake = $cmakeVersion[0]
     ninja = "$ninjaVersion"
 }
-foreach ($file in 'DependencyFingerprint.cmake', 'ToolchainFingerprint.ps1', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
+foreach ($file in 'DependencyFingerprint.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
                   'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     $inputs[$file] = (Get-FileHash -LiteralPath (Join-Path $Root "cmake/$file") -Algorithm SHA256).Hash
 }
@@ -54,10 +63,13 @@ $fingerprint = $inputs | ConvertTo-Json -Compress
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $digest = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($fingerprint))).Replace('-', '').ToLowerInvariant() }
 finally { $sha.Dispose() }
-$key = "qt-static-v2-windows-x64-$digest"
+$key = "qt-static-v3-windows-x64-$digest"
+$keySeconds = $identityTimer.Elapsed.TotalSeconds.ToString('F3', [Globalization.CultureInfo]::InvariantCulture)
+Write-Host "Qt cache identity: cl $compilerVersion, link $linkerVersion, SDK $env:WindowsSDKVersion; computed in ${keySeconds}s"
 if ($Mode -eq 'Key') {
     Write-OutputValue key $key
     Write-OutputValue path $install.Replace('\', '/')
+    Write-OutputValue key-seconds $keySeconds
     exit 0
 }
 

@@ -102,5 +102,5 @@ CI submits the pinned C/C++ dependencies from `cmake/Dependencies.cmake` to the 
 
 Original project code is [MIT](LICENSE); the adapted Windows driver is MS-PL.
 Dependencies retain their [own licenses](THIRD_PARTY_NOTICES.md). See
-[Qt relinking](docs/relinking.md) and [firmware source kits](docs/firmware-licenses.md)
+[Qt relinking](docs/relinking.md) and [firmware sources and rebuilding](docs/firmware-licenses.md)
 when redistributing binaries.

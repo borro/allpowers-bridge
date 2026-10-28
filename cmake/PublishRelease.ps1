@@ -110,7 +110,8 @@ $marker
 
 - Windows Monitor and desktop Widget: two standalone EXEs.
 - Separate Waveshare 1.47 and Pocket 0.96 firmware packages, with matching board manifests.
-- Each firmware package includes license notices, corresponding sources and a tested relinking kit.
+- Firmware packages contain installation images, manifests, license notices and FIRMWARE-SOURCES.md with exact source/dependency links and rebuild instructions.
+- Firmware project sources: [$Tag](https://github.com/$Repository/tree/$Tag). Pinned third-party source archives and SDK versions: [Dependencies.cmake](https://github.com/$Repository/blob/$Tag/cmake/Dependencies.cmake). See the [firmware build and modification guide](https://github.com/$Repository/blob/$Tag/docs/firmware-licenses.md).
 - Complete sources for rebuilding (application + Qt): AllpowersMonitor-$assetVersion-sources-with-qt.zip.
 - One SHA256SUMS file covering all five downloads.
 

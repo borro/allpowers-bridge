@@ -81,7 +81,9 @@ if ($endpoint -eq 'repos/example/project/releases' -and $method -eq 'POST') {
   if ($request.tag_name -cne $state.tag -or
       $request.draft -ne $true -or $request.prerelease -ne ($state.tag -split '\+',2)[0].Contains('-') -or
       -not $request.body.Contains("<!-- allpowers-release-commit: $($state.commit) -->") -or
-      -not $request.body.Contains('- Synthetic version-specific change.')) {
+      -not $request.body.Contains('- Synthetic version-specific change.') -or
+      -not $request.body.Contains('FIRMWARE-SOURCES.md') -or
+      -not $request.body.Contains("https://github.com/example/project/blob/$($state.tag)/cmake/Dependencies.cmake")) {
     throw 'Invalid draft creation payload'
   }
   $state.exists=$true; $state.draft=$true; $state.body=$request.body

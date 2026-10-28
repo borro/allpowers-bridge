@@ -12,12 +12,23 @@ the LGPLv3 option, compatible with the Apache-2.0 components. The original
 Arduino license and headers remain intact; LGPLv3 and GPLv3 texts are also
 included in `licenses/`. Files with other licenses keep their original terms.
 
-Every board package must contain `ESP32-Arduino-LICENSE.md`, `licenses.zip` and
-`corresponding-source.zip`. Keep them with the binary distribution, including
-when mirroring a release. A link to an upstream project's current main branch
-does not replace the corresponding sources for the distributed firmware.
+Public board packages contain installation images, a manifest, license notices,
+`licenses.zip` and `FIRMWARE-SOURCES.md`. The latter identifies the exact project
+commit/tag, source archive, pinned third-party source downloads and their SHA256
+checksums, with build and modification instructions. Keep these directions and
+notices with the binary distribution, including when mirroring a release.
+The large generated source/object kit is not duplicated in public firmware ZIPs.
+Existing releases retain their original packages.
 
-The source ZIP contains the complete ALLPOWERS application and build scripts,
+GitHub's automatic source archive contains this repository, not the Arduino or
+ESP-IDF dependency sources, and lacks Git version/source-inventory metadata.
+For a supported rebuild, clone the release tag named in `FIRMWARE-SOURCES.md`;
+the build downloads the checksum-pinned SDK and corresponding source archives.
+The links identify the versions used for that binary, rather than an upstream
+project's current main branch. Redistribution must retain access to those
+matching sources and the ability to rebuild with modified LGPL libraries.
+
+The internal build's `corresponding-source.zip` contains the application and build scripts,
 the Arduino source release (including its omitted board-manager license), the
 generated Arduino release header, and the matching attribution/source archives
 for ESP-IDF, TinyUSB, TLSF, Mbed TLS and ESP Diagnostics. `DEPENDENCIES.md` records
@@ -41,20 +52,25 @@ does not waive GPL obligations for distributing standalone compiler libraries.
 
 ## Rebuild or relink
 
-1. Extract `corresponding-source.zip`. Install CMake/Ninja, a host C++ compiler,
-   Arduino CLI 1.5.1 and the Espressif toolchain; see `allpowers/docs/building.md`.
-   Build tools are installed separately and retain their own licenses.
-2. In `allpowers/`, configure the native preset and run `arduino-setup`, then
-   build `waveshare-147` or `pocket-096`. These targets compile and package only.
-   They never flash a device or change a station connection.
-3. To change Arduino, extract `dependencies/arduino-esp32-3.3.11.tar.gz` and copy
-   the supplied `core_version.h` into its `cores/esp32/` directory. Use that
+1. Clone the exact release tag using the command in `FIRMWARE-SOURCES.md`.
+   Install the pinned CMake/Ninja and host C++ compiler from
+   [the build guide](building.md). In Linux, run `cmake --preset firmware-linux`
+   and `cmake --build --preset firmware-linux`. These commands obtain the SDK,
+   compile both boards and generate their packages without accessing devices.
+2. The source/object kit and its offline relink test remain internal build
+   byproducts. They are not needed to install a public firmware package.
+   Third-party source downloads and hashes are listed in `FIRMWARE-SOURCES.md`
+   and `cmake/Dependencies.cmake` at the same commit.
+3. To change Arduino, obtain the pinned `arduino-esp32-3.3.11.tar.gz` from the
+   source links and copy `core_version.h` from the installed SDK into its
+   `cores/esp32/` directory. Use that
    source with a separate Arduino SDK installation. The publication check
    deliberately rejects an altered SDK until its corresponding sources and
    notices have also been updated. For local experiments, invoke Arduino CLI
    compile directly with the FQBN and C++ flags in `allpowers/cmake/Dependencies.cmake`
    and `allpowers/cmake/BuildFirmware.cmake`.
-4. To relink the supplied object kit, install `esp-x32/2601` and run:
+4. Developers using the internally generated object kit can install
+   `esp-x32/2601` and run:
 
    ```sh
    cmake -DTOOLCHAIN=/path/to/esp-x32/2601 -DKIT=/path/to/relink -P relink/RelinkFirmware.cmake

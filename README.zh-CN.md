@@ -87,4 +87,4 @@ BOOT 切换页面，双击 BOOT 打开设备选择器。两个 Windows 应用均
 
 项目原创代码采用 [MIT](LICENSE)，改编的 Windows 驱动程序采用 MS-PL。
 依赖项保留[各自的许可证](THIRD_PARTY_NOTICES.md)。重新分发二进制文件时，请参阅
-[Qt 重新链接](docs/relinking.md)及[固件源码包](docs/firmware-licenses.md)。
+[Qt 重新链接](docs/relinking.md)及[固件源码与重新构建](docs/firmware-licenses.md)。

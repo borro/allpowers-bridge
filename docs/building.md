@@ -556,8 +556,13 @@ The runtime ZIP and checksum sidecars remain internal build/CI artifacts; they
 are not uploaded alongside the EXEs and consolidated checksums.
 GitHub also provides its own source-code ZIP/tarball from the tag. Those do not
 include the bundled Qt sources and source-kit metadata in the full source ZIP.
-Firmware packages retain their own sources, relinking kits and license notices
-so each board download is self-contained.
+Firmware ZIPs contain installation images, a matching manifest, license notices
+and `FIRMWARE-SOURCES.md`. The large generated source/object kit remains an
+internal build byproduct. Public source directions link the exact GitHub release
+commit and pinned upstream source archives with SHA256 checksums; use the tagged
+Git clone for rebuilding. GitHub's source snapshot alone does not contain the
+external Arduino/ESP-IDF sources or Git version/inventory metadata. See
+[firmware rebuilding and modification](firmware-licenses.md).
 The release starts as a draft and
 becomes public only after every uploaded asset's size and server SHA256 match.
 Prerelease tags set GitHub's prerelease flag; stable tags become Latest.

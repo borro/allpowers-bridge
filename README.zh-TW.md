@@ -87,4 +87,4 @@ BOOT 切換頁面，按兩下 BOOT 開啟裝置選擇器。兩個 Windows 應用
 
 專案原創程式碼採用 [MIT](LICENSE)，改編的 Windows 驅動程式採用 MS-PL。
 相依項目保留[各自的授權](THIRD_PARTY_NOTICES.md)。重新散布二進位檔案時，請參閱
-[Qt 重新連結](docs/relinking.md)及[韌體原始碼套件](docs/firmware-licenses.md)。
+[Qt 重新連結](docs/relinking.md)及[韌體原始碼與重新建置](docs/firmware-licenses.md)。

@@ -55,7 +55,9 @@ $inputs = [ordered]@{
     cmake = $cmakeVersion[0]
     ninja = "$ninjaVersion"
 }
-foreach ($file in 'DependencyFingerprint.cmake', 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
+# The computed Qt digest above covers its selected pins and recipes. Hashing
+# the shared helper itself would also invalidate Qt for firmware-only edits.
+foreach ($file in 'QtStatic.cmake', 'WindowsCompiler.cmake', 'SizeOptimization.cmake',
                   'QtCache.ps1', 'QtCacheProbe.cmake', 'QtCacheImports.cmake', 'qt_cache_probe.cpp', 'QtSourceIdentity.cmake') {
     $inputs[$file] = (Get-FileHash -LiteralPath (Join-Path $Root "cmake/$file") -Algorithm SHA256).Hash
 }

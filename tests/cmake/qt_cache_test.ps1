@@ -38,9 +38,29 @@ try {
         } finally { [Environment]::SetEnvironmentVariable($name, $savedVersions[$name]) }
     }
     $dependencies = Get-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Raw
-    Set-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Value ($dependencies.Replace('"0.35.0"', '"0.99.0"'))
-    if ((Get-Key) -cne $baseline) { throw 'Mull version invalidated unrelated Qt SDK' }
-    Set-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Value $dependencies
+    # Exercise the complete PowerShell key, not just CMake's component digest.
+    # Firmware-only edits to the shared helper must not invalidate the Qt SDK.
+    $helperPath = "$source/cmake/DependencyFingerprint.cmake"
+    $helper = Get-Content -LiteralPath $helperPath -Raw
+    $changedHelper = $helper.Replace('set(recipes PrepareFirmwareKit.cmake ', 'set(recipes FirmwareOnlyFixture.cmake PrepareFirmwareKit.cmake ')
+    if ($changedHelper -ceq $helper) { throw 'Firmware helper fixture did not change' }
+    try {
+        Set-Content -LiteralPath $helperPath -Value $changedHelper
+        if ((Get-Key) -cne $baseline) { throw 'Firmware helper recipe invalidated unrelated Qt SDK' }
+    } finally { Set-Content -LiteralPath $helperPath -Value $helper }
+    foreach ($name in 'ALLPOWERS_MULL_VERSION', 'ALLPOWERS_ESP32_VERSION',
+                      'ALLPOWERS_QT_VERSION', 'ALLPOWERS_QTBASE_SHA256', 'ALLPOWERS_CXX_STANDARD') {
+        $pattern = '(?m)^(set\(' + [regex]::Escape($name) + '\s+)"[^"]+"(\))'
+        $changed = [regex]::Replace($dependencies, $pattern, '${1}"cache-test-change"${2}')
+        if ($changed -ceq $dependencies) { throw "$name fixture did not change" }
+        try {
+            Set-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Value $changed
+            $same = (Get-Key) -ceq $baseline
+            if ($name -in 'ALLPOWERS_MULL_VERSION', 'ALLPOWERS_ESP32_VERSION') {
+                if (!$same) { throw "$name invalidated unrelated Qt SDK" }
+            } elseif ($same) { throw "$name did not invalidate the Qt SDK" }
+        } finally { Set-Content -LiteralPath "$source/cmake/Dependencies.cmake" -Value $dependencies }
+    }
     Add-Content -LiteralPath "$source/cmake/QtStatic.cmake" -Value '# changed build recipe'
     if ((Get-Key) -ceq $baseline) { throw 'Qt build recipe did not invalidate the key' }
     $recipeKey = Get-Key

@@ -161,8 +161,10 @@ Hosted image labels are maintained images, not immutable VM snapshots.
 
 The Windows SDK job is the only writer of the Qt binary, Qt source archive and WDK
 caches within a run. Firmware is the only writer of Arduino and firmware legal
-source caches. Component fingerprints avoid invalidating Qt when analyzer
-versions change. Qt cache schema v3 records the full PE versions of `cl.exe` and
+source caches. The Qt key uses the computed Qt component fingerprint rather
+than the entire shared fingerprint helper. Firmware dependency versions and
+firmware-only helper recipes, as well as analyzer versions, do not invalidate
+the Qt SDK. Qt cache schema v3 records the full PE versions of `cl.exe` and
 `link.exe`, MSVC toolset, Windows SDK/UCRT, CMake/Ninja, absolute toolchain and
 installation paths, and static CRT/architecture/build settings. Pinned Qt source
 checksums and build recipes remain part of the key. It does not scan the entire

@@ -13,7 +13,12 @@ Arduino license and headers remain intact; LGPLv3 and GPLv3 texts are also
 included in `licenses/`. Files with other licenses keep their original terms.
 
 Public board packages contain installation images, a manifest, license notices,
-`licenses.zip` and `FIRMWARE-SOURCES.md`. The latter identifies the exact project
+the `licenses/` directory and `FIRMWARE-SOURCES.md`. `licenses/README.md` maps
+the components selected by the linker to full license texts (deduplicated by
+SHA256) and retained copyright/permission notices in `licenses/NOTICES.md`.
+`components.json` supplies the same component mapping for tooling. No nested
+license ZIP or unrelated SDK examples/compiler-language licenses are included.
+`FIRMWARE-SOURCES.md` identifies the exact project
 commit/tag, source archive, pinned third-party source downloads and their SHA256
 checksums, with build and modification instructions. Keep these directions and
 notices with the binary distribution, including when mirroring a release.
@@ -31,7 +36,7 @@ matching sources and the ability to rebuild with modified LGPL libraries.
 The internal build's `corresponding-source.zip` contains the application and build scripts,
 the Arduino source release (including its omitted board-manager license), the
 generated Arduino release header, and the matching attribution/source archives
-for ESP-IDF, TinyUSB, TLSF, Mbed TLS and ESP Diagnostics. `DEPENDENCIES.md` records
+for ESP-IDF, NimBLE, TinyUSB, TLSF, Mbed TLS and ESP Diagnostics. `DEPENDENCIES.md` records
 their immutable revisions/versions, download locations and SHA256 checksums.
 ESP-IDF's archive does not contain its Git submodules; the separately included
 archives cover the open-source submodules actually linked here. It is not
@@ -95,8 +100,8 @@ does not waive GPL obligations for distributing standalone compiler libraries.
 | ALLPOWERS application and model definitions | MIT, `allpowers/LICENSE` and model notices |
 | Arduino core and libraries | LGPL-2.1-or-later and per-file terms, Arduino source archive |
 | ESP-IDF | Apache-2.0 and component-specific terms, IDF source archive and `licenses/` |
-| FreeRTOS, TinyUSB, TLSF, newlib | MIT/BSD variants and per-file notices, `licenses/` and source archives |
-| Mbed TLS, ESP Diagnostics | Apache-2.0 and retained third-party notices |
+| FreeRTOS, TinyUSB, TinyCrypt, TLSF, newlib | MIT/BSD variants and per-file notices, `licenses/` and source archives |
+| NimBLE, Mbed TLS, ESP Diagnostics | Apache-2.0 and retained third-party notices |
 | Espressif BT controller, PHY/BT baseband, coexistence archives | Apache-2.0, `bt-LICENSE`, `phy-LICENSE`, `coex-LICENSE`; binary-only portions retain those terms |
 | GCC libgcc / libstdc++ | GPL with GCC Runtime Library Exception; generated firmware is not relicensed to GPL solely by these runtimes |
 

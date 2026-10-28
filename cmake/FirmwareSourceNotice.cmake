@@ -27,7 +27,7 @@ function(ap_firmware_source_notice output tag commit)
     list(GET fields 2 hash)
     string(APPEND text "- [${name}](${url})\n  SHA256: `${hash}`\n")
   endforeach()
-  string(APPEND text "\nThe archive's `licenses.zip` retains license texts and notices. "
+  string(APPEND text "\nThe archive's `licenses/README.md` maps linked components to unique full license texts and copyright/NOTICE records in `licenses/NOTICES.md`. "
     "Generated object files and the internal relinking test kit are not firmware installation files.\n")
   file(WRITE "${output}" "${text}")
 endfunction()

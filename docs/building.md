@@ -8,6 +8,8 @@ Git, CMake 4.4+, Ninja and a C++23 compiler are required. The pinned build tools
 are CMake 4.4.4 and Ninja 1.13.2. No Python or uv wrapper drives the build, tests or
 packaging. The optional USB maintenance tools are separate; upstream Arduino
 SDK tools may internally use their own Python.
+Firmware packaging also needs Python 3.10+ for the offline component/notice
+inventory, invoked by CMake. It does not drive compilation or access devices.
 Git is also used by the publication regression tests when rebuilding a source kit
 without its original `.git` directory.
 
@@ -556,8 +558,10 @@ The runtime ZIP and checksum sidecars remain internal build/CI artifacts; they
 are not uploaded alongside the EXEs and consolidated checksums.
 GitHub also provides its own source-code ZIP/tarball from the tag. Those do not
 include the bundled Qt sources and source-kit metadata in the full source ZIP.
-Firmware ZIPs contain installation images, a matching manifest, license notices
-and `FIRMWARE-SOURCES.md`. The large generated source/object kit remains an
+Firmware ZIPs contain installation images, a matching manifest, a `licenses/`
+folder and `FIRMWARE-SOURCES.md`. `licenses/README.md` maps linked components to
+unique license texts and retained copyright/NOTICE records; all these files are
+covered by the manifest hashes. The large generated source/object kit remains an
 internal build byproduct. Public source directions link the exact GitHub release
 commit and pinned upstream source archives with SHA256 checksums; use the tagged
 Git clone for rebuilding. GitHub's source snapshot alone does not contain the

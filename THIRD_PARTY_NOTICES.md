@@ -12,7 +12,7 @@ Qt, Python build tools, compiler runtimes or the Arduino/Espressif SDK.
 | Microsoft WDK/Windows SDK | Build tools/headers/import libraries under Microsoft's SDK license; original SDK sources and tools are not bundled in the application. |
 | SQLite bundled with Qt | Public domain plus notices supplied by Qt |
 | Microsoft C++ runtime | Release runtime statically linked with /MT under Microsoft's redistribution terms; docs/windows-runtime-terms.md. Open-source STL portions: Apache-2.0 WITH LLVM-exception, docs/licenses/MSVC-STL.md. |
-| Arduino ESP32 Core / ESP-IDF | LGPL-2.1-or-later (LGPLv3 option used) / Apache-2.0 and component-specific licenses; public firmware ZIPs include licenses.zip and FIRMWARE-SOURCES.md with exact project/dependency sources and rebuild instructions. See docs/firmware-licenses.md. |
+| Arduino ESP32 Core / ESP-IDF | LGPL-2.1-or-later (LGPLv3 option used) / Apache-2.0 and component-specific licenses; public firmware ZIPs include licenses/README.md mapping linked components to deduplicated license texts and retained copyright/NOTICE records, and FIRMWARE-SOURCES.md with exact sources and rebuild instructions. See docs/firmware-licenses.md. |
 | FreeType in Qt | FreeType Project License; portions of this software are copyright (c) 2026 The FreeType Project (https://freetype.org). All rights reserved. Original notices are embedded. |
 | PCRE2, HarfBuzz, libpng, zlib and other Qt components | Original copyright and license files, including those referenced by Qt attribution metadata, are embedded and exportable. |
 | CMake and Ninja | Build/test/package tools only; not embedded in the application |

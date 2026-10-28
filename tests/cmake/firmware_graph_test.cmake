@@ -19,7 +19,8 @@ file(WRITE "${source}/VERSION" "1.2.3\n")
 # Use the actual graph, staging, partition validation and manifest generation.
 # Only the external compiler and legal-source packaging boundaries are fixtures.
 file(WRITE "${source}/cmake/PrepareFirmwareKit.cmake" [=[
-foreach(name corresponding-source.zip licenses.zip FIRMWARE-LICENSES.md)
+file(MAKE_DIRECTORY "${OUTPUT}/licenses")
+foreach(name corresponding-source.zip FIRMWARE-LICENSES.md licenses/README.md licenses/NOTICES.md licenses/components.json)
   file(WRITE "${OUTPUT}/${name}" "offline legal-packaging fixture\n")
 endforeach()
 ]=])
@@ -72,8 +73,8 @@ function(build expected)
       message(FATAL_ERROR "${board}: expected ${expected} compiler invocations, got ${count}: ${log}")
     endif()
     foreach(name manifest.json R2500Adapter.ino.bin R2500Adapter.ino.bootloader.bin R2500Adapter.ino.partitions.bin
-        boot_app0.bin LICENSE THIRD_PARTY_NOTICES.md AllpowersModels.LICENSE.txt ESP32-Arduino-LICENSE.md
-        corresponding-source.zip licenses.zip FIRMWARE-LICENSES.md)
+        boot_app0.bin corresponding-source.zip FIRMWARE-LICENSES.md
+        licenses/README.md licenses/NOTICES.md licenses/components.json)
       if(NOT EXISTS "${source}/build/dist/firmware/${board}/${name}")
         message(FATAL_ERROR "Missing existing graph output: ${board}/${name}")
       endif()

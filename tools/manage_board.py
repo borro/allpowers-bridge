@@ -1,6 +1,6 @@
 """Explicit, identity-checked USB maintenance. Never runs during a build."""
 from __future__ import annotations
-import argparse, json, subprocess, sys
+import argparse, json, re, subprocess, sys
 from pathlib import Path
 from boards import ROOT, BOARDS, device, rom_port
 from image_contract import SEGMENTS
@@ -18,8 +18,10 @@ def validate_image(folder,board):
     if {name for name in manifest['files'] if name.endswith('.bin')} != required:
         raise ValueError('Unexpected firmware segment')
     for name,expected in manifest['files'].items():
+        if not re.fullmatch(r'(?:licenses/)?[A-Za-z0-9][A-Za-z0-9_.-]*',name):
+            raise ValueError('Unsafe image filename: '+name)
         path=(folder/name).resolve()
-        if path.parent!=folder.resolve() or sha(path)!=expected:raise ValueError('Image integrity mismatch: '+name)
+        if not path.is_relative_to(folder.resolve()) or sha(path)!=expected:raise ValueError('Image integrity mismatch: '+name)
     write_plan(folder)
     history_contract(manifest, folder/'R2500Adapter.ino.bin')
     return manifest

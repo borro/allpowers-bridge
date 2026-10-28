@@ -106,6 +106,27 @@ class ImageContractTests(unittest.TestCase):
         (self.folder / 'unexpected.bin').write_bytes(b'x')
         self.rejected()
 
+    def test_nested_license_hashes_and_path_guards(self):
+        self.manifest()
+        path = self.folder / 'manifest.json'
+        value = json.loads(path.read_text())
+        notices = self.folder / 'licenses/NOTICES.md'
+        notices.parent.mkdir()
+        notices.write_text('Copyright contributors\n')
+        value['files']['licenses/NOTICES.md'] = contract.sha(notices)
+        path.write_text(json.dumps(value))
+        manage_board.validate_image(self.folder, 'waveshare-147')
+        notices.write_text('Changed notice')
+        with self.assertRaisesRegex(ValueError, 'integrity'):
+            manage_board.validate_image(self.folder, 'waveshare-147')
+        notices.write_text('Copyright contributors\n')
+        for unsafe in ('licenses/../manifest.json', '../outside', '/absolute',
+                       'licenses/subdir/notice.txt', 'licenses\\NOTICES.md', 'licenses/extra.bin'):
+            bad = {**value, 'files': {**value['files'], unsafe: '0' * 64}}
+            path.write_text(json.dumps(bad))
+            with self.subTest(unsafe=unsafe), self.assertRaises(ValueError):
+                manage_board.validate_image(self.folder, 'waveshare-147')
+
     def test_storage_capability_metadata_and_binary_are_both_required(self):
         self.manifest()
         path=self.folder/'manifest.json'

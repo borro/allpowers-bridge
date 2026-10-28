@@ -59,6 +59,7 @@ set(ALLPOWERS_FIRMWARE_SOURCE_ARCHIVES
   "esp-idf-b774170.tar.gz|https://api.github.com/repos/espressif/esp-idf/tarball/${ALLPOWERS_ESP32_IDF_REVISION}|8cc2e9abe155426ed0de832eeb77ac30a1a09504f9a9f5e10a2402e7e8e03021|espressif-esp-idf-b774170"
   "tinyusb.tar.gz|https://api.github.com/repos/hathach/tinyusb/tarball/53f8c53c2|62bde3800eef77c43d86edd794b6d64cd151e7550bb347eb03e53e42651bc3f6|hathach-tinyusb-53f8c53"
   "tlsf.tar.gz|https://api.github.com/repos/espressif/tlsf/tarball/2867f6883a12920b1969ff9624c0ab0e4185c2ce|4f23063e0dd0fa2297f1eb3262390847f900917f74d3210d3da03665fb16230e|espressif-tlsf-2867f68"
+  "nimble-685675c.tar.gz|https://api.github.com/repos/espressif/esp-nimble/tarball/685675c0128deafdd201c9eb82e61d227364646c|ff603fa6e2d325e0029e0e81dc28ed55e2855632a07c5beb13226696c857c969|espressif-esp-nimble-685675c"
   "mbedtls.tar.gz|https://api.github.com/repos/espressif/mbedtls/tarball/9d669eadb1955d348986b9280156710aaaadf79f|9beefd652664a896167011515bdd1fd65cb0e3463b4e9a3a93052bd61a95f66a|espressif-mbedtls-9d669ea"
   "esp-diagnostics-1.3.3.zip|https://components-file.espressif.com/components/espressif/esp_diagnostics/1.3.3/espressif__esp_diagnostics-v1.3.3.zip|3ba9c6c7bed105131065d8bfdbf910bacb8f4d1055a45430aa41b5aec6b18b55|."
   "esp32-lib-builder-ee57070.tar.gz|https://api.github.com/repos/espressif/esp32-arduino-lib-builder/tarball/ee57070cc8571c488a64b8ef028684acdc6ff5e2|bfe025957f2412843e8a8c3a19a4cf329e1972d9d4b1ed5c7d479323d17cd548|espressif-esp32-arduino-lib-builder-ee57070")

@@ -115,8 +115,6 @@ foreach(record IN LISTS ALLPOWERS_FIRMWARE_SOURCE_ARCHIVES ALLPOWERS_FIRMWARE_BI
     endif()
   endforeach()
 endforeach()
-# Arduino's board-manager package omits LICENSE.md. Its source release does not.
-file(COPY_FILE "${arduino_source}/LICENSE.md" "${OUTPUT}/ESP32-Arduino-LICENSE.md" ONLY_IF_DIFFERENT)
 foreach(part cores libraries variants)
   file(GLOB_RECURSE installed LIST_DIRECTORIES FALSE RELATIVE "${sdk}" "${sdk}/${part}/*")
   foreach(relative IN LISTS installed)
@@ -230,7 +228,6 @@ file(WRITE "${payload}/allpowers/VERSION" "${VERSION}\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E tar cf "${OUTPUT}/corresponding-source.zip"
   --format=zip -- allpowers dependencies licenses relink README.md DEPENDENCIES.md
   WORKING_DIRECTORY "${payload}" COMMAND_ERROR_IS_FATAL ANY)
-execute_process(COMMAND "${CMAKE_COMMAND}" -E tar cf "${OUTPUT}/licenses.zip"
-  --format=zip -- licenses README.md DEPENDENCIES.md
-  WORKING_DIRECTORY "${payload}" COMMAND_ERROR_IS_FATAL ANY)
+include("${CMAKE_CURRENT_LIST_DIR}/CollectFirmwareNotices.cmake")
+ap_collect_firmware_notices("${ROOT}" "${WORK}" "${OUTPUT}" "${DATA}" "${CACHE}")
 file(COPY_FILE "${ROOT}/docs/firmware-licenses.md" "${OUTPUT}/FIRMWARE-LICENSES.md" ONLY_IF_DIFFERENT)

@@ -1,4 +1,11 @@
 include(ExternalProject)
+option(ALLPOWERS_QT_LOG_BUILD "Capture Qt compilation in ExternalProject logs" ON)
+if(ALLPOWERS_QT_LOG_BUILD)
+  set(qt_build_terminal FALSE)
+else()
+  # Ninja buffers ordinary jobs. Its console pool streams the inner build live.
+  set(qt_build_terminal TRUE)
+endif()
 set(ALLPOWERS_QT_JOBS 2 CACHE STRING "Parallel Qt compiler jobs (bounded for hosted CI runners)")
 set(ALLPOWERS_QT_ROOT "" CACHE PATH "Optional prebuilt static Qt MSVC installation")
 set(ALLPOWERS_QT_SOURCE_CACHE "${ALLPOWERS_DEPS_DIR}/downloads" CACHE PATH "Verified Qt source archives")
@@ -43,7 +50,8 @@ ExternalProject_Add(qtbase-static
     -DFEATURE_system_freetype=OFF -DFEATURE_system_harfbuzz=OFF -DFEATURE_system_sqlite=OFF
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_QT_JOBS}"
   INSTALL_BYPRODUCTS "${ALLPOWERS_QT_ROOT}/lib/Qt6Core.lib"
-  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON
+  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ${ALLPOWERS_QT_LOG_BUILD} LOG_INSTALL ON
+  USES_TERMINAL_BUILD ${qt_build_terminal}
   STEP_TARGETS configure
   LOG_OUTPUT_ON_FAILURE ON EXCLUDE_FROM_ALL TRUE)
 ExternalProject_Add_Step(qtbase-static compiler-config
@@ -59,7 +67,8 @@ ExternalProject_Add(qtconnectivity-static
   CMAKE_ARGS ${qt_common} -DFEATURE_winrt_bt=ON -DFEATURE_nfc=OFF "-DCMAKE_PREFIX_PATH=${ALLPOWERS_QT_ROOT}"
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_QT_JOBS}"
   INSTALL_BYPRODUCTS "${ALLPOWERS_QT_ROOT}/lib/Qt6Bluetooth.lib"
-  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON
+  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ${ALLPOWERS_QT_LOG_BUILD} LOG_INSTALL ON
+  USES_TERMINAL_BUILD ${qt_build_terminal}
   LOG_OUTPUT_ON_FAILURE ON EXCLUDE_FROM_ALL TRUE)
 ExternalProject_Add_Step(qtconnectivity-static compiler-config
   DEPENDEES patch DEPENDERS configure
@@ -79,7 +88,8 @@ ExternalProject_Add(qttools-static
     -DFEATURE_qtdiag=OFF -DFEATURE_qtplugininfo=OFF
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_QT_JOBS}"
   INSTALL_BYPRODUCTS "${ALLPOWERS_QT_ROOT}/bin/lrelease.exe" "${ALLPOWERS_QT_ROOT}/bin/lupdate.exe"
-  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON
+  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ${ALLPOWERS_QT_LOG_BUILD} LOG_INSTALL ON
+  USES_TERMINAL_BUILD ${qt_build_terminal}
   LOG_OUTPUT_ON_FAILURE ON EXCLUDE_FROM_ALL TRUE)
 ExternalProject_Add_Step(qttools-static compiler-config
   DEPENDEES patch DEPENDERS configure

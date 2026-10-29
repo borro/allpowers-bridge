@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) key=allpowers.hookCMakeWindows ;;
+  *) key=allpowers.hookCMakeLinux ;;
+esac
+runner=$(git config --get "$key" || command -v cmake)
+exec "$runner" "-DROOT=$root" -DPHASE=commit -P "$root/cmake/GitHooks.cmake"

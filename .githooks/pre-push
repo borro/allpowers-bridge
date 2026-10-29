@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) key=allpowers.hookCMakeWindows ;;
+  *) key=allpowers.hookCMakeLinux ;;
+esac
+runner=$(git config --get "$key" || command -v cmake)
+mkdir -p "$root/build/git-hooks"
+input=$(mktemp "$root/build/git-hooks/push.XXXXXXXX")
+trap 'rm -f "$input"' EXIT HUP INT TERM
+cat > "$input"
+"$runner" "-DROOT=$root" -DPHASE=push "-DPUSH_INPUT=$input" -P "$root/cmake/GitHooks.cmake"

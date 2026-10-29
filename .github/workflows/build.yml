@@ -580,7 +580,7 @@ jobs:
     - name: Identify compatible Qt SDK
       id: qt-key
       shell: pwsh
-      run: ./cmake/QtCache.ps1 -Mode Key
+      run: cmake -DMODE=Key -P cmake/QtCache.cmake
     - name: Restore qt-sources
       id: qt-sources
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -604,7 +604,7 @@ jobs:
       continue-on-error: true
     - name: Prepare and validate complete SDKs
       shell: pwsh
-      run: ./cmake/PrepareWindowsSdk.ps1
+      run: cmake -P cmake/PrepareWindowsSdk.cmake
       id: prepare-and-validate-complete-sdks
     - name: Save complete qt
       if: ${{ steps.qt.outputs.cache-hit != 'true' }}
@@ -804,7 +804,7 @@ jobs:
       id: download-this-run-s-windows-sdk
     - name: Verify SDK or rebuild for this runner
       shell: pwsh
-      run: ./cmake/PrepareWindowsSdk.ps1
+      run: cmake -P cmake/PrepareWindowsSdk.cmake
       id: verify-sdk-or-rebuild-for-this-runner
     - name: Install verified coverage tool
       id: coverage-tools
@@ -1020,7 +1020,7 @@ jobs:
       id: download-this-run-s-windows-sdk
     - name: Verify SDK or rebuild for this runner
       shell: pwsh
-      run: ./cmake/PrepareWindowsSdk.ps1
+      run: cmake -P cmake/PrepareWindowsSdk.cmake
       id: verify-sdk-or-rebuild-for-this-runner
     - name: Configure Windows Release
       env:
@@ -1216,7 +1216,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE_TAG: ${{ github.ref_name }}
-      run: ./cmake/PublishRelease.ps1 -Repository "$env:GITHUB_REPOSITORY" -Tag "$env:RELEASE_TAG" -Assets build/release-assets
+      run: python -I -S -B cmake/publish_release.py --repository "$env:GITHUB_REPOSITORY" --tag "$env:RELEASE_TAG" --assets build/release-assets
       id: publish-complete-release
     - name: Publish job summary
       if: always()

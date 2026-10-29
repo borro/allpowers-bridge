@@ -1,5 +1,59 @@
 # CI builds and dependency caches
 
+## Local Git hooks
+
+The optional hooks use CMake for Git snapshots and CTest for parallel scheduling,
+failure handling, logs and timings. Install with
+`cmake -P cmake/InstallGitHooks.cmake` after preparing the coverage,
+static-analysis and mutation toolchains for the host.
+The installer discovers their paths from the existing CMake caches and writes
+ignored `.local/hooks.json`; `-DCONFIG=<file>` can supply explicit local paths.
+It sets this checkout's `core.hooksPath` to `.githooks` and refuses to replace
+another configured hook setup. It records the native CMake executable in local
+Git configuration. Windows uses WSL for Linux checks and a CMake adapter calling
+the vendor's MSVC environment batch file; a Developer PowerShell session is unnecessary. All host-specific
+integration is confined to `.githooks/`. Linux runs natively without PowerShell
+and leaves Windows units/coverage to CI. No Python build wrapper is used.
+
+- **Pre-commit**, in parallel: index audit, Windows application formatting,
+  secret scanning, staged whitespace checks, portable Windows and Linux units,
+  Clang-Tidy/Cppcheck, Linux coverage (100% for core and host-tested firmware),
+  ASan/UBSan, and Valgrind including its failing control.
+- **Pre-push**, in parallel: mutation tests including their control and survivor
+  review, both fuzzers with **30 seconds each** and their fatal-UB control, and
+  Windows coverage with its existing per-area thresholds.
+
+Commit builds use a snapshot of the index, so partially staged changes are
+checked exactly as prepared. The working tree and index are never stashed,
+reset or rewritten. A concurrent index/HEAD change rejects the result. Push
+checks use the commits supplied by Git, including non-HEAD branches and tags;
+duplicate tips are checked once and ref deletions need no build. Multiple
+distinct tips are checked sequentially, with selected checks parallel per tip.
+Any failed or unavailable selected check blocks the operation; checks are not skipped
+based on changed paths. Audit and secret scanning also retain their original
+repository context, including local identity guards and secret history.
+
+The persistent snapshot and isolated build directories live in
+`build/git-hooks/`. A lock prevents overlapping hook invocations. Source files
+are refreshed only when their bytes change, preserving incremental builds.
+Each task uses two build workers; analyzer/runtime tools retain their own worker
+limits. CTest logs and JUnit timings are in `build/git-hooks/logs/`. First runs
+build the dedicated targets and take longer than warm runs. Manual commands:
+
+```sh
+cmake -DPHASE=commit -P cmake/GitHooks.cmake
+cmake -DPHASE=push -DREVISION=HEAD -P cmake/GitHooks.cmake
+```
+
+Existing project builds also expose `pre-commit`, `pre-push` (HEAD), and
+`install-git-hooks` targets, for example `cmake --build --preset native --target pre-commit`.
+
+CI keeps its full checks and the default **120 seconds per fuzzer**. The local
+30-second override is confined to the hook build. To remove the local hook
+configuration, run `git config --local --unset core.hooksPath`.
+
+## CI execution
+
 `Build and test` runs on every branch push, pull request, tag and manual dispatch.
 The required aggregate check is **CI result**. Branch protection is configured
 separately; do not require individual conditionally skipped jobs.
@@ -169,7 +223,7 @@ caches within a run. Firmware is the only writer of Arduino and firmware legal
 source caches. The Qt key uses the computed Qt component fingerprint rather
 than the entire shared fingerprint helper. Firmware dependency versions and
 firmware-only helper recipes, as well as analyzer versions, do not invalidate
-the Qt SDK. Qt cache schema v3 records the full PE versions of `cl.exe` and
+the Qt SDK. Qt cache schema v4 records SHA256 hashes of `cl.exe` and
 `link.exe`, MSVC toolset, Windows SDK/UCRT, CMake/Ninja, absolute toolchain and
 installation paths, and static CRT/architecture/build settings. Pinned Qt source
 checksums and build recipes remain part of the key. It does not scan the entire
@@ -177,7 +231,7 @@ toolchain tree: replacing an SDK header/library without changing its version is
 outside this identity policy. The cache is intended for managed GitHub-hosted
 toolchains. Restore still checks Qt binary/source hashes, static linkage, WinRT,
 compile/link compatibility and offline execution. Key computation time appears
-in logs and the SDK job summary. The v3 transition creates a new Qt cache once;
+in logs and the SDK job summary. The v4 transition creates a new Qt cache once;
 source and WDK archive caches keep their existing keys.
 
 Arduino cache schema v3 stores only installed Linux package data and Arduino CLI.
@@ -202,12 +256,19 @@ SDK transport artifacts are retained for one day; reports and release transport
 artifacts for 14 days. An expired SDK
 artifact requires rerunning its producer as well as failed consumers.
 
-Cold Qt builds keep full ExternalProject logs and print a short progress sample
-every 30 seconds: component/phase, elapsed time, last log update and up to three
-tail lines from a changed log. The outer Ninja `[n/total]` counts build-graph steps, not individual
-Qt compiler checks or source files. An unchanged log age is reported honestly;
-it is not proof of progress or a hang. SDK diagnostics are uploaded separately.
-The observer does not alter Qt build options or dependency cache fingerprints.
+`cmake -P cmake/PrepareWindowsSdk.cmake` restores and validates the SDK, or builds
+and seals it. Cold CI builds stream Qt's inner Ninja compilation progress directly
+(`ALLPOWERS_QT_LOG_BUILD=OFF`); download, configure and install logs remain in
+ExternalProject directories. Local builds retain captured compilation logs by default.
+SDK diagnostics are uploaded separately. Qt cache schema v4 hashes the actual
+compiler/linker binaries and the CMake cache recipe; the migration fills a new
+cache once. No PowerShell progress observer or cache wrapper is required.
+
+Release publication uses the portable `cmake/publish_release.py` tool after CMake
+has prepared all assets. Its offline fake-API regressions run on Windows and Linux,
+including interrupted uploads, immutable published releases and tag/asset mismatches.
+The only maintained `.ps1` is `cmake/CheckExeVersion.ps1`, a small Windows
+VERSIONINFO reader used when checking Windows binaries.
 
 ## Local entry points
 

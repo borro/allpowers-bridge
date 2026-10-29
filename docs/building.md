@@ -4,12 +4,17 @@
 
 ## Tools and presets
 
+Optional parallel commit/push checks are described in [local Git hooks](ci.md#local-git-hooks).
+
 Git, CMake 4.4+, Ninja and a C++23 compiler are required. The pinned build tools
 are CMake 4.4.4 and Ninja 1.13.2. No Python or uv wrapper drives the build, tests or
 packaging. The optional USB maintenance tools are separate; upstream Arduino
 SDK tools may internally use their own Python.
 Firmware packaging also needs Python 3.10+ for the offline component/notice
 inventory, invoked by CMake. It does not drive compilation or access devices.
+Release publication and its offline API regression tests use Python 3.10+ as well.
+Qt SDK preparation and cache validation use CMake; PowerShell is only needed for
+the Windows executable VERSIONINFO check, not for hook orchestration.
 Git is also used by the publication regression tests when rebuilding a source kit
 without its original `.git` directory.
 

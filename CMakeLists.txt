@@ -22,6 +22,9 @@ add_subdirectory(core)
 add_dependencies(core product-identity)
 if(BUILD_TESTING)
   add_subdirectory(tests/native)
+  add_test(NAME git-hooks COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+    "-DWORK=${PROJECT_BINARY_DIR}/git-hook-tests" "-DNINJA=${CMAKE_MAKE_PROGRAM}"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/git_hooks_test.cmake")
   if(ALLPOWERS_FUZZING)
     add_subdirectory(tests/fuzz)
   endif()
@@ -37,7 +40,7 @@ if(BUILD_TESTING)
     "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
     "-DWORK=${PROJECT_BINARY_DIR}/incremental-test" "-DCXX=${CMAKE_CXX_COMPILER}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/incremental_test.cmake")
-  set(build_checks build-identity firmware-staging firmware-graph partitions dependency-fingerprint)
+  set(build_checks build-identity firmware-staging firmware-graph partitions dependency-fingerprint release-publish)
   if(MSVC OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
     list(APPEND build_checks coverage-policy)
   endif()
@@ -68,10 +71,9 @@ if(BUILD_TESTING)
       "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/size-optimization-tests"
       "-DCXX=${CMAKE_CXX_COMPILER}" "-DNINJA=${CMAKE_MAKE_PROGRAM}"
       -P "${PROJECT_SOURCE_DIR}/tests/cmake/size_optimization_test.cmake")
-    find_program(ALLPOWERS_PWSH NAMES pwsh powershell REQUIRED)
-    add_test(NAME qt-cache COMMAND "${ALLPOWERS_PWSH}" -NoProfile -File
-      "${PROJECT_SOURCE_DIR}/tests/cmake/qt_cache_test.ps1"
-      -Root "${PROJECT_SOURCE_DIR}" -Work "${PROJECT_BINARY_DIR}/qt-cache-tests")
+    add_test(NAME qt-cache COMMAND "${CMAKE_COMMAND}"
+      "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/qt-cache-tests"
+      -P "${PROJECT_SOURCE_DIR}/tests/cmake/qt_cache_test.cmake")
     add_test(NAME release-assets COMMAND "${CMAKE_COMMAND}"
       "-DROOT=${PROJECT_SOURCE_DIR}" "-DBUILD_ROOT=${PROJECT_BINARY_DIR}"
       "-DWORK=${PROJECT_BINARY_DIR}/release-asset-tests" "-DCXX=${CMAKE_CXX_COMPILER}"
@@ -102,6 +104,12 @@ add_custom_target(audit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}
   -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
 add_custom_target(format-check COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   "-DWORK=${PROJECT_BINARY_DIR}/format" -P "${PROJECT_SOURCE_DIR}/cmake/RunFormat.cmake" VERBATIM)
+add_custom_target(pre-commit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  -DPHASE=commit -P "${PROJECT_SOURCE_DIR}/cmake/GitHooks.cmake" USES_TERMINAL VERBATIM)
+add_custom_target(pre-push COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  -DPHASE=push -DREVISION=HEAD -P "${PROJECT_SOURCE_DIR}/cmake/GitHooks.cmake" USES_TERMINAL VERBATIM)
+add_custom_target(install-git-hooks COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  -P "${PROJECT_SOURCE_DIR}/cmake/InstallGitHooks.cmake" USES_TERMINAL VERBATIM)
 add_custom_target(audit-worktree COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   -DMODE=worktree -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
 add_custom_target(audit-history COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"

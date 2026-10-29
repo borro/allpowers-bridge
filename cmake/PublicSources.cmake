@@ -19,6 +19,12 @@ function(ap_check_public_path name)
 endfunction()
 
 set(AP_PUBLIC_SPECIAL_FILES
+  .githooks/pre-commit
+  .githooks/pre-push
+  .githooks/Host.cmake
+  .githooks/Windows.cmake
+  .githooks/WindowsEnvironment.cmd
+  cmake/HookChecks/CMakeLists.txt
   .clang-tidy
   cmake/AnalysisRules.ruleset
   codecov.yml

@@ -98,6 +98,8 @@ Linux поддерживает ядро и сборку прошивок, при
 
 CI также требует соблюдения форматирования Windows-приложения и минимального покрытия host-кода по отдельным областям. [Форматирование](docs/building.md#formatting) · [Правила покрытия](docs/building.md#test-coverage).
 
+[Локальные Git-хуки](docs/ci.md#local-git-hooks) используют CMake/CTest для параллельных проверок подготовленного к коммиту снимка и отправляемых коммитов, без запуска через PowerShell. Windows использует WSL; на Linux Windows-проверки остаются CI. Установка после подготовки инструментов: `cmake -P cmake/InstallGitHooks.cmake`.
+
 CI отправляет закреплённые зависимости C/C++ из `cmake/Dependencies.cmake` в [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). В pull request проверяется снимок; отправка выполняется только из основной ветки. Сводка и артефакты CI содержат список со ссылками на репозитории, исходники и уведомления о лицензиях. [Охват и локальная проверка](docs/ci.md#cc-dependency-graph).
 
 ## Лицензия

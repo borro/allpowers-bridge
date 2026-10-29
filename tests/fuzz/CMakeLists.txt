@@ -1,4 +1,9 @@
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+set(ALLPOWERS_FUZZ_SECONDS 120 CACHE STRING "Time budget per fuzzer in seconds")
+if(NOT ALLPOWERS_FUZZ_SECONDS MATCHES "^[1-9][0-9]*$" OR ALLPOWERS_FUZZ_SECONDS GREATER 3600)
+  message(FATAL_ERROR "ALLPOWERS_FUZZ_SECONDS must be an integer from 1 to 3600")
+endif()
+math(EXPR fuzz_timeout "${ALLPOWERS_FUZZ_SECONDS} + 60")
 set(fuzz_output "${PROJECT_BINARY_DIR}/fuzz")
 add_custom_target(fuzz-corpus
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/seed_corpus.py" "${fuzz_output}"
@@ -27,8 +32,8 @@ foreach(subject ble cdc control)
     set(max_length 2048)
   endif()
   add_test(NAME fuzz-${subject} COMMAND fuzz_${subject}
-    "${fuzz_output}/${subject}/corpus" -max_total_time=120 -max_len=${max_length}
+    "${fuzz_output}/${subject}/corpus" -max_total_time=${ALLPOWERS_FUZZ_SECONDS} -max_len=${max_length}
     -timeout=5 -rss_limit_mb=1024 -seed=20261027 -print_final_stats=1
     "-artifact_prefix=${fuzz_output}/${subject}/crashes/")
-  set_tests_properties(fuzz-${subject} PROPERTIES LABELS fuzz TIMEOUT 180)
+  set_tests_properties(fuzz-${subject} PROPERTIES LABELS fuzz TIMEOUT ${fuzz_timeout})
 endforeach()

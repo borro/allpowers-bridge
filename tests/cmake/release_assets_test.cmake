@@ -224,7 +224,8 @@ file(GLOB premature_firmware "${scratch}/output-unversioned-exe/AllpowersFirmwar
 if(premature_firmware)
   message(FATAL_ERROR "Release published firmware archives before rejecting the invalid EXE")
 endif()
-execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/tests/cmake/release_publish_test.ps1"
-  -Root "${ROOT}" -Work "${scratch}/publisher-tests" -Assets "${scratch}/output-valid" -Tag "v${version}"
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+execute_process(COMMAND "${Python3_EXECUTABLE}" -I -S -B "${ROOT}/tests/cmake/release_publish_test.py"
+  --root "${ROOT}" --work "${scratch}/publisher-tests" --assets "${scratch}/output-valid" --tag "v${version}"
   COMMAND_ERROR_IS_FATAL ANY)
 message(STATUS "Release VERSIONINFO, source/firmware versions, hashes and publication guards passed")

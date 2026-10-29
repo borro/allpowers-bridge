@@ -49,7 +49,8 @@ bool exportEmbeddedLicenses(const QString &directory) {
       // QTemporaryFile::close() retains its native handle until destruction.
     }
     std::error_code error;
-    std::filesystem::rename(QFile(temporary).filesystemFileName(), QFile(path).filesystemFileName(), error);
+    std::filesystem::rename(QFile(temporary).filesystemFileName(), QFile(path).filesystemFileName(),
+                            error);
     if (error) {
       QFile::remove(temporary);
       return false;

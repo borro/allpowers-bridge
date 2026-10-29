@@ -283,8 +283,8 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   connect(this, &WidgetController::loadHistory, history, &HistoryWorker::load);
   connect(this, &WidgetController::sample, history, &HistoryWorker::sample);
   connect(history, &HistoryWorker::sampleFinished, this, [this] {
-    if (auto next=sampleQueue.complete())
-      emit sample(next->address,next->data,next->wall,next->tick);
+    if (auto next = sampleQueue.complete())
+      emit sample(next->address, next->data, next->wall, next->tick);
   });
   connect(this, &WidgetController::newSession, history, &HistoryWorker::newSession);
   connect(this, &WidgetController::importHistory, history, &HistoryWorker::importPoints);
@@ -316,9 +316,8 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
     remotePoints = std::move(points);
     refreshHistory();
   });
-  connect(&transport, &TelemetryTransport::historyImported, this, [this](HistoryPoints points) {
-    emit importHistory(points, wallNow());
-  });
+  connect(&transport, &TelemetryTransport::historyImported, this,
+          [this](HistoryPoints points) { emit importHistory(points, wallNow()); });
   menu.addAction(QCoreApplication::translate("Allpowers", "Settings…"), this,
                  &WidgetController::configure);
   menu.addAction(QCoreApplication::translate("Allpowers", "Connect"), this,
@@ -362,8 +361,8 @@ WidgetController::~WidgetController() {
   transport.disconnect(this);
   disconnectStation();
   save();
-  if (auto pending=sampleQueue.takePending())
-    emit sample(pending->address,pending->data,pending->wall,pending->tick);
+  if (auto pending = sampleQueue.takePending())
+    emit sample(pending->address, pending->data, pending->wall, pending->tick);
   // All posted history writes complete before the worker thread quits.
   QMetaObject::invokeMethod(history, [] {}, Qt::BlockingQueuedConnection);
   historyThread.quit();
@@ -430,9 +429,12 @@ void WidgetController::receive(ap_snapshot value) {
       !address.isEmpty() && now != sampleAt) {
     sampleAt = now;
     HistoryPoint point;
-    point.address=address;point.data=value;point.wall=now;point.tick=elapsedNow()/1000;
-    if (auto next=sampleQueue.submit(std::move(point)))
-      emit sample(next->address,next->data,next->wall,next->tick);
+    point.address = address;
+    point.data = value;
+    point.wall = now;
+    point.tick = elapsedNow() / 1000;
+    if (auto next = sampleQueue.submit(std::move(point)))
+      emit sample(next->address, next->data, next->wall, next->tick);
   }
   refresh();
 }

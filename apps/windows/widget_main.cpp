@@ -75,10 +75,9 @@ int main(int argc, char **argv) {
     if (parser.isSet("screenshot"))
       widget.card()->renderedImage().save(parser.value("screenshot"));
     auto report = widget.diagnostics();
-    const bool notice =
-        embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
-    bool ok = ap_self_test() && report["history_error"].toString().isEmpty() && notice &&
-              ready(report);
+    const bool notice = embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
+    bool ok =
+        ap_self_test() && report["history_error"].toString().isEmpty() && notice && ready(report);
     if (parser.isSet("self-test")) {
       if (!report["history_error"].toString().isEmpty())
         report["self_test_error"] = "History initialization failed";

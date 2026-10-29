@@ -26,9 +26,10 @@ void TransportRouter::setMode(const QString &mode) {
     return;
   if (current) {
     // Preserve actual activity when switching transports during a timed run.
-    const auto activity=diagnostics();
-    for (const auto &key : {"discovery_attempts", "connection_attempts", "connections", "packets", "bluetooth_used"})
-      priorActivity[key]=activity[key];
+    const auto activity = diagnostics();
+    for (const auto &key :
+         {"discovery_attempts", "connection_attempts", "connections", "packets", "bluetooth_used"})
+      priorActivity[key] = activity[key];
     current->disconnect(this);
     if (!current->remote())
       current->stop();

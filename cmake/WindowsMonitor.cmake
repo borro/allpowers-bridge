@@ -30,6 +30,7 @@ ExternalProject_Add(windows-monitor
     "-DALLPOWERS_STATIC_ANALYSIS=${ALLPOWERS_STATIC_ANALYSIS}"
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_BUILD_JOBS}"
   BUILD_ALWAYS TRUE
+  BUILD_BYPRODUCTS "${windows_build}/AllpowersMonitor.exe" "${windows_build}/AllpowersWidget.exe"
   INSTALL_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe" "${windows_output}/AllpowersWidget.exe"
   ${windows_test_options}
   LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON LOG_OUTPUT_ON_FAILURE ON
@@ -60,12 +61,12 @@ if(BUILD_TESTING)
     set_tests_properties(windows-unit PROPERTIES LABELS coverage TIMEOUT 1800)
   endif()
   add_test(NAME single-exe COMMAND "${CMAKE_COMMAND}"
-    "-DEXE=${windows_output}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
+    "-DEXE=${windows_build}/AllpowersMonitor.exe" "-DWORK=${PROJECT_BINARY_DIR}/single-exe-check"
     "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
     "-DDRIVER_PACKAGE=${ALLPOWERS_DRIVER_PACKAGE_DIR}"
     -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
   add_test(NAME widget-single-exe COMMAND "${CMAKE_COMMAND}"
-    "-DEXE=${windows_output}/AllpowersWidget.exe" "-DWORK=${PROJECT_BINARY_DIR}/widget-single-exe-check"
+    "-DEXE=${windows_build}/AllpowersWidget.exe" "-DWORK=${PROJECT_BINARY_DIR}/widget-single-exe-check"
     "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}" -DWIDGET=ON
     -P "${PROJECT_SOURCE_DIR}/cmake/CheckSingleExe.cmake")
   add_test(NAME windows-identity-graph COMMAND "${CMAKE_COMMAND}"
@@ -77,8 +78,10 @@ if(BUILD_TESTING)
   set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS "integration;build-contract" PROCESSORS 4)
   set_tests_properties(single-exe widget-single-exe PROPERTIES LABELS integration)
 endif()
-install(PROGRAMS "${windows_output}/AllpowersMonitor.exe" DESTINATION .)
-install(PROGRAMS "${windows_output}/AllpowersWidget.exe" DESTINATION .)
+# Other build directories may export different binaries to the same release
+# directory. Package this build's own EXEs and their embedded driver payload.
+install(PROGRAMS "${windows_build}/AllpowersMonitor.exe" DESTINATION .)
+install(PROGRAMS "${windows_build}/AllpowersWidget.exe" DESTINATION .)
 set(CPACK_GENERATOR ZIP)
 set(CPACK_PACKAGE_NAME AllpowersMonitor)
 set(CPACK_PACKAGE_VERSION "${ALLPOWERS_VERSION}")

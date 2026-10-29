@@ -19,7 +19,7 @@
 #include <QTimer>
 #include <memory>
 
-int runMonitorApplication(QApplication &app,const QStringList &arguments,
+int runMonitorApplication(QApplication &app, const QStringList &arguments,
                           const MonitorRuntime &runtime) {
   app.setApplicationName("AllpowersMonitor");
   app.setApplicationVersion(APP_VERSION);
@@ -115,17 +115,23 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
     if (address.isEmpty())
       return 2;
     ConnectionLease lease(runtime.leaseKey);
-    const bool installed=runtime.serviceInstalled ? runtime.serviceInstalled() : integrationInstalled();
+    const bool installed =
+        runtime.serviceInstalled ? runtime.serviceInstalled() : integrationInstalled();
     if (installed || !lease.acquire()) {
       QFile file(parser.value("report"));
       if (file.open(QIODevice::WriteOnly))
-        file.write(QJsonDocument(QJsonObject{{"status", "BUSY"},
-          {"error", "Direct verification unavailable: installed service or another direct owner"},
-          {"bluetooth_used", false}}).toJson());
+        file.write(
+            QJsonDocument(
+                QJsonObject{
+                    {"status", "BUSY"},
+                    {"error",
+                     "Direct verification unavailable: installed service or another direct owner"},
+                    {"bluetooth_used", false}})
+                .toJson());
       return 5;
     }
-    std::unique_ptr<TelemetryTransport> transport(runtime.makeTransport
-        ? runtime.makeTransport(&app,false) : new BleTransport(&app));
+    std::unique_ptr<TelemetryTransport> transport(
+        runtime.makeTransport ? runtime.makeTransport(&app, false) : new BleTransport(&app));
     ap_snapshot latest{};
     QElapsedTimer clock;
     clock.start();
@@ -226,8 +232,7 @@ int runMonitorApplication(QApplication &app,const QStringList &arguments,
     auto info = window.diagnostics();
     const bool lgplNotice = embeddedLicenseFiles().contains("Qt/qtbase/LICENSES/LGPL-3.0-only.txt");
     const bool historyReady = info["history"].toObject().contains("live");
-    bool ok = info["history_error"].toString().isEmpty() &&
-              historyReady && lgplNotice;
+    bool ok = info["history_error"].toString().isEmpty() && historyReady && lgplNotice;
     if (selfTest) {
       info["history_ready"] = historyReady;
       if (!info["history_error"].toString().isEmpty())

@@ -355,6 +355,38 @@ private slots:
     QCOMPARE(store.points(point.address, 10000).size(), 1);
     QCOMPARE(store.points("fixture", 10000).size(), 1);
   }
+  void settingsSavePreservesPreviousFileOnFailure() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto path = dir.filePath("settings.json");
+    const QJsonObject previous{{"page", "history"}, {"custom", 42}};
+    const QJsonObject replacement{{"page", "overview"}, {"custom", 43}};
+    HistoryWorker worker;
+    QSignalSpy problems(&worker, &HistoryWorker::problem);
+    worker.saveSettings(path, previous);
+    QCOMPARE(problems.count(), 0);
+    QFile reader(path);
+    QVERIFY(reader.open(QIODevice::ReadOnly));
+    const auto original = reader.readAll();
+    QCOMPARE(QJsonDocument::fromJson(original).object(), previous);
+#ifdef Q_OS_WIN
+    // QFile's Windows read handle disallows atomic replacement while open.
+    worker.saveSettings(path, replacement);
+    QCOMPARE(problems.count(), 1);
+    const auto prefix = QCoreApplication::translate("Allpowers", "Could not save settings") + ": ";
+    const auto error = problems.last().first().toString();
+    QVERIFY(error.startsWith(prefix));
+    QVERIFY(error.size() > prefix.size());
+    QVERIFY(reader.seek(0));
+    QCOMPARE(reader.readAll(), original);
+#endif
+    reader.close();
+    problems.clear();
+    worker.saveSettings(path, replacement);
+    QCOMPARE(problems.count(), 0);
+    QVERIFY(reader.open(QIODevice::ReadOnly));
+    QCOMPARE(QJsonDocument::fromJson(reader.readAll()).object(), replacement);
+  }
   void historyWorkerReportsFailuresAndRotatesLogs() {
     QTemporaryDir dir;
     HistoryWorker unopened;

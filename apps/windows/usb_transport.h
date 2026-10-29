@@ -1,10 +1,10 @@
 #pragma once
+#include "history_operation_id.h"
 #include "transport.h"
 #include "usb_serial.h"
-#include "history_operation_id.h"
 #include <QElapsedTimer>
-#include <QTimer>
 #include <QSet>
+#include <QTimer>
 #include <functional>
 class UsbTransport : public TelemetryTransport {
   Q_OBJECT
@@ -43,7 +43,9 @@ public:
   void stop() override;
   void requestHistory() override;
   // Advance lifecycle deadlines when the transport uses an externally owned clock.
-  void refresh() { tick(); }
+  void refresh() {
+    tick();
+  }
 
 private:
   UsbChannel *channel = nullptr;
@@ -65,12 +67,13 @@ private:
   int badLines = 0, historyBad = 0, historyUndated = 0;
   HistoryPoints importPoints;
   QSet<quint32> importSequences;
-  quint32 importRequest=0,requestCounter=0,importSession=0,importGeneration=0,
-          importExpected=0,importOldest=0,importLatest=0,importCursor=0,importDigest=2166136261u,
-          legacyFirst=0,legacyPages=0,legacySpan=0,legacyScanned=0,legacyReceivedPage=0;
-  int importVersion=0;
-  bool importBegun=false,importCompromised=false,legacyVerification=false;
-  bool importNonceRequired=false;
+  quint32 importRequest = 0, requestCounter = 0, importSession = 0, importGeneration = 0,
+          importExpected = 0, importOldest = 0, importLatest = 0, importCursor = 0,
+          importDigest = 2166136261u, legacyFirst = 0, legacyPages = 0, legacySpan = 0,
+          legacyScanned = 0, legacyReceivedPage = 0;
+  int importVersion = 0;
+  bool importBegun = false, importCompromised = false, legacyVerification = false;
+  bool importNonceRequired = false;
   QByteArray importNonce;
   void connectPort();
   void receive(const QByteArray &);
@@ -79,6 +82,6 @@ private:
   void tick();
   void fail(QString);
   void command(const QByteArray &);
-  void finishImport(const QString &result,const QString &reason={});
+  void finishImport(const QString &result, const QString &reason = {});
   void nextLegacyPage();
 };

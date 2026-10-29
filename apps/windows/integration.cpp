@@ -74,8 +74,7 @@ bool testSigning() {
   const auto module = GetModuleHandleW(L"ntdll.dll");
   if (!module)
     return false;
-  auto query = reinterpret_cast<Query>(
-      GetProcAddress(module, "NtQuerySystemInformation"));
+  auto query = reinterpret_cast<Query>(GetProcAddress(module, "NtQuerySystemInformation"));
   return query && query(103, &info, sizeof(info), nullptr) >= 0 && (info.options & 2);
 }
 bool supportedWindows() {
@@ -83,8 +82,7 @@ bool supportedWindows() {
   const auto module = GetModuleHandleW(L"ntdll.dll");
   if (!module)
     return false;
-  auto getVersion =
-      reinterpret_cast<GetVersion>(GetProcAddress(module, "RtlGetVersion"));
+  auto getVersion = reinterpret_cast<GetVersion>(GetProcAddress(module, "RtlGetVersion"));
   OSVERSIONINFOW version{sizeof(version)};
   return sizeof(void *) == 8 && getVersion && getVersion(&version) >= 0 &&
          version.dwMajorVersion >= 10 && version.dwBuildNumber >= 22000;

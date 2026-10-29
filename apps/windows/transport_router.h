@@ -40,8 +40,8 @@ public:
     auto info = current->diagnostics();
     for (const auto &key : {"discovery_attempts", "connection_attempts", "connections", "packets"})
       info[key] = priorActivity[key].toInteger() + info[key].toInteger();
-    info["bluetooth_used"] = priorActivity["bluetooth_used"].toBool() ||
-                              info["bluetooth_used"].toBool();
+    info["bluetooth_used"] =
+        priorActivity["bluetooth_used"].toBool() || info["bluetooth_used"].toBool();
     if (blocked_)
       info["error"] = phase();
     return info;

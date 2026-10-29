@@ -373,7 +373,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(this, &MonitorWindow::openHistory, history, &HistoryWorker::open);
   connect(this, &MonitorWindow::historySession, history, &HistoryWorker::newSession);
   connect(this, &MonitorWindow::historySample, history, &HistoryWorker::sample);
-  connect(history, &HistoryWorker::sampleFinished, this, [this] { historyBusy=false; });
+  connect(history, &HistoryWorker::sampleFinished, this, [this] { historyBusy = false; });
   connect(this, &MonitorWindow::historyLoad, history, &HistoryWorker::load);
   connect(this, &MonitorWindow::historyExport, history, &HistoryWorker::exportFile);
   connect(this, &MonitorWindow::historyExportPoints, history, &HistoryWorker::exportPoints);

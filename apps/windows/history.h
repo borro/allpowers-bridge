@@ -4,9 +4,9 @@
 #include <QList>
 #include <QSqlDatabase>
 #include <QThread>
-#include <optional>
 #include <functional>
 #include <memory>
+#include <optional>
 
 struct HistoryPoint {
   QString address, session;
@@ -22,20 +22,35 @@ using HistoryPoints = QList<HistoryPoint>;
 class HistorySampleQueue {
   bool running = false;
   std::optional<HistoryPoint> pending;
+
 public:
   std::optional<HistoryPoint> submit(HistoryPoint point) {
-    if (running) { pending=std::move(point); return {}; }
-    running=true;return point;
+    if (running) {
+      pending = std::move(point);
+      return {};
+    }
+    running = true;
+    return point;
   }
   std::optional<HistoryPoint> complete() {
-    auto next=takePending();running=next.has_value();return next;
+    auto next = takePending();
+    running = next.has_value();
+    return next;
   }
   std::optional<HistoryPoint> takePending() {
-    auto next=std::move(pending);pending.reset();return next;
+    auto next = std::move(pending);
+    pending.reset();
+    return next;
   }
-  void clearPending() { pending.reset(); }
-  bool busy() const { return running; }
-  bool waiting() const { return pending.has_value(); }
+  void clearPending() {
+    pending.reset();
+  }
+  bool busy() const {
+    return running;
+  }
+  bool waiting() const {
+    return pending.has_value();
+  }
 };
 Q_DECLARE_METATYPE(HistoryPoints)
 bool joinPoints(const HistoryPoint &, const HistoryPoint &);

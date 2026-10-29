@@ -288,23 +288,30 @@ bool HistoryStore::exportCsv(const QString &address, qint64 now, const QString &
 bool exportHistoryCsv(const HistoryPoints &points, const QString &path) {
   class SaveFileTransaction final : public HistoryCsvTransaction {
     QSaveFile file;
+
   public:
     bool open(const QString &path) override {
       file.setFileName(path);
       file.setDirectWriteFallback(false);
       return file.open(QIODevice::WriteOnly | QIODevice::Text);
     }
-    QIODevice &device() override { return file; }
-    bool commit() override { return file.commit(); }
-    void cancel() override { file.cancelWriting(); }
+    QIODevice &device() override {
+      return file;
+    }
+    bool commit() override {
+      return file.commit();
+    }
+    void cancel() override {
+      file.cancelWriting();
+    }
   };
-  return exportHistoryCsv(points,path,std::make_unique<SaveFileTransaction>());
+  return exportHistoryCsv(points, path, std::make_unique<SaveFileTransaction>());
 }
 bool exportHistoryCsv(const HistoryPoints &points, const QString &path,
                       std::unique_ptr<HistoryCsvTransaction> transaction) {
   if (!transaction || !transaction->open(path))
     return false;
-  if (!writeHistoryCsv(points,transaction->device())) {
+  if (!writeHistoryCsv(points, transaction->device())) {
     transaction->cancel();
     return false;
   }
@@ -378,7 +385,8 @@ void HistoryWorker::log(QString message) {
 }
 void HistoryWorker::saveSettings(QString path, QJsonObject settings) {
   QSaveFile file(path);
-  if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(settings).toJson()) < 0 ||
-      !file.commit())
-    emit problem(QCoreApplication::translate("Allpowers", "Could not save settings"));
+  const auto data = QJsonDocument(settings).toJson();
+  if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit())
+    emit problem(QCoreApplication::translate("Allpowers", "Could not save settings") + ": " +
+                 file.errorString());
 }

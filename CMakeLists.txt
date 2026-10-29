@@ -62,6 +62,7 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME upx-staging COMMAND "${CMAKE_COMMAND}"
       "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/upx-staging-tests"
+      "-DNINJA=${CMAKE_MAKE_PROGRAM}"
       -P "${PROJECT_SOURCE_DIR}/tests/cmake/upx_staging_test.cmake")
     add_test(NAME size-optimization COMMAND "${CMAKE_COMMAND}"
       "-DROOT=${PROJECT_SOURCE_DIR}" "-DWORK=${PROJECT_BINARY_DIR}/size-optimization-tests"

@@ -329,6 +329,11 @@ with complete application/Qt sources and SHA256 files. See relinking.md for libr
 replacement/rebuild instructions. CPack never includes user settings/history or
 local device configuration.
 
+CPack and the isolated EXE tests read binaries from the selected build's
+`windows-monitor` directory. The shared `dist/windows/AllpowersMonitor/` directory
+is an export destination: another build may overwrite it without changing which
+binaries and embedded driver payload the selected build packages or tests.
+
 Application and managed Qt Release builds optimize size without IPO/LTO, keeping
 ordinary relinks fast. CPack compresses only its staged copies of the two Windows
 EXEs with checksum-pinned UPX 5.2.1 `-9`; normal build/install outputs remain raw.

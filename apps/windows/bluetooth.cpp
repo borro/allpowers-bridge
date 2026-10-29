@@ -2,8 +2,8 @@
 #include <QBluetoothUuid>
 #include <QCoreApplication>
 
-BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
-                           BleChannel *channel, std::function<qint64()> clock)
+BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots, BleChannel *channel,
+                           std::function<qint64()> clock)
     : TelemetryTransport(parent), channel_(channel), clock_(std::move(clock)), offline_(offline) {
   elapsed.start();
   if (channel_) {
@@ -14,7 +14,8 @@ BleTransport::BleTransport(QObject *parent, bool offline, bool snapshots,
       acceptPacket(generation, session.generation(), value);
     });
     connect(channel_, &BleChannel::failed, this, [this](quint64 generation, QString reason) {
-      if (active_ && generation == epoch) fail(reason);
+      if (active_ && generation == epoch)
+        fail(reason);
     });
   }
   if (!offline && !channel_) {
@@ -98,7 +99,8 @@ void BleTransport::destroyConnection() {
   deadline.stop();
   poll.stop();
   deadlineAt_ = pollAt_ = -1;
-  if (channel_) channel_->close();
+  if (channel_)
+    channel_->close();
   connected_ = false;
   if (service) {
     service->disconnect(this);
@@ -146,7 +148,8 @@ void BleTransport::discoveryEnded() {
                  .arg(retrySeconds),
              uiMessage("ble.unavailable", {retrySeconds}));
     retryAt_ = nowMs() + retrySeconds * 1000;
-    if (!clock_) retry.start(retrySeconds * 1000);
+    if (!clock_)
+      retry.start(retrySeconds * 1000);
     retrySeconds = qMin(20, retrySeconds * 2);
   } else {
     emit stateChanged();
@@ -178,7 +181,8 @@ void BleTransport::fail(const QString &message, QJsonObject descriptor) {
                .arg(message, QString::number(retrySeconds)),
            uiMessage("ble.retry", {errorDescriptor, retrySeconds}));
   retryAt_ = nowMs() + retrySeconds * 1000;
-  if (!clock_) retry.start(retrySeconds * 1000);
+  if (!clock_)
+    retry.start(retrySeconds * 1000);
   retrySeconds = qMin(20, retrySeconds * 2);
 }
 void BleTransport::connectDevice() {
@@ -192,15 +196,16 @@ void BleTransport::connectDevice() {
     return;
   }
   if (channel_) {
-    retry.stop();retryAt_=-1;
+    retry.stop();
+    retryAt_ = -1;
     destroyConnection();
     ++epoch;
     session.reset(profile ? profile : int(ap_model_hint(name_.toUtf8().constData())));
     emit newSession();
-    deadlineAt_=nowMs()+30000;
+    deadlineAt_ = nowMs() + 30000;
     ++attempts;
     setPhase(QCoreApplication::translate("Allpowers", "Connecting…"), uiMessage("ble.connecting"));
-    channel_->connectToDevice(address_,epoch);
+    channel_->connectToDevice(address_, epoch);
     return;
   }
   const auto info = devices.value(address_);
@@ -266,7 +271,8 @@ void BleTransport::connectDevice() {
   });
   setPhase(QCoreApplication::translate("Allpowers", "Connecting…"), uiMessage("ble.connecting"));
   deadlineAt_ = nowMs() + 30000;
-  if (!clock_) deadline.start(30000);
+  if (!clock_)
+    deadline.start(30000);
   ++attempts;
   c->connectToDevice();
 }
@@ -321,7 +327,7 @@ void BleTransport::sendPoll() {
   if (channel_) {
     channel_->write(data);
     ++polls;
-    pollAt_=nowMs()+ap_poll_interval_ms();
+    pollAt_ = nowMs() + ap_poll_interval_ms();
     return;
   }
   if (!(tx.properties() &
@@ -335,46 +341,55 @@ void BleTransport::sendPoll() {
                                    ? QLowEnergyService::WriteWithResponse
                                    : QLowEnergyService::WriteWithoutResponse);
   polls++;
-  pollAt_=nowMs()+ap_poll_interval_ms();
+  pollAt_ = nowMs() + ap_poll_interval_ms();
 }
 
 void BleTransport::refresh() {
-  const auto now=nowMs();
+  const auto now = nowMs();
   // Native QTimers remain the scheduler for the native clock. An externally
   // supplied clock is advanced by its owner and drives those same callbacks.
   // Do not run both schedulers: a late native timer could otherwise double-poll.
   if (clock_) {
-    if (active_ && retryAt_>=0 && now>=retryAt_) connectDevice();
+    if (active_ && retryAt_ >= 0 && now >= retryAt_)
+      connectDevice();
     if (active_ && deadlineAt_ >= 0 && now >= deadlineAt_)
       fail(QCoreApplication::translate("Allpowers", "BLE timed out"), uiMessage("ble.timeout"));
-    if (connected_ && pollAt_>=0 && now>=pollAt_) sendPoll();
+    if (connected_ && pollAt_ >= 0 && now >= pollAt_)
+      sendPoll();
   }
-  auto s=session.snapshot(quint32(now));
-  if (!connected_) s.fresh=0;
+  auto s = session.snapshot(quint32(now));
+  if (!connected_)
+    s.fresh = 0;
   emit snapshot(s);
   if (connected_) {
-    recovery.observe(quint32(now),s.fresh);
+    recovery.observe(quint32(now), s.fresh);
     if (recovery.reconnectDue(quint32(now)))
       fail(QCoreApplication::translate("Allpowers", "Full telemetry is not arriving"),
            uiMessage("ble.incomplete"));
   }
 }
 void BleTransport::acceptPacket(quint64 generation, quint64 token, const QByteArray &value) {
-  if (!active_ || generation!=epoch) return;
-  const bool valid=session.receive(token,value,quint32(nowMs()));
+  if (!active_ || generation != epoch)
+    return;
+  const bool valid = session.receive(token, value, quint32(nowMs()));
   ++packets;
-  emit packet(QString::fromLatin1(value.toHex()),valid);
+  emit packet(QString::fromLatin1(value.toHex()), valid);
 }
 void BleTransport::acceptReady(quint64 generation) {
-  if (!active_ || generation!=epoch || connected_) return;
-  deadline.stop();deadlineAt_=-1;
-  connected_=true;++connects;retrySeconds=2;
+  if (!active_ || generation != epoch || connected_)
+    return;
+  deadline.stop();
+  deadlineAt_ = -1;
+  connected_ = true;
+  ++connects;
+  retrySeconds = 2;
   recovery.begin(quint32(nowMs()));
   error_.clear();
   errorMessage_ = {};
   setPhase(QCoreApplication::translate("Allpowers", "Connected · receiving data"),
            uiMessage("ble.connected"));
-  if (!clock_) poll.start();
+  if (!clock_)
+    poll.start();
   sendPoll();
 }
 QJsonObject BleTransport::diagnostics() const {

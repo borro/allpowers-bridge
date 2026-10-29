@@ -1,5 +1,5 @@
-#include "monitor_application.h"
 #include "integration.h"
+#include "monitor_application.h"
 #include "service_host.h"
 #include <QApplication>
 #include <QDebug>
@@ -22,5 +22,5 @@ int main(int argc, char **argv) {
     }
   }
   QApplication app(argc, argv);
-  return runMonitorApplication(app,app.arguments());
+  return runMonitorApplication(app, app.arguments());
 }

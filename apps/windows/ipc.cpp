@@ -45,9 +45,20 @@ bool consume(QByteArray &buffer, QList<QJsonObject> &out) {
   X(known)                                                                                         \
   X(main_seen)                                                                                     \
   X(settings_seen)                                                                                 \
-  X(fresh) X(soc) X(input_w) X(output_w) X(runtime_s) X(source) X(source_raw) X(ac_output)         \
-      X(usb_output) X(dc_output) X(main_age_ms) X(settings_age_ms) X(valid_frames)                 \
-          X(invalid_frames)
+  X(fresh)                                                                                         \
+  X(soc)                                                                                           \
+  X(input_w)                                                                                       \
+  X(output_w)                                                                                      \
+  X(runtime_s)                                                                                     \
+  X(source)                                                                                        \
+  X(source_raw)                                                                                    \
+  X(ac_output)                                                                                     \
+  X(usb_output)                                                                                    \
+  X(dc_output)                                                                                     \
+  X(main_age_ms)                                                                                   \
+  X(settings_age_ms)                                                                               \
+  X(valid_frames)                                                                                  \
+  X(invalid_frames)
 QJsonObject snapshot(const ap_snapshot &s) {
   QJsonObject o;
 #define WRITE(name) o[#name] = double(s.name);

@@ -8,8 +8,8 @@ class QApplication;
 // normal native implementations; injected transports own all their I/O.
 struct MonitorRuntime {
   std::function<bool()> serviceInstalled;
-  std::function<TelemetryTransport *(QObject *,bool offline)> makeTransport;
-  QString leaseKey=QStringLiteral("ALLPOWERS.DirectConnection.v1");
+  std::function<TelemetryTransport *(QObject *, bool offline)> makeTransport;
+  QString leaseKey = QStringLiteral("ALLPOWERS.DirectConnection.v1");
 };
-int runMonitorApplication(QApplication &,const QStringList &arguments,
+int runMonitorApplication(QApplication &, const QStringList &arguments,
                           const MonitorRuntime &runtime = {});

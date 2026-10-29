@@ -59,7 +59,9 @@ class BleTransport : public TelemetryTransport {
   void readyService(quint64 generation);
   void sendPoll();
   void setPhase(const QString &phase, QJsonObject descriptor = {});
-  qint64 nowMs() const { return clock_ ? clock_() : elapsed.elapsed(); }
+  qint64 nowMs() const {
+    return clock_ ? clock_() : elapsed.elapsed();
+  }
   void acceptReady(quint64 generation);
   void acceptPacket(quint64 generation, quint64 token, const QByteArray &value);
 

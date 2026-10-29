@@ -7,6 +7,10 @@ import xml.etree.ElementTree as ET
 
 
 PREFIXES = ("core/", "firmware/R2500Adapter/", "apps/windows/")
+MINIMUM_COVERAGE = {
+    "linux": {"core/": 100, "firmware/R2500Adapter/": 100},
+    "windows": {"core/": 100, "firmware/R2500Adapter/": 98, "apps/windows/": 90},
+}
 
 
 def normalize_report(root, inputs):
@@ -49,6 +53,27 @@ def normalize_report(root, inputs):
 
 def counts(files):
     return sum(sum(lines.values()) for lines in files.values()), sum(len(lines) for lines in files.values())
+
+
+def check_thresholds(files, platform):
+    results = []
+    for prefix, minimum in MINIMUM_COVERAGE[platform].items():
+        covered, total = counts({p: lines for p, lines in files.items() if p.startswith(prefix)})
+        # Compare exact counts: a rounded display of 100.00% is not full coverage.
+        passed = total > 0 and covered * 100 >= minimum * total
+        results.append(dict(prefix=prefix, minimum=minimum, covered=covered, total=total, passed=passed))
+    return results
+
+
+def threshold_summary(results, platform):
+    text = [f"### Required coverage ({platform})", "",
+            "| Source area | Minimum | Measured | Result |", "| --- | ---: | ---: | --- |"]
+    for result in results:
+        measured = (f"{100 * result['covered'] / result['total']:.2f}% "
+                    f"({result['covered']}/{result['total']})") if result['total'] else "Missing"
+        text.append(f"| `{result['prefix']}` | {result['minimum']}% | {measured} | "
+                    f"{'PASS' if result['passed'] else 'FAIL'} |")
+    return "\n".join(text) + "\n"
 
 
 def write_report(files, output):
@@ -94,6 +119,7 @@ def main():
     parser.add_argument("--input", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--summary", type=Path, required=True)
+    parser.add_argument("--platform", choices=tuple(MINIMUM_COVERAGE), required=True)
     parser.add_argument("--require-prefix", action="append", default=[])
     parser.add_argument("--incomplete", action="store_true")
     args = parser.parse_args()
@@ -102,9 +128,15 @@ def main():
         if not any(p.startswith(prefix) and lines for p, lines in files.items()):
             raise ValueError(f"Missing measured source area: {prefix}")
     write_report(files, args.output)
-    markdown = summary(files, args.incomplete)
+    results = check_thresholds(files, args.platform)
+    markdown = summary(files, args.incomplete) + "\n" + threshold_summary(results, args.platform)
     args.summary.write_text(markdown, encoding="utf-8")
     print(markdown)
+    if args.incomplete:
+        raise SystemExit("Coverage tests failed; report is incomplete")
+    failed = [result['prefix'] for result in results if not result['passed']]
+    if failed:
+        raise SystemExit("Coverage thresholds failed: " + ", ".join(failed))
 
 
 if __name__ == "__main__":

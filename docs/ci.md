@@ -21,12 +21,17 @@ separately; do not require individual conditionally skipped jobs.
 - Only a pushed, valid `v` release tag publishes. Manual dispatch never publishes;
   rerunning the original tag workflow retains its release behavior.
 
-After the audit (including actionlint/ShellCheck), static analysis, portable tests,
+After the audit (including actionlint/ShellCheck and pinned clang-format for the
+Windows application sources), static analysis, portable tests,
 sanitizers, Linux coverage, Mull, Valgrind, fuzzing,
 firmware and Windows SDK preparation run independently. Windows Release and Windows
 coverage depend on the SDK producer, not on the Linux analyzers. All mandatory
 results join at **CI result**; unexpected skips, failures or cancellations fail it.
 Codecov service availability does not replace the local coverage requirement.
+Coverage also enforces per-area minimums: core 100% on both hosts, host-tested
+firmware 100% on Linux and 98% on Windows, and Windows applications 90%. Rounded
+percentages do not determine acceptance. Threshold failures preserve reports and
+fail the mandatory coverage job; Codecov statuses remain informational.
 
 The `static-analysis` job runs clang-tidy 18 and Cppcheck 2.22.0 sequentially,
 each with at most four workers. MSVC `/analyze` runs inside the existing Windows

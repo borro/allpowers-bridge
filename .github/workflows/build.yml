@@ -63,6 +63,11 @@ jobs:
     - name: Analyze workflows and Bash commands
       run: cmake -DROOT="$GITHUB_WORKSPACE" -DWORK="$GITHUB_WORKSPACE/build/workflow-lint" -P cmake/RunWorkflowLint.cmake
       id: analyze-workflows
+    - name: Check Windows application formatting
+      run: |-
+        mkdir -p build/format
+        cmake -DROOT="$GITHUB_WORKSPACE" -DWORK="$GITHUB_WORKSPACE/build/format" -DCHECK_CONTROLS=ON -P cmake/RunFormat.cmake 2>&1 | tee build/format/check.log
+      id: check-formatting
     - name: Test CI selection and final gate
       run: |-
         mkdir -p build/ci-reports
@@ -89,6 +94,7 @@ jobs:
           build/ci-reports/
           build/workflow-lint/*.json
           build/workflow-lint/*.log
+          build/format/*.log
         retention-days: 14
       id: save-test-reports
     - name: Publish job summary

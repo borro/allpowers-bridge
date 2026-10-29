@@ -118,8 +118,24 @@ reconfiguration and recompilation of every application source.
 Every push and PR measures **line coverage** with GCC/gcovr on Linux and
 MSVC/OpenCppCoverage on Windows. Codecov merges repository-relative files and
 lines under the `linux` and `windows` flags. The README badge shows `main`; PR
-statuses are informational, with no minimum percentage. Notifications wait for
+statuses are informational; mandatory thresholds are enforced locally by CTest,
+independently of Codecov availability. Notifications wait for
 both reports; old flag results are not carried forward.
+
+The required minimums apply separately to each measured source area:
+
+| Source area | Linux | Windows |
+| --- | ---: | ---: |
+| `core/` | 100% | 100% |
+| `firmware/R2500Adapter/` in host tests | 100% | 98% |
+| `apps/windows/` | Not measured | 90% |
+
+`cmake/CoverageReport.py` owns these thresholds. Exact covered/total counts are
+compared before rounding; one area cannot compensate for another. Missing areas,
+failed tests and coverage below a threshold fail `coverage-report` and therefore
+`CI result`. A threshold failure retains the normalized XML and a PASS/FAIL table
+in the summary for diagnosis. Direct report processing requires `--platform linux`
+or `--platform windows` so the policy cannot silently be omitted.
 
 The denominator contains product lines represented in measured host binaries:
 `core/`, firmware logic included by host tests, and Windows/Qt code linked into
@@ -186,6 +202,24 @@ only in coverage jobs), without a stored secret. Public fork PRs use tokenless
 uploads; enable public tokenless uploads in Codecov if the organization requires
 it. Confirm both flags on the first `main` run, a numeric badge and a PR report
 before considering hosted setup verified.
+
+## Formatting
+
+CI's mandatory audit job checks every public `apps/windows/*.cpp` and `*.h`
+(including subdirectories) against `.clang-format`, using clang-format 22.1.3.
+Core, firmware, drivers and test fixtures are outside this initial formatting
+scope. The checker uses `--dry-run --Werror`; it never edits sources. CI also
+checks that deliberately malformed input fails and valid input passes.
+
+```sh
+cmake -DROOT=. -DWORK=build/format -P cmake/RunFormat.cmake
+```
+
+The `format-check` build target runs the same check. The first run downloads the
+platform's version- and SHA256-pinned binary into `WORK`; later runs verify and
+reuse that archive. No pip environment is installed. Pass `-DTOOL=<clang-format>`
+to use an existing executable of exactly the pinned version. Versions and hashes
+are maintained in `cmake/Dependencies.cmake`.
 
 ## Mutation testing
 

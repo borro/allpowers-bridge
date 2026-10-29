@@ -62,9 +62,13 @@ if(NOT tests_result STREQUAL "0")
   list(APPEND report_options --incomplete)
 endif()
 if(WINDOWS)
+  set(coverage_platform windows)
   list(APPEND report_options --require-prefix apps/windows/)
+else()
+  set(coverage_platform linux)
 endif()
 execute_process(COMMAND "${PYTHON}" "${root}/cmake/CoverageReport.py"
+  --platform "${coverage_platform}"
   --root "${root}" --input "${report}/raw.xml" --output "${report}/coverage.xml"
   --summary "${report}/summary.md" --require-prefix core/
   --require-prefix firmware/R2500Adapter/ ${report_options}

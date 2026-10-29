@@ -100,6 +100,8 @@ ap_add_mutation_target()
 ap_add_analysis_targets()
 add_custom_target(audit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
+add_custom_target(format-check COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
+  "-DWORK=${PROJECT_BINARY_DIR}/format" -P "${PROJECT_SOURCE_DIR}/cmake/RunFormat.cmake" VERBATIM)
 add_custom_target(audit-worktree COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
   -DMODE=worktree -P "${PROJECT_SOURCE_DIR}/cmake/Audit.cmake" VERBATIM)
 add_custom_target(audit-history COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"

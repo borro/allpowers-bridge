@@ -53,6 +53,9 @@ Presets explicitly select the shared `build/deps` cache and `dist` output folder
 Without a preset, `cmake -S <source> -B <binary> -G Ninja` keeps dependency caches
 and release output under the binary directory. `ALLPOWERS_DEPS_DIR` and
 `ALLPOWERS_RELEASE_DIR` override those locations. In-source builds are rejected.
+For WSL firmware builds, keep the binary directory and Arduino SDK/cache on the
+Linux filesystem. Windows drive mounts can dominate SDK scanning and compiler
+startup even when the source checkout itself remains shared with Windows.
 `BUILD_TESTING=OFF` disables native/Qt test targets and the Qt Test dependency.
 The ordinary default build includes the Windows applications when
 `ALLPOWERS_BUILD_WINDOWS=ON`; firmware remains explicitly selected through the
@@ -62,11 +65,13 @@ target additionally requests the external project's test step when testing is
 enabled, and always rebuilds/tests the corresponding-source archive before CPack.
 
 Both CTest presets run the complete suite with four parallel jobs. Override with
-`ctest --preset windows --parallel 1` (or `native`) for a sequential run; no tests
-are filtered out. The nested Windows CTest uses two jobs and reserves two parent
+`ctest --preset windows --parallel 1` (or `native`) for a sequential top-level run; no tests
+are filtered out. The nested Windows CTest uses four jobs and reserves four parent
 slots. The Windows identity graph reserves four slots; native Windows UI tests share
 a desktop resource lock. Source-kit validation uses four portable test jobs and
-two desktop test jobs as well.
+four desktop test jobs as well. The CLI contract suite is split into independent
+groups with separate reports, preserving its real five/ten-second deadlines and
+all scenarios while allowing CTest to schedule those waits concurrently.
 
 `ALLPOWERS_BUILD_JOBS` bounds each nested application/driver compilation (default
 4, CI 2), independently of the outer `cmake --build --parallel N` setting. Qt keeps
@@ -166,8 +171,9 @@ from source and takes considerably longer.
 The `coverage-report` CTest test resets counters, runs suites with the `coverage`
 label (including Qt child processes on Windows), and writes `coverage/coverage.xml`,
 `coverage/summary.md` and detailed HTML in the build directory. Do not run another
-test invocation concurrently in that directory. Contract, packaging and sanitizer
-tests keep their existing jobs and presets.
+test invocation concurrently in that directory. Coverage uses two test jobs on
+Linux and four on Windows. Counter/report discovery skips only the build's root
+tool cache; product targets in other directories remain included.
 
 Actions shows covered/measured line counts and saves reports and diagnostics for
 14 days. Test/report errors fail CI. Codecov upload failures produce a warning;

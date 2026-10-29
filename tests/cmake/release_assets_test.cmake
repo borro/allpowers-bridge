@@ -220,6 +220,10 @@ archive("${scratch}/sources" "AllpowersMonitor-${version}-sources-with-qt" allpo
 file(COPY_FILE "${scratch}/probe-build/Unversioned.exe" "${scratch}/runtime/${runtime}/AllpowersWidget.exe")
 archive("${scratch}/runtime" "${runtime}" "${runtime}")
 prepare(unversioned-exe fail)
+file(GLOB premature_firmware "${scratch}/output-unversioned-exe/AllpowersFirmware-*.zip")
+if(premature_firmware)
+  message(FATAL_ERROR "Release published firmware archives before rejecting the invalid EXE")
+endif()
 execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/tests/cmake/release_publish_test.ps1"
   -Root "${ROOT}" -Work "${scratch}/publisher-tests" -Assets "${scratch}/output-valid" -Tag "v${version}"
   COMMAND_ERROR_IS_FATAL ANY)

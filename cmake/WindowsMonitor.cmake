@@ -29,6 +29,10 @@ ExternalProject_Add(windows-monitor
     "-DALLPOWERS_COVERAGE=${ALLPOWERS_COVERAGE}"
     "-DALLPOWERS_STATIC_ANALYSIS=${ALLPOWERS_STATIC_ANALYSIS}"
   BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel "${ALLPOWERS_BUILD_JOBS}"
+  # The driver is checked on every build. Let the child's CMake/Ninja graph
+  # decide whether its configure inputs changed instead of rerunning it for
+  # every completed driver check. Changed CMAKE_ARGS still configure normally.
+  CONFIGURE_HANDLED_BY_BUILD TRUE
   BUILD_ALWAYS TRUE
   BUILD_BYPRODUCTS "${windows_build}/AllpowersMonitor.exe" "${windows_build}/AllpowersWidget.exe"
   INSTALL_BYPRODUCTS "${windows_output}/AllpowersMonitor.exe" "${windows_output}/AllpowersWidget.exe"
@@ -55,8 +59,8 @@ if(BUILD_TESTING)
   if(ALLPOWERS_COVERAGE)
     set(windows_coverage_filter -L "^coverage$")
   endif()
-  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure --parallel 2 --no-tests=error ${windows_coverage_filter})
-  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900 PROCESSORS 2 LABELS runtime)
+  add_test(NAME windows-unit COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${windows_build}" --output-on-failure --verbose --stop-on-failure --parallel 4 --no-tests=error ${windows_coverage_filter})
+  set_tests_properties(windows-unit PROPERTIES TIMEOUT 900 PROCESSORS 4 LABELS runtime)
   if(ALLPOWERS_COVERAGE)
     set_tests_properties(windows-unit PROPERTIES LABELS coverage TIMEOUT 1800)
   endif()

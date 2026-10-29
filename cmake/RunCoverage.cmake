@@ -18,8 +18,12 @@ if(IS_SYMLINK "${report}")
 endif()
 file(REMOVE_RECURSE "${report}")
 file(MAKE_DIRECTORY "${report}")
+set(test_jobs 2)
+if(WINDOWS)
+  set(test_jobs 4)
+endif()
 set(test_command "${CMAKE_CTEST_COMMAND}" --test-dir "${binary}"
-  --output-on-failure --no-tests=error --parallel 2 -L "^coverage$"
+  --output-on-failure --no-tests=error --parallel "${test_jobs}" -L "^coverage$"
   --output-junit "${report}/tests.xml")
 if(WINDOWS)
   file(TO_NATIVE_PATH "${root}/core" core_sources)
@@ -33,7 +37,8 @@ if(WINDOWS)
     -- ${test_command} RESULT_VARIABLE tests_result)
 else()
   # Only this isolated instrumented build owns these counters.
-  file(GLOB_RECURSE counters "${binary}/*.gcda")
+  include("${CMAKE_CURRENT_LIST_DIR}/Coverage.cmake")
+  ap_collect_coverage_counters("${binary}" counters)
   foreach(counter IN LISTS counters)
     file(REAL_PATH "${counter}" resolved)
     cmake_path(IS_PREFIX binary "${resolved}" NORMALIZE inside)
@@ -43,8 +48,12 @@ else()
     file(REMOVE "${counter}")
   endforeach()
   execute_process(COMMAND ${test_command} RESULT_VARIABLE tests_result)
+  # Use the same exclusion during gcovr discovery. Escape arbitrary checkout
+  # names, and keep the leading slash so gcovr treats this as an absolute path.
+  string(REGEX REPLACE "([][+.*()^$?|\\\\])" "\\\\\\1" tool_cache_regex "${binary}/tools")
   execute_process(COMMAND "${TOOL}" --root "${root}" --gcov-executable "${GCOV}"
     --filter "core/" --filter "firmware/R2500Adapter/"
+    --exclude-directory "${tool_cache_regex}(/|$)"
     --cobertura "${report}/raw.xml" --html-details "${report}/index.html"
     "${binary}" WORKING_DIRECTORY "${root}" COMMAND_ERROR_IS_FATAL ANY)
 endif()

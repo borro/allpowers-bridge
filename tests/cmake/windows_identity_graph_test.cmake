@@ -154,4 +154,61 @@ execute_process(COMMAND "${CMAKE_COMMAND}"
 if(accepted EQUAL 0)
   message(FATAL_ERROR "A wrong generated expected identity accepted the executable")
 endif()
+# The driver producer runs on every root build, but an unchanged producer must
+# not force another monitor configure. Ninja still owns genuine child inputs.
+set(root_binary "${source}/build/root")
+set(monitor_binary "${root_binary}/windows-monitor")
+set(configure_stamp "${root_binary}/windows-monitor-prefix/src/windows-monitor-stamp/windows-monitor-configure")
+file(TIMESTAMP "${configure_stamp}" configured_before "%s.%f")
+timed_step(warm-root-build COMMAND "${CMAKE_COMMAND}" --build "${root_binary}"
+  --target windows --parallel "${ALLPOWERS_BUILD_JOBS}"
+  OUTPUT_FILE "${scratch}/warm-root-build.log" ERROR_FILE "${scratch}/warm-root-build.log")
+file(TIMESTAMP "${configure_stamp}" configured_after "%s.%f")
+if(NOT configured_before OR NOT configured_before STREQUAL configured_after)
+  message(FATAL_ERROR "Unchanged external dependency forced monitor configure")
+endif()
+
+# Use only copies inside this synthetic checkout: never modify or install a
+# developer's driver package. Changing CMAKE_ARGS must still configure the child.
+set(driver_copy "${scratch}/alternate-driver")
+file(MAKE_DIRECTORY "${driver_copy}")
+foreach(name AllpowersUps.sys AllpowersUps.inf AllpowersUps.cat)
+  file(COPY_FILE "${root_binary}/ups-driver/package/${name}" "${driver_copy}/${name}")
+endforeach()
+timed_step(driver-path-configure COMMAND "${CMAKE_COMMAND}" -S "${source}" -B "${root_binary}"
+  "-DALLPOWERS_DRIVER_PACKAGE_DIR=${driver_copy}"
+  OUTPUT_FILE "${scratch}/driver-path-configure.log" ERROR_FILE "${scratch}/driver-path-configure.log")
+timed_step(driver-path-build COMMAND "${CMAKE_COMMAND}" --build "${root_binary}"
+  --target windows --parallel "${ALLPOWERS_BUILD_JOBS}"
+  OUTPUT_FILE "${scratch}/driver-path-build.log" ERROR_FILE "${scratch}/driver-path-build.log")
+file(TIMESTAMP "${configure_stamp}" configured_path "%s.%f")
+if(configured_path STREQUAL configured_after)
+  message(FATAL_ERROR "Changed external CMAKE_ARGS did not configure the monitor")
+endif()
+
+# A payload-only change must reach the embedded resource without forcing that
+# configure step. CheckSingleExe compares the extracted bytes to this copy.
+file(APPEND "${driver_copy}/AllpowersUps.inf" "\n; Synthetic embedded-payload dependency probe\n")
+timed_step(driver-payload-build COMMAND "${CMAKE_COMMAND}" --build "${root_binary}"
+  --target windows --parallel "${ALLPOWERS_BUILD_JOBS}"
+  OUTPUT_FILE "${scratch}/driver-payload-build.log" ERROR_FILE "${scratch}/driver-payload-build.log")
+file(TIMESTAMP "${configure_stamp}" configured_payload "%s.%f")
+if(NOT configured_payload STREQUAL configured_path)
+  message(FATAL_ERROR "Payload-only change forced the external configure step")
+endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" "-DEXE=${monitor_binary}/AllpowersMonitor.exe"
+  "-DIDENTITY_FILE=${root_binary}/identity/product-identity.cmake"
+  "-DDRIVER_PACKAGE=${driver_copy}" "-DWORK=${scratch}/changed-payload-check"
+  -P "${ROOT}/cmake/CheckSingleExe.cmake" COMMAND_ERROR_IS_FATAL ANY)
+
+file(APPEND "${source}/apps/windows/CMakeLists.txt" [=[
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/child-configure-probe.txt" "observed")
+]=])
+timed_step(child-cmake-build COMMAND "${CMAKE_COMMAND}" --build "${root_binary}"
+  --target windows --parallel "${ALLPOWERS_BUILD_JOBS}"
+  OUTPUT_FILE "${scratch}/child-cmake-build.log" ERROR_FILE "${scratch}/child-cmake-build.log")
+if(NOT EXISTS "${monitor_binary}/child-configure-probe.txt")
+  message(FATAL_ERROR "Child CMake source change did not regenerate its build graph")
+endif()
 message(STATUS "Root and standalone Monitor/Widget CLI, PE and CTest pass clean/source-only-dirty/reverted identity without manual configure")

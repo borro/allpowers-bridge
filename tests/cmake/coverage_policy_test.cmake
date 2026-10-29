@@ -1,4 +1,21 @@
 cmake_minimum_required(VERSION 4.4)
+include("${ROOT}/cmake/Coverage.cmake")
+set(counter_fixture "${WORK}/counter-fixture")
+file(MAKE_DIRECTORY "${counter_fixture}/new-target/objects"
+  "${counter_fixture}/new-target/tools" "${counter_fixture}/tools/python")
+set(expected_counters "${counter_fixture}/top.gcda"
+  "${counter_fixture}/new-target/objects/product.gcda"
+  "${counter_fixture}/new-target/tools/product.gcda")
+foreach(counter IN LISTS expected_counters)
+  file(WRITE "${counter}" "product counter")
+endforeach()
+file(WRITE "${counter_fixture}/tools/python/dependency.gcda" "tool-owned counter")
+ap_collect_coverage_counters("${counter_fixture}" actual_counters)
+list(SORT expected_counters)
+list(SORT actual_counters)
+if(NOT actual_counters STREQUAL expected_counters)
+  message(FATAL_ERROR "Coverage counter discovery missed a target or entered the root tool cache")
+endif()
 file(MAKE_DIRECTORY "${WORK}/source")
 file(CONFIGURE OUTPUT "${WORK}/source/CMakeLists.txt" CONTENT [=[
 cmake_minimum_required(VERSION 4.4)

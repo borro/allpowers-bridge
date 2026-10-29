@@ -228,9 +228,27 @@ if(BUILD_TESTING)
   if(MSVC)
     target_compile_options(cli_contract_tests PRIVATE /utf-8 /UNDEBUG)
   endif()
-  add_test(NAME cli-contract COMMAND cli_contract_tests -platform offscreen
-    -o -,txt -o cli-contract-tests.xml,junitxml)
-  set_tests_properties(cli-contract PROPERTIES LABELS coverage TIMEOUT 120)
+  # Keep the actual five/ten-second CLI deadlines, but schedule independent
+  # scenarios separately instead of serializing every wait in one process.
+  set(cli_contract_shards)
+  foreach(shard main usb station-failure history)
+    set(test_name cli-contract)
+    set(test_functions)
+    if(NOT shard STREQUAL main)
+      string(APPEND test_name "-${shard}")
+      set(test_functions commands)
+    endif()
+    add_test(NAME ${test_name} COMMAND cli_contract_tests ${test_functions} -platform offscreen
+      -o -,txt -o "${test_name}-tests.xml,junitxml")
+    set_tests_properties(${test_name} PROPERTIES LABELS coverage TIMEOUT 120
+      ENVIRONMENT "ALLPOWERS_TEST_CLI_SHARD=${shard}")
+    list(APPEND cli_contract_shards ${test_name})
+  endforeach()
+  # Seed CTest's scheduling estimates on a fresh build, before it has measured
+  # these waits. These are priorities only; the test deadlines stay unchanged.
+  set_tests_properties(cli-contract PROPERTIES COST 9)
+  set_tests_properties(cli-contract-usb cli-contract-station-failure PROPERTIES COST 10)
+  set_tests_properties(cli-contract-history PROPERTIES COST 12)
   qt_add_executable(ipc_contract_tests ../../tests/desktop/ipc_contract_test.cpp)
   target_link_libraries(ipc_contract_tests PRIVATE monitor_backend Qt6::Test)
   qt_import_plugins(ipc_contract_tests NO_DEFAULT INCLUDE Qt6::QSQLiteDriverPlugin)
@@ -293,7 +311,7 @@ if(BUILD_TESTING)
   # With CTest's redirected handles, Qt otherwise sends text diagnostics to
   # OutputDebugString instead of the captured stream, even with -o -,txt.
   set_property(TEST integration-contract usb-serial-contract battery-contract
-    service-contract cli-contract ipc-contract archive-transport languages
+    service-contract ${cli_contract_shards} ipc-contract archive-transport languages
     widget widget-native desktop dropdown-native APPEND PROPERTY ENVIRONMENT
     "QT_FORCE_STDERR_LOGGING=1")
   set_tests_properties(widget-native dropdown-native PROPERTIES RESOURCE_LOCK windows-desktop)

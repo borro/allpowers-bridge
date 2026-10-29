@@ -94,10 +94,20 @@ class CliContract : public QObject {
 private slots:
   void commands_data() {
     QTest::addColumn<QString>("scenario");
+    // CTest distributes the real timer waits across processes. Direct runs
+    // without a shard still exercise every scenario; new rows default to the
+    // main shard so adding a case cannot silently remove it from CTest.
+    const auto selectedShard = qEnvironmentVariable("ALLPOWERS_TEST_CLI_SHARD");
     for (auto *name : {"scan-usb", "scan-usb-unwritable", "scan-ble", "usb-pass", "usb-fail",
         "station-pass", "station-fail", "demo", "self-test", "self-test-slow-history",
-        "self-test-no-history", "self-test-history-error", "report-unwritable", "licenses", "battery"})
-      QTest::newRow(name) << QString(name);
+        "self-test-no-history", "self-test-history-error", "report-unwritable", "licenses", "battery"}) {
+      const QString scenario(name);
+      const QString shard = scenario.startsWith("usb-") ? "usb" :
+          scenario == "station-fail" ? "station-failure" :
+          scenario.startsWith("self-test") ? "history" : "main";
+      if (selectedShard.isEmpty() || selectedShard == shard)
+        QTest::newRow(name) << scenario;
+    }
   }
   void commands() {
     QFETCH(QString, scenario);
@@ -230,6 +240,12 @@ int runChild(QApplication &app, const QString &scenario) {
 int main(int argc, char **argv) {
   QApplication app(argc, argv);
   if (argc > 2 && QByteArray(argv[1]) == "--contract-child") return runChild(app, QString::fromLocal8Bit(argv[2]));
+  const auto shard = qEnvironmentVariable("ALLPOWERS_TEST_CLI_SHARD");
+  const QStringList shards{"main", "usb", "station-failure", "history"};
+  if (!shard.isEmpty() && !shards.contains(shard)) {
+    qCritical("Unknown ALLPOWERS_TEST_CLI_SHARD");
+    return 2;
+  }
   QTemporaryDir dir; qputenv("ALLPOWERS_DATA_DIR", dir.path().toUtf8());
   CliContract test; return QTest::qExec(&test, argc, argv);
 }

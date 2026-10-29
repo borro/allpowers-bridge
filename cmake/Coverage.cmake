@@ -12,6 +12,28 @@ if(ALLPOWERS_COVERAGE)
   endif()
 endif()
 
+# Tool caches contain dependencies, not instrumented product targets. Avoid
+# walking the entire Python installation just to find this build's counters.
+function(ap_collect_coverage_counters binary output)
+  file(GLOB entries LIST_DIRECTORIES TRUE "${binary}/*")
+  set(counters)
+  foreach(entry IN LISTS entries)
+    if(entry STREQUAL "${binary}/tools")
+      continue()
+    endif()
+    if(IS_DIRECTORY "${entry}")
+      # Match GLOB_RECURSE's default: do not follow directory symlinks.
+      if(NOT IS_SYMLINK "${entry}")
+        file(GLOB_RECURSE nested LIST_DIRECTORIES FALSE "${entry}/*.gcda")
+        list(APPEND counters ${nested})
+      endif()
+    elseif(entry MATCHES "[.]gcda$")
+      list(APPEND counters "${entry}")
+    endif()
+  endforeach()
+  set(${output} "${counters}" PARENT_SCOPE)
+endfunction()
+
 # Explicit targets only: do not instrument Qt, the driver, SDKs or firmware.
 function(ap_enable_coverage target)
   if(NOT ALLPOWERS_COVERAGE)

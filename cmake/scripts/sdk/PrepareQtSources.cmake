@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 4.4)
+include("${CMAKE_CURRENT_LIST_DIR}/../../modules/common/Download.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../Dependencies.cmake")
+if(NOT SOURCE_CACHE)
+  message(FATAL_ERROR "Set SOURCE_CACHE for verified Qt archives")
+endif()
+file(MAKE_DIRECTORY "${SOURCE_CACHE}")
+file(LOCK "${SOURCE_CACHE}/qt-downloads.lock" GUARD PROCESS TIMEOUT 600)
+foreach(module qtbase qtconnectivity qttools)
+  string(TOUPPER "${module}" key)
+  set(name "${module}-everywhere-src-${ALLPOWERS_QT_VERSION}.tar.xz")
+  ap_download_verified(URL "${ALLPOWERS_QT_SOURCE_URL}/${name}"
+    DESTINATION "${SOURCE_CACHE}/${name}" SHA256 "${ALLPOWERS_${key}_SHA256}"
+    MISMATCH REPLACE TIMEOUT 600 INACTIVITY_TIMEOUT 60)
+endforeach()

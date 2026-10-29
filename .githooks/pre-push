@@ -10,4 +10,4 @@ mkdir -p "$root/build/git-hooks"
 input=$(mktemp "$root/build/git-hooks/push.XXXXXXXX")
 trap 'rm -f "$input"' EXIT HUP INT TERM
 cat > "$input"
-"$runner" "-DROOT=$root" -DPHASE=push "-DPUSH_INPUT=$input" -P "$root/cmake/GitHooks.cmake"
+"$runner" "-DROOT=$root" -DPHASE=push "-DPUSH_INPUT=$input" -P "$root/cmake/scripts/hooks/GitHooks.cmake"

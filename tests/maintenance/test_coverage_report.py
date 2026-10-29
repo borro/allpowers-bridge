@@ -7,7 +7,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-spec = importlib.util.spec_from_file_location("coverage_report", Path(__file__).resolve().parents[2] / "cmake/CoverageReport.py")
+spec = importlib.util.spec_from_file_location("coverage_report", Path(__file__).resolve().parents[2] / "tools/quality/coverage_report.py")
 report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
 

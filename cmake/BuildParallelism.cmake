@@ -1,5 +1,0 @@
-include_guard(GLOBAL)
-set(ALLPOWERS_BUILD_JOBS 4 CACHE STRING "Parallel compiler jobs per nested product build")
-if(NOT ALLPOWERS_BUILD_JOBS MATCHES "^[1-9][0-9]*$")
-  message(FATAL_ERROR "ALLPOWERS_BUILD_JOBS must be a positive integer")
-endif()

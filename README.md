@@ -85,7 +85,7 @@ Chinese. Detailed guides are maintained in English.
 - [Bluetooth disconnect diagnostics](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — the board retains eight disconnect reasons until reboot; read them in USB Monitor diagnostics.
 - [Troubleshooting](docs/troubleshooting.md) — connection issues, stale readings and history gaps.
 - [Documentation index](docs/README.md) — hardware, USB protocol, recovery and reference material.
-- [Build from source](docs/building.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md).
+- [Build from source](docs/building.md) · [CMake structure](docs/cmake.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md).
 
 Product code is C++23: a portable core, shared firmware and native Qt Windows
 applications. Builds use CMake Presets/Ninja, CTest and CPack; Linux supports the
@@ -98,7 +98,7 @@ Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/a
 
 CI also requires Windows application formatting and per-area host coverage minimums. [Formatting](docs/building.md#formatting) · [Coverage policy](docs/building.md#test-coverage).
 
-[Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/InstallGitHooks.cmake` after preparing the toolchains.
+[Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the toolchains.
 
 CI submits the pinned C/C++ dependencies from `cmake/Dependencies.cmake` to the [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). Pull requests validate the snapshot; submission runs only from the default branch. CI summaries and artifacts include an inventory with repository, source and notice links. [Scope and local validation](docs/ci.md#cc-dependency-graph).
 

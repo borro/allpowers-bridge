@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 4.4)
 include("${ROOT}/cmake/Dependencies.cmake")
 file(MAKE_DIRECTORY "${WORK}")
 file(REAL_PATH "${WORK}" scratch)
@@ -27,7 +27,7 @@ endif()
 function(stage)
   execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${source}" "-DWORK=${scratch}/work"
     "-DCLI=${cli}" "-DDATA=${scratch}/data" "-DOUTPUT=${scratch}/output" -DVERSION=1.2.3
-    -P "${ROOT}/cmake/BuildFirmware.cmake" RESULT_VARIABLE result OUTPUT_VARIABLE log ERROR_VARIABLE error)
+    -P "${ROOT}/cmake/scripts/project/BuildFirmware.cmake" RESULT_VARIABLE result OUTPUT_VARIABLE log ERROR_VARIABLE error)
   if(result EQUAL 0 OR NOT error MATCHES "37")
     message(FATAL_ERROR "Expected fake compiler to stop after actual staging: ${log}\n${error}")
   endif()
@@ -95,7 +95,7 @@ if(CMAKE_HOST_UNIX)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E create_symlink "${scratch}/outside"
     "${scratch}/work/sketch/R2500Adapter/linked" COMMAND_ERROR_IS_FATAL ANY)
   file(WRITE "${scratch}/linked.cmake"
-    "include(\"${ROOT}/cmake/StageFirmware.cmake\")\nap_stage_firmware(\"${source}\" \"${scratch}/work\")\n")
+    "include(\"${ROOT}/cmake/modules/release/StageFirmware.cmake\")\nap_stage_firmware(ROOT \"${source}\" WORK \"${scratch}/work\")\n")
   execute_process(COMMAND "${CMAKE_COMMAND}" -P "${scratch}/linked.cmake"
     RESULT_VARIABLE result OUTPUT_VARIABLE log ERROR_VARIABLE error)
   if(result EQUAL 0 OR NOT error MATCHES "linked inputs")

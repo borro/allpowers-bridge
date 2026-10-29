@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'cmake'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools' / 'release'))
 from firmware_notices import Notices, linked_inputs
 
 

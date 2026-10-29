@@ -13,8 +13,9 @@ target_link_libraries(ups_test PRIVATE Allpowers::Core)
 target_compile_definitions(abi_test PRIVATE
   FIXTURE_PATH="${PROJECT_SOURCE_DIR}/tests/fixtures/notifications.json")
 foreach(target models_test abi_test ups_test firmware_test history_rollback_test)
-  ap_enable_coverage(${target})
-  ap_enable_mutation(${target})
+  ap_enable_sanitizers(TARGET ${target})
+  ap_enable_coverage(TARGET ${target})
+  ap_enable_mutation(TARGET ${target})
   target_compile_features(${target} PRIVATE cxx_std_23)
   if(MSVC)
     target_compile_options(${target} PRIVATE /utf-8 /UNDEBUG)
@@ -37,6 +38,8 @@ set_tests_properties(models abi ups-state firmware-host history-rollback PROPERT
 if(ALLPOWERS_SANITIZERS)
   add_executable(ubsan_fatal_control ubsan_policy_control.cpp)
   add_executable(ubsan_recoverable_control ubsan_policy_control.cpp)
+  ap_enable_sanitizers(TARGET ubsan_fatal_control)
+  ap_enable_sanitizers(TARGET ubsan_recoverable_control)
   # Contrast the previous recoverable behavior against the actual production
   # compile flags. Both diagnostics remain visible; product tests never recover.
   target_compile_options(ubsan_recoverable_control PRIVATE -fsanitize-recover=undefined)

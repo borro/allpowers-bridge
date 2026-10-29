@@ -1,18 +1,23 @@
 cmake_minimum_required(VERSION 4.4)
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
-include("${ROOT}/cmake/Version.cmake")
+include("${ROOT}/cmake/modules/project/Version.cmake")
+ap_read_version(ROOT "${ROOT}")
+include("${ROOT}/cmake/modules/project/Identity.cmake")
 include("${ROOT}/cmake/Dependencies.cmake")
 project(AllpowersUps LANGUAGES CXX)
-ap_add_build_identity()
-include("${ROOT}/cmake/WindowsCompiler.cmake")
-include("${ROOT}/cmake/StaticAnalysis.cmake")
+ap_add_build_identity(ROOT "${ALLPOWERS_ROOT}" BUILD_ROOT "${PROJECT_BINARY_DIR}"
+  RESOURCE_SOURCE "${PROJECT_SOURCE_DIR}")
+include("${ALLPOWERS_ROOT}/cmake/modules/quality/Options.cmake")
+ap_configure_quality(ROOT "${ALLPOWERS_ROOT}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
+include("${ROOT}/cmake/modules/project/WindowsCompiler.cmake")
+ap_configure_windows_compiler()
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "The UPS driver requires x64 MSVC and Windows SDK 10.0.26100.0")
 endif()
 set(ALLPOWERS_DEPS_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps" CACHE PATH "Dependency cache")
 set(wdk "${ALLPOWERS_DEPS_DIR}/wdk/${ALLPOWERS_WDK_VERSION}/c")
 if(NOT EXISTS "${wdk}/Include/wdf/kmdf/${ALLPOWERS_KMDF_VERSION}/wdf.h")
-  message(FATAL_ERROR "WDK is not prepared. Build the root ups-driver target or run cmake -DDEPS_DIR=<cache> -P cmake/SetupWdk.cmake first")
+  message(FATAL_ERROR "WDK is not prepared. Build the root ups-driver target or run cmake -DDEPS_DIR=<cache> -P cmake/scripts/sdk/SetupWdk.cmake first")
 endif()
 set(sdk "$ENV{ProgramFiles\(x86\)}/Windows Kits/10")
 set(kit "${ALLPOWERS_WINDOWS_SDK_VERSION}")
@@ -21,7 +26,7 @@ if(NOT EXISTS "${sdk}/Include/${kit}/shared/batclass.h")
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(AllpowersUps driver.cpp)
-ap_enable_static_analysis(AllpowersUps)
+ap_enable_static_analysis(TARGET AllpowersUps)
 add_dependencies(AllpowersUps product-identity)
 target_compile_features(AllpowersUps PRIVATE cxx_std_23)
 set_target_properties(AllpowersUps PROPERTIES SUFFIX .sys
@@ -50,7 +55,7 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
 add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/package/allpowersups.cat"
   COMMAND "${wdk}/tools/${kit}/x64/infverif.exe" /w "${CMAKE_BINARY_DIR}/package/AllpowersUps.inf"
   COMMAND "${wdk}/bin/${kit}/x86/Inf2Cat.exe" "/driver:${CMAKE_BINARY_DIR}/package" /os:10_X64 /uselocaltime
-  COMMAND "${CMAKE_COMMAND}" "-DDRIVER=$<TARGET_FILE:AllpowersUps>" -P "${ROOT}/cmake/CheckKernelDriver.cmake"
-  DEPENDS AllpowersUps "${CMAKE_BINARY_DIR}/package/AllpowersUps.inf" "${ROOT}/cmake/CheckKernelDriver.cmake"
+  COMMAND "${CMAKE_COMMAND}" "-DDRIVER=$<TARGET_FILE:AllpowersUps>" -P "${ROOT}/cmake/scripts/quality/CheckKernelDriver.cmake"
+  DEPENDS AllpowersUps "${CMAKE_BINARY_DIR}/package/AllpowersUps.inf" "${ROOT}/cmake/scripts/quality/CheckKernelDriver.cmake"
   VERBATIM)
 add_custom_target(ups-driver ALL DEPENDS "${CMAKE_BINARY_DIR}/package/allpowersups.cat")

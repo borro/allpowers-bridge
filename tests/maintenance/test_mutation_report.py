@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 spec = importlib.util.spec_from_file_location(
-    "mutation_report", Path(__file__).resolve().parents[2] / "cmake/MutationReport.py")
+    "mutation_report", Path(__file__).resolve().parents[2] / "tools/quality/mutation_report.py")
 report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
 

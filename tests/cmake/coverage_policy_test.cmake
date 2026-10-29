@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.4)
-include("${ROOT}/cmake/Coverage.cmake")
+include("${ROOT}/cmake/modules/quality/Coverage.cmake")
 set(counter_fixture "${WORK}/counter-fixture")
 file(MAKE_DIRECTORY "${counter_fixture}/new-target/objects"
   "${counter_fixture}/new-target/tools" "${counter_fixture}/tools/python")
@@ -10,7 +10,7 @@ foreach(counter IN LISTS expected_counters)
   file(WRITE "${counter}" "product counter")
 endforeach()
 file(WRITE "${counter_fixture}/tools/python/dependency.gcda" "tool-owned counter")
-ap_collect_coverage_counters("${counter_fixture}" actual_counters)
+ap_collect_coverage_counters(BINARY "${counter_fixture}" OUTPUT actual_counters)
 list(SORT expected_counters)
 list(SORT actual_counters)
 if(NOT actual_counters STREQUAL expected_counters)
@@ -21,17 +21,24 @@ file(CONFIGURE OUTPUT "${WORK}/source/CMakeLists.txt" CONTENT [=[
 cmake_minimum_required(VERSION 4.4)
 project(CoveragePolicy LANGUAGES CXX)
 set(BUILD_TESTING ON)
-include("@ROOT@/cmake/Coverage.cmake")
+include("@ROOT@/cmake/modules/quality/Options.cmake")
+ap_configure_quality(ROOT "${PROJECT_SOURCE_DIR}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
 add_executable(measured main.cpp)
 add_executable(ordinary main.cpp)
-ap_enable_coverage(measured)
+ap_enable_coverage(TARGET measured)
 ]=] @ONLY)
 file(WRITE "${WORK}/source/main.cpp" "int main(int argc, char**) { return argc > 1 ? 1 : 0; }\n")
+set(modes COVERAGE SANITIZERS MUTATION FUZZING STATIC_ANALYSIS)
+set(disabled)
+foreach(mode IN LISTS modes)
+  list(APPEND disabled "-DALLPOWERS_${mode}=OFF")
+endforeach()
 foreach(enabled OFF ON)
   set(binary "${WORK}/${enabled}")
   execute_process(COMMAND "${CMAKE_COMMAND}" -S "${WORK}/source" -B "${binary}" -G Ninja
     -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=${CXX}" "-DCMAKE_MAKE_PROGRAM=${NINJA}"
-    "-DALLPOWERS_COVERAGE=${enabled}" -DALLPOWERS_SANITIZERS=OFF COMMAND_ERROR_IS_FATAL ANY)
+    # Previous negative controls leave incompatible selections in the cache.
+    ${disabled} "-DALLPOWERS_COVERAGE=${enabled}" COMMAND_ERROR_IS_FATAL ANY)
   execute_process(COMMAND "${CMAKE_COMMAND}" --build "${binary}" COMMAND_ERROR_IS_FATAL ANY)
   if(WIN32)
     set(extension .exe)
@@ -65,4 +72,38 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -S "${WORK}/source" -B "${WORK}/ON"
   -DALLPOWERS_SANITIZERS=ON RESULT_VARIABLE rejected OUTPUT_QUIET ERROR_QUIET)
 if(rejected STREQUAL "0")
   message(FATAL_ERROR "Coverage must reject mixing sanitizer and coverage builds")
+endif()
+
+# Every pair is rejected by the common policy before tool discovery, including
+# combinations that would otherwise be unsupported on this compiler/platform.
+foreach(first RANGE 0 3)
+  math(EXPR next "${first}+1")
+  foreach(second RANGE ${next} 4)
+    list(GET modes ${first} left)
+    list(GET modes ${second} right)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -S "${WORK}/source" -B "${WORK}/ON"
+      ${disabled} "-DALLPOWERS_${left}=ON" "-DALLPOWERS_${right}=ON"
+      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+    if(result EQUAL 0 OR NOT "${output}${error}" MATCHES "separate build directories")
+      message(FATAL_ERROR "Quality policy did not reject ${left}/${right}: ${output}${error}")
+    endif()
+  endforeach()
+endforeach()
+
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+  file(APPEND "${WORK}/source/CMakeLists.txt" "\nap_enable_sanitizers(TARGET measured)\n")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -S "${WORK}/source" -B "${WORK}/ON"
+    ${disabled} -DALLPOWERS_SANITIZERS=ON COMMAND_ERROR_IS_FATAL ANY)
+  foreach(target measured ordinary)
+    execute_process(COMMAND "${NINJA}" -C "${WORK}/ON" -t commands ${target}
+      OUTPUT_VARIABLE commands COMMAND_ERROR_IS_FATAL ANY)
+    if(target STREQUAL measured)
+      if(NOT commands MATCHES "-fsanitize=address,undefined" OR
+          NOT commands MATCHES "-fno-sanitize-recover=undefined")
+        message(FATAL_ERROR "Selected target lost fatal sanitizer instrumentation")
+      endif()
+    elseif(commands MATCHES "-fsanitize")
+      message(FATAL_ERROR "Sanitizers leaked into an unselected target")
+    endif()
+  endforeach()
 endif()

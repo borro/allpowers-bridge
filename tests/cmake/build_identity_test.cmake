@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 4.4)
 find_package(Git REQUIRED)
 file(MAKE_DIRECTORY "${WORK}")
 file(REAL_PATH "${WORK}" scratch)
@@ -10,19 +10,23 @@ endif()
 file(REMOVE_RECURSE "${scratch}")
 set(repo "${scratch}/repo")
 file(MAKE_DIRECTORY "${repo}/cmake" "${repo}/drivers/windows")
-file(COPY "${ROOT}/cmake/Version.cmake" "${ROOT}/cmake/BuildIdentity.cmake"
-  "${ROOT}/cmake/ReleaseVersion.cmake" DESTINATION "${repo}/cmake")
+file(COPY "${ROOT}/cmake" DESTINATION "${repo}")
 file(COPY "${ROOT}/drivers/windows/AllpowersUps.inf.in" DESTINATION "${repo}/drivers/windows")
 file(WRITE "${repo}/.gitignore" "build/\n")
 file(WRITE "${repo}/main.cpp" "#include \"product-version.h\"\n#include <cstdio>\nint main(){std::puts(APP_VERSION);}\n")
 file(CONFIGURE OUTPUT "${repo}/CMakeLists.txt" CONTENT [=[
-cmake_minimum_required(VERSION 3.26)
-include(cmake/Version.cmake)
+cmake_minimum_required(VERSION 4.4)
+include(cmake/modules/project/Version.cmake)
+ap_read_version(ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+include(cmake/modules/project/Identity.cmake)
 project(IdentityProbe LANGUAGES CXX)
-include("@ROOT@/cmake/WindowsCompiler.cmake")
-ap_add_build_identity()
+include("@ROOT@/cmake/modules/project/WindowsCompiler.cmake")
+ap_configure_windows_compiler()
+ap_add_build_identity(ROOT "${ALLPOWERS_ROOT}" BUILD_ROOT "${PROJECT_BINARY_DIR}"
+  RESOURCE_SOURCE "${PROJECT_SOURCE_DIR}")
 set(ALLPOWERS_DEPS_DIR "${CMAKE_BINARY_DIR}/deps")
-include("@ROOT@/cmake/UpsDriver.cmake")
+include("@ROOT@/cmake/modules/products/UpsDriver.cmake")
+ap_add_windows_driver(ROOT "${ALLPOWERS_ROOT}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
 add_executable(probe main.cpp)
 target_include_directories(probe PRIVATE "${CMAKE_BINARY_DIR}/identity")
 add_dependencies(probe product-identity)
@@ -64,7 +68,7 @@ if(NOT version STREQUAL "1.2.3-dirty")
   message(FATAL_ERROR "Untracked build input impersonated a clean identity: ${version}")
 endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DALLPOWERS_ROOT=${repo}" -DEXPECTED_VERSION=1.2.3
-  -P "${ROOT}/cmake/CheckPackageIdentity.cmake" RESULT_VARIABLE unsafe OUTPUT_QUIET ERROR_QUIET)
+  -P "${ROOT}/cmake/scripts/release/CheckPackageIdentity.cmake" RESULT_VARIABLE unsafe OUTPUT_QUIET ERROR_QUIET)
 if(unsafe EQUAL 0)
   message(FATAL_ERROR "Local packaging accepted an identity changed since configure")
 endif()
@@ -103,7 +107,7 @@ endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DALLPOWERS_ROOT=${repo}"
   "-DALLPOWERS_PARENT_IDENTITY=${repo}/build/identity/product-identity.cmake"
   "-DRESOURCE_SOURCE=${repo}/drivers/windows" "-DOUTPUT=${scratch}/driver/identity"
-  -P "${ROOT}/cmake/BuildIdentity.cmake" COMMAND_ERROR_IS_FATAL ANY)
+  -P "${ROOT}/cmake/scripts/project/BuildIdentity.cmake" COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${scratch}/driver/package/AllpowersUps.inf" inf)
 if(NOT inf MATCHES "DriverVer=[^\n]*,1\\.2\\.3\\.0")
   message(FATAL_ERROR "Child driver ignored selected root identity: ${inf}")
@@ -111,14 +115,14 @@ endif()
 file(APPEND "${repo}/main.cpp" "// dirty before package\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DALLPOWERS_ROOT=${repo}"
   "-DALLPOWERS_PARENT_IDENTITY=${repo}/build/identity/product-identity.cmake"
-  "-DOUTPUT=${scratch}/direct-child/identity" -P "${ROOT}/cmake/BuildIdentity.cmake"
+  "-DOUTPUT=${scratch}/direct-child/identity" -P "${ROOT}/cmake/scripts/project/BuildIdentity.cmake"
   COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${scratch}/direct-child/identity/product-version.txt" version)
 if(NOT version STREQUAL "1.2.3-dirty\n")
   message(FATAL_ERROR "Stale clean parent identity hid a direct child source edit")
 endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DALLPOWERS_ROOT=${repo}" -DALLPOWERS_RELEASE_TAG=v1.2.3
-  -DEXPECTED_VERSION=1.2.3 -P "${ROOT}/cmake/CheckPackageIdentity.cmake"
+  -DEXPECTED_VERSION=1.2.3 -P "${ROOT}/cmake/scripts/release/CheckPackageIdentity.cmake"
   RESULT_VARIABLE unsafe OUTPUT_QUIET ERROR_QUIET)
 if(unsafe EQUAL 0)
   message(FATAL_ERROR "Packaging accepted a dirty release after configure")
@@ -127,7 +131,7 @@ git(checkout -- main.cpp)
 file(WRITE "${repo}/child-added.cpp" "// direct child untracked input\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DALLPOWERS_ROOT=${repo}"
   "-DALLPOWERS_PARENT_IDENTITY=${repo}/build/identity/product-identity.cmake"
-  "-DOUTPUT=${scratch}/direct-child/identity" -P "${ROOT}/cmake/BuildIdentity.cmake"
+  "-DOUTPUT=${scratch}/direct-child/identity" -P "${ROOT}/cmake/scripts/project/BuildIdentity.cmake"
   COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${scratch}/direct-child/identity/product-version.txt" version)
 if(NOT version STREQUAL "1.2.3-dirty\n")
@@ -135,10 +139,10 @@ if(NOT version STREQUAL "1.2.3-dirty\n")
 endif()
 # A no-.git corresponding source tree retains its generated VERSION.
 file(MAKE_DIRECTORY "${scratch}/archive/cmake")
-file(COPY "${repo}/cmake/Version.cmake" "${repo}/cmake/BuildIdentity.cmake" DESTINATION "${scratch}/archive/cmake")
+file(COPY "${repo}/cmake" DESTINATION "${scratch}/archive")
 file(WRITE "${scratch}/archive/VERSION" "1.2.3-archive\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DALLPOWERS_ROOT=${scratch}/archive" "-DOUTPUT=${scratch}/archive/identity"
-  -P "${ROOT}/cmake/BuildIdentity.cmake" COMMAND_ERROR_IS_FATAL ANY)
+  -P "${ROOT}/cmake/scripts/project/BuildIdentity.cmake" COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${scratch}/archive/identity/product-version.txt" version)
 if(NOT version STREQUAL "1.2.3-archive\n")
   message(FATAL_ERROR "Source archive identity lost VERSION")

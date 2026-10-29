@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("static_analysis", ROOT / "cmake/static_analysis.py")
+spec = importlib.util.spec_from_file_location("static_analysis", ROOT / "tools/quality/static_analysis.py")
 analysis = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(analysis)
 
@@ -88,7 +88,7 @@ class AnalysisReports(unittest.TestCase):
             build = Path(directory)
             for name in ("clang-tidy", "cppcheck"):
                 (build / f"{name}.json").write_text('{"complete":true}', encoding="utf-8")
-            result = subprocess.run([sys.executable, "-I", "-S", "-B", str(ROOT / "cmake/static_analysis.py"),
+            result = subprocess.run([sys.executable, "-I", "-S", "-B", str(ROOT / "tools/quality/static_analysis.py"),
                                      "linux", "--root", str(ROOT), "--build", str(build), "--output", str(build)],
                                     capture_output=True, timeout=10)
             self.assertNotEqual(result.returncode, 0)

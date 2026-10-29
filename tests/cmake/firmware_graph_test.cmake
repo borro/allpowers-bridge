@@ -10,7 +10,7 @@ endif()
 file(REMOVE_RECURSE "${scratch}")
 set(source "${scratch}/source")
 file(MAKE_DIRECTORY "${source}")
-foreach(name cmake core firmware tests docs)
+foreach(name cmake core firmware tests docs tools)
   file(COPY "${ROOT}/${name}" DESTINATION "${source}")
 endforeach()
 file(COPY "${ROOT}/CMakeLists.txt" "${ROOT}/LICENSE" "${ROOT}/THIRD_PARTY_NOTICES.md" DESTINATION "${source}")
@@ -18,7 +18,7 @@ file(WRITE "${source}/.gitignore" "build/\n")
 file(WRITE "${source}/VERSION" "1.2.3\n")
 # Use the actual graph, staging, partition validation and manifest generation.
 # Only the external compiler and legal-source packaging boundaries are fixtures.
-file(WRITE "${source}/cmake/PrepareFirmwareKit.cmake" [=[
+file(WRITE "${source}/cmake/scripts/release/PrepareFirmwareKit.cmake" [=[
 file(MAKE_DIRECTORY "${OUTPUT}/licenses")
 foreach(name corresponding-source.zip FIRMWARE-LICENSES.md licenses/README.md licenses/NOTICES.md licenses/components.json)
   file(WRITE "${OUTPUT}/${name}" "offline legal-packaging fixture\n")
@@ -28,7 +28,8 @@ file(MAKE_DIRECTORY "${scratch}/cli-source")
 file(CONFIGURE OUTPUT "${scratch}/cli-source/CMakeLists.txt" CONTENT [=[
 cmake_minimum_required(VERSION 4.4)
 project(OfflineArduinoBoundary LANGUAGES CXX)
-include("@ROOT@/cmake/WindowsCompiler.cmake")
+include("@ROOT@/cmake/modules/project/WindowsCompiler.cmake")
+ap_configure_windows_compiler()
 add_executable(partitions "@ROOT@/tests/cmake/partition_fixture.cpp")
 target_compile_features(partitions PRIVATE cxx_std_23)
 add_executable(arduino-cli "@ROOT@/tests/cmake/firmware_graph_cli.cpp")

@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location("ci_policy", Path(__file__).resolve().parents[2] / "cmake/ci_policy.py")
+spec = importlib.util.spec_from_file_location("ci_policy", Path(__file__).resolve().parents[2] / "tools/ci/ci_policy.py")
 ci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ci)
 

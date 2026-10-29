@@ -85,7 +85,7 @@
 - [Диагностика обрывов Bluetooth](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — плата хранит восемь причин отключения до перезагрузки; они доступны в USB-диагностике Monitor.
 - [Устранение неполадок](docs/troubleshooting.md) — подключение, устаревшие показания и пропуски истории.
 - [Оглавление документации](docs/README.md) — платы, протокол USB, восстановление и справочник.
-- [Сборка из исходников](docs/building.md) · [Архитектура](docs/architecture.md) · [Участие в проекте](CONTRIBUTING.md).
+- [Сборка из исходников](docs/building.md) · [Структура CMake](docs/cmake.md) · [Архитектура](docs/architecture.md) · [Участие в проекте](CONTRIBUTING.md).
 
 Код продукта написан на C++23: переносимое ядро, общая прошивка и нативные
 Qt-приложения Windows. Сборка использует CMake Presets/Ninja, CTest и CPack;
@@ -98,7 +98,7 @@ Linux поддерживает ядро и сборку прошивок, при
 
 CI также требует соблюдения форматирования Windows-приложения и минимального покрытия host-кода по отдельным областям. [Форматирование](docs/building.md#formatting) · [Правила покрытия](docs/building.md#test-coverage).
 
-[Локальные Git-хуки](docs/ci.md#local-git-hooks) используют CMake/CTest для параллельных проверок подготовленного к коммиту снимка и отправляемых коммитов, без запуска через PowerShell. Windows использует WSL; на Linux Windows-проверки остаются CI. Установка после подготовки инструментов: `cmake -P cmake/InstallGitHooks.cmake`.
+[Локальные Git-хуки](docs/ci.md#local-git-hooks) используют CMake/CTest для параллельных проверок подготовленного к коммиту снимка и отправляемых коммитов, без запуска через PowerShell. Windows использует WSL; на Linux Windows-проверки остаются CI. Установка после подготовки инструментов: `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake`.
 
 CI отправляет закреплённые зависимости C/C++ из `cmake/Dependencies.cmake` в [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). В pull request проверяется снимок; отправка выполняется только из основной ветки. Сводка и артефакты CI содержат список со ссылками на репозитории, исходники и уведомления о лицензиях. [Охват и локальная проверка](docs/ci.md#cc-dependency-graph).
 

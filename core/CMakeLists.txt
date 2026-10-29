@@ -1,8 +1,9 @@
 add_library(allpowers_core SHARED native/api.cpp)
 add_library(Allpowers::Core ALIAS allpowers_core)
-ap_enable_coverage(allpowers_core)
-ap_enable_mutation(allpowers_core)
-ap_enable_static_analysis(allpowers_core)
+ap_enable_sanitizers(TARGET allpowers_core)
+ap_enable_coverage(TARGET allpowers_core)
+ap_enable_mutation(TARGET allpowers_core)
+ap_enable_static_analysis(TARGET allpowers_core)
 target_include_directories(allpowers_core PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/native>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>")

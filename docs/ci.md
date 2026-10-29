@@ -4,7 +4,7 @@
 
 The optional hooks use CMake for Git snapshots and CTest for parallel scheduling,
 failure handling, logs and timings. Install with
-`cmake -P cmake/InstallGitHooks.cmake` after preparing the coverage,
+`cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the coverage,
 static-analysis and mutation toolchains for the host.
 The installer discovers their paths from the existing CMake caches and writes
 ignored `.local/hooks.json`; `-DCONFIG=<file>` can supply explicit local paths.
@@ -14,6 +14,11 @@ Git configuration. Windows uses WSL for Linux checks and a CMake adapter calling
 the vendor's MSVC environment batch file; a Developer PowerShell session is unnecessary. All host-specific
 integration is confined to `.githooks/`. Linux runs natively without PowerShell
 and leaves Windows units/coverage to CI. No Python build wrapper is used.
+
+Check modes come from `CMakePresets.json`; hooks override isolated directories,
+local tool paths, concurrency and fuzz duration. Entry points now live under
+`cmake/scripts/hooks`, reusable functions under `cmake/modules/hooks`, and the
+CTest scheduler under `cmake/projects/HookChecks`. See [CMake structure](cmake.md).
 
 - **Pre-commit**, in parallel: index audit, Windows application formatting,
   secret scanning, staged whitespace checks, portable Windows and Linux units,
@@ -41,8 +46,8 @@ limits. CTest logs and JUnit timings are in `build/git-hooks/logs/`. First runs
 build the dedicated targets and take longer than warm runs. Manual commands:
 
 ```sh
-cmake -DPHASE=commit -P cmake/GitHooks.cmake
-cmake -DPHASE=push -DREVISION=HEAD -P cmake/GitHooks.cmake
+cmake -DPHASE=commit -P cmake/scripts/hooks/GitHooks.cmake
+cmake -DPHASE=push -DREVISION=HEAD -P cmake/scripts/hooks/GitHooks.cmake
 ```
 
 Existing project builds also expose `pre-commit`, `pre-push` (HEAD), and
@@ -199,7 +204,7 @@ python3 -I -S -B -m unittest discover -s tests/maintenance -p test_dependency_sn
 
 To generate the JSON locally, supply `GITHUB_SHA` (full 40-character commit),
 `GITHUB_REF`, `GITHUB_REPOSITORY`, and `GITHUB_RUN_ID`, then run
-`python3 -I -S -B cmake/dependency_snapshot.py --output build/dependency-graph/snapshot.json`.
+`python3 -I -S -B tools/ci/dependency_snapshot.py --output build/dependency-graph/snapshot.json`.
 CMake 3.25 or later must be on PATH (or supplied through `--cmake`; tests also
 accept `CMAKE_COMMAND`). Generation does not need a token or download SDKs.
 
@@ -256,7 +261,7 @@ SDK transport artifacts are retained for one day; reports and release transport
 artifacts for 14 days. An expired SDK
 artifact requires rerunning its producer as well as failed consumers.
 
-`cmake -P cmake/PrepareWindowsSdk.cmake` restores and validates the SDK, or builds
+`cmake -P cmake/scripts/sdk/PrepareWindowsSdk.cmake` restores and validates the SDK, or builds
 and seals it. Cold CI builds stream Qt's inner Ninja compilation progress directly
 (`ALLPOWERS_QT_LOG_BUILD=OFF`); download, configure and install logs remain in
 ExternalProject directories. Local builds retain captured compilation logs by default.
@@ -264,10 +269,10 @@ SDK diagnostics are uploaded separately. Qt cache schema v4 hashes the actual
 compiler/linker binaries and the CMake cache recipe; the migration fills a new
 cache once. No PowerShell progress observer or cache wrapper is required.
 
-Release publication uses the portable `cmake/publish_release.py` tool after CMake
+Release publication uses the portable `tools/release/publish_release.py` tool after CMake
 has prepared all assets. Its offline fake-API regressions run on Windows and Linux,
 including interrupted uploads, immutable published releases and tag/asset mismatches.
-The only maintained `.ps1` is `cmake/CheckExeVersion.ps1`, a small Windows
+The only maintained `.ps1` is `tools/windows/CheckExeVersion.ps1`, a small Windows
 VERSIONINFO reader used when checking Windows binaries.
 
 ## Local entry points

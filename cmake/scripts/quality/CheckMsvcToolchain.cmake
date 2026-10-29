@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 4.4)
+include("${CMAKE_CURRENT_LIST_DIR}/../../Dependencies.cmake")
+if(NOT CMAKE_HOST_WIN32)
+  message(FATAL_ERROR "The MSVC toolchain check requires Windows")
+endif()
+string(REGEX REPLACE "[/\\\\]+$" "" sdk "$ENV{WindowsSDKVersion}")
+if(NOT sdk STREQUAL ALLPOWERS_WINDOWS_SDK_VERSION)
+  message(FATAL_ERROR "Expected Windows SDK ${ALLPOWERS_WINDOWS_SDK_VERSION}, got '${sdk}'")
+endif()
+string(REPLACE "." "\\." expected "${ALLPOWERS_MSVC_TOOLSET_VERSION}")
+if(NOT "$ENV{VCToolsVersion}" MATCHES "^${expected}\\.")
+  message(FATAL_ERROR
+    "Expected MSVC toolset ${ALLPOWERS_MSVC_TOOLSET_VERSION}.x, got '$ENV{VCToolsVersion}'. "
+    "Select Visual Studio 2026 and the pinned toolset before configuring Qt.")
+endif()
+message(STATUS "MSVC toolset verified: $ENV{VCToolsVersion}")

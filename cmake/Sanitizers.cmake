@@ -1,8 +1,0 @@
-option(ALLPOWERS_SANITIZERS "Instrument portable targets with fatal ASan/UBSan checks" OFF)
-if(ALLPOWERS_SANITIZERS)
-  if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    message(FATAL_ERROR "Portable sanitizer checks require GCC or Clang")
-  endif()
-  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined)
-endif()

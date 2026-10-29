@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 4.4)
+include("${CMAKE_CURRENT_LIST_DIR}/../../modules/sdk/Coverage.cmake")
+ap_setup_coverage(WORK "${WORK}" OUTPUT tool)
+include("${CMAKE_CURRENT_LIST_DIR}/../../Dependencies.cmake")
+if(NOT "$ENV{GITHUB_OUTPUT}" STREQUAL "")
+  file(APPEND "$ENV{GITHUB_OUTPUT}" "codecov-version=${ALLPOWERS_CODECOV_CLI_VERSION}\n")
+endif()

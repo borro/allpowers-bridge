@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("dependency_snapshot", ROOT / "cmake/dependency_snapshot.py")
+spec = importlib.util.spec_from_file_location("dependency_snapshot", ROOT / "tools/ci/dependency_snapshot.py")
 graph = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(graph)
 CMAKE = os.environ.get("CMAKE_COMMAND", "cmake")
@@ -125,7 +125,7 @@ class DependencySnapshotTests(unittest.TestCase):
             output = Path(directory) / "nested/snapshot.json"
             env = {**os.environ, **ENV}
             env.pop("GITHUB_STEP_SUMMARY", None)
-            subprocess.run([sys.executable, "-I", "-S", "-B", str(ROOT / "cmake/dependency_snapshot.py"),
+            subprocess.run([sys.executable, "-I", "-S", "-B", str(ROOT / "tools/ci/dependency_snapshot.py"),
                             "--cmake", CMAKE, "--output", str(output)], env=env, check=True,
                            capture_output=True, timeout=30)
             result = json.loads(output.read_text())

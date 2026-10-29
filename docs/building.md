@@ -2,6 +2,9 @@
 
 [Documentation](README.md)
 
+See [CMake architecture](cmake.md) for subsystem ownership, script entry points,
+cache contracts and regression checks.
+
 ## Tools and presets
 
 Optional parallel commit/push checks are described in [local Git hooks](ci.md#local-git-hooks).
@@ -135,7 +138,7 @@ The required minimums apply separately to each measured source area:
 | `firmware/R2500Adapter/` in host tests | 100% | 98% |
 | `apps/windows/` | Not measured | 90% |
 
-`cmake/CoverageReport.py` owns these thresholds. Exact covered/total counts are
+`tools/quality/coverage_report.py` owns these thresholds. Exact covered/total counts are
 compared before rounding; one area cannot compensate for another. Missing areas,
 failed tests and coverage below a threshold fail `coverage-report` and therefore
 `CI result`. A threshold failure retains the normalized XML and a PASS/FAIL table
@@ -170,7 +173,7 @@ compilation and tests.
 Linux:
 
 ```sh
-cmake -DWORK=build/coverage-linux/tools/coverage -P cmake/SetupCoverage.cmake
+cmake -DWORK=build/coverage-linux/tools/coverage -P cmake/scripts/sdk/SetupCoverage.cmake
 cmake --preset coverage-linux
 cmake --build --preset coverage-linux
 ctest --preset coverage-linux --verbose
@@ -179,7 +182,7 @@ ctest --preset coverage-linux --verbose
 Windows (x64 Developer PowerShell with Python on PATH):
 
 ```powershell
-cmake -DWORK=build/coverage-windows/tools/coverage -P cmake/SetupCoverage.cmake
+cmake -DWORK=build/coverage-windows/tools/coverage -P cmake/scripts/sdk/SetupCoverage.cmake
 cmake --preset coverage-windows
 cmake --build --preset coverage-windows
 ctest --preset coverage-windows --verbose
@@ -217,7 +220,7 @@ scope. The checker uses `--dry-run --Werror`; it never edits sources. CI also
 checks that deliberately malformed input fails and valid input passes.
 
 ```sh
-cmake -DROOT=. -DWORK=build/format -P cmake/RunFormat.cmake
+cmake -DROOT=. -DWORK=build/format -P cmake/scripts/quality/RunFormat.cmake
 ```
 
 The `format-check` build target runs the same check. The first run downloads the
@@ -236,7 +239,7 @@ Install the Ubuntu toolchain packages once, then use the same CMake entry points
 ```sh
 sudo apt-get update
 sudo apt-get install -y clang-18 libclang-cpp18 llvm-18-dev libclang-18-dev
-cmake -DWORK=build/mutation-linux/tools/mull -P cmake/SetupMutation.cmake
+cmake -DWORK=build/mutation-linux/tools/mull -P cmake/scripts/sdk/SetupMutation.cmake
 cmake --preset mutation-linux
 cmake --build --preset mutation-linux --parallel 2
 ```

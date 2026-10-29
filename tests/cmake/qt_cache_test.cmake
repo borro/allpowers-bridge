@@ -6,16 +6,18 @@ string(RANDOM LENGTH 24 ALPHABET 0123456789abcdef suffix)
 set(scratch "${WORK}/${suffix}")
 set(source "${scratch}/source")
 file(MAKE_DIRECTORY "${source}/cmake")
-foreach(recipe Dependencies.cmake QtStatic.cmake WindowsCompiler.cmake SizeOptimization.cmake
-    DependencyFingerprint.cmake QtCache.cmake QtCacheProbe.cmake QtCacheImports.cmake
-    qt_cache_probe.cpp QtSourceIdentity.cmake)
-  configure_file("${ROOT}/cmake/${recipe}" "${source}/cmake/${recipe}" COPYONLY)
+foreach(recipe cmake/Dependencies.cmake cmake/modules/common/Arguments.cmake cmake/modules/common/Json.cmake
+    cmake/scripts/sdk/QtCompiler.cmake cmake/scripts/sdk/ExtractQtSource.cmake
+    cmake/modules/common/Download.cmake cmake/modules/common/Files.cmake cmake/modules/sdk/QtStatic.cmake cmake/modules/project/WindowsCompiler.cmake cmake/modules/project/SizeOptimization.cmake
+    cmake/modules/sdk/DependencyFingerprint.cmake cmake/scripts/sdk/QtCache.cmake cmake/templates/sdk/QtCacheProbe.cmake.in cmake/scripts/quality/QtCacheImports.cmake
+    tests/sdk/qt_cache_probe.cpp cmake/scripts/sdk/QtSourceIdentity.cmake)
+  configure_file("${ROOT}/${recipe}" "${source}/${recipe}" COPYONLY)
 endforeach()
 set(ENV{GITHUB_OUTPUT} "${scratch}/outputs.txt")
 function(cache mode output)
   file(WRITE "$ENV{GITHUB_OUTPUT}" "")
   execute_process(COMMAND "${CMAKE_COMMAND}" "-DMODE=${mode}" "-DROOT=${source}"
-    -P "${source}/cmake/QtCache.cmake" COMMAND_ERROR_IS_FATAL ANY)
+    -P "${source}/cmake/scripts/sdk/QtCache.cmake" COMMAND_ERROR_IS_FATAL ANY)
   file(READ "$ENV{GITHUB_OUTPUT}" result)
   set(${output} "${result}" PARENT_SCOPE)
 endfunction()
@@ -41,15 +43,15 @@ foreach(name UCRTVersion WindowsSDKVersion VCToolsVersion)
     message(FATAL_ERROR "${name} did not invalidate the key")
   endif()
 endforeach()
-file(READ "${source}/cmake/DependencyFingerprint.cmake" helper)
-string(REPLACE "set(recipes PrepareFirmwareKit.cmake "
-  "set(recipes FirmwareOnlyFixture.cmake PrepareFirmwareKit.cmake " changed "${helper}")
+file(READ "${source}/cmake/modules/sdk/DependencyFingerprint.cmake" helper)
+string(REPLACE "set(recipes cmake/scripts/release/PrepareFirmwareKit.cmake "
+  "set(recipes FirmwareOnlyFixture.cmake cmake/scripts/release/PrepareFirmwareKit.cmake " changed "${helper}")
 if(changed STREQUAL helper)
   message(FATAL_ERROR "Firmware helper fixture did not change")
 endif()
-file(WRITE "${source}/cmake/DependencyFingerprint.cmake" "${changed}")
+file(WRITE "${source}/cmake/modules/sdk/DependencyFingerprint.cmake" "${changed}")
 get_key(changed_key)
-file(WRITE "${source}/cmake/DependencyFingerprint.cmake" "${helper}")
+file(WRITE "${source}/cmake/modules/sdk/DependencyFingerprint.cmake" "${helper}")
 if(NOT changed_key STREQUAL baseline)
   message(FATAL_ERROR "Firmware helper recipe invalidated unrelated Qt SDK")
 endif()
@@ -72,9 +74,9 @@ foreach(name ALLPOWERS_MULL_VERSION ALLPOWERS_ESP32_VERSION ALLPOWERS_QT_VERSION
     message(FATAL_ERROR "${name} did not invalidate the Qt SDK")
   endif()
 endforeach()
-foreach(recipe QtStatic.cmake SizeOptimization.cmake)
+foreach(recipe cmake/modules/sdk/QtStatic.cmake cmake/modules/project/SizeOptimization.cmake)
   get_key(before)
-  file(APPEND "${source}/cmake/${recipe}" "\n# changed build recipe\n")
+  file(APPEND "${source}/${recipe}" "\n# changed build recipe\n")
   get_key(after)
   if(before STREQUAL after)
     message(FATAL_ERROR "${recipe} did not invalidate the key")
@@ -105,8 +107,8 @@ message(STATUS "Qt cache identity, invalidation, misses and quarantine checks pa
 
 # Exercise Seal/Restore's successful subprocess and JSON round trip with an
 # intentionally synthetic probe, then prove a failed runtime check rejects it.
-file(WRITE "${source}/cmake/QtSourceIdentity.cmake" "message(STATUS \"Synthetic SDK identity fixture\")\n")
-file(WRITE "${source}/cmake/QtCacheProbe.cmake" [=[
+file(WRITE "${source}/cmake/scripts/sdk/QtSourceIdentity.cmake" "message(STATUS \"Synthetic SDK identity fixture\")\n")
+file(WRITE "${source}/cmake/templates/sdk/QtCacheProbe.cmake.in" [=[
 cmake_minimum_required(VERSION 4.4)
 project(SyntheticSdkProbe LANGUAGES NONE)
 enable_testing()
@@ -128,7 +130,7 @@ if(NOT rejected STREQUAL "root=\n" OR EXISTS "${install}")
   message(FATAL_ERROR "Failing SDK runtime probe was accepted")
 endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" -DMODE=Seal "-DROOT=${source}"
-  -P "${source}/cmake/QtCache.cmake" RESULT_VARIABLE failed_seal OUTPUT_QUIET ERROR_QUIET)
+  -P "${source}/cmake/scripts/sdk/QtCache.cmake" RESULT_VARIABLE failed_seal OUTPUT_QUIET ERROR_QUIET)
 if(failed_seal STREQUAL "0" OR EXISTS "${install}/allpowers-qt-cache.json")
   message(FATAL_ERROR "Failing SDK probe must not seal a cache")
 endif()

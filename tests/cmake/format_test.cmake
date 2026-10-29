@@ -10,7 +10,7 @@ set(source "${fixture}/apps/windows/control.cpp")
 function(check expected)
   file(SHA256 "${source}" before)
   execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${fixture}" "-DTOOL=${TOOL}"
-    -P "${ROOT}/cmake/RunFormat.cmake"
+    -P "${ROOT}/cmake/scripts/quality/RunFormat.cmake"
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
   file(SHA256 "${source}" after)
   if(NOT before STREQUAL after)

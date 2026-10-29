@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 
-spec = importlib.util.spec_from_file_location("ci_summary", Path(__file__).resolve().parents[2] / "cmake/ci_summary.py")
+spec = importlib.util.spec_from_file_location("ci_summary", Path(__file__).resolve().parents[2] / "tools/ci/ci_summary.py")
 summary = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(summary)
 

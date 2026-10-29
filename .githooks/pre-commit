@@ -6,4 +6,4 @@ case "$(uname -s)" in
   *) key=allpowers.hookCMakeLinux ;;
 esac
 runner=$(git config --get "$key" || command -v cmake)
-exec "$runner" "-DROOT=$root" -DPHASE=commit -P "$root/cmake/GitHooks.cmake"
+exec "$runner" "-DROOT=$root" -DPHASE=commit -P "$root/cmake/scripts/hooks/GitHooks.cmake"

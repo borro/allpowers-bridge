@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 4.4)
 find_package(Git REQUIRED)
 find_program(powershell NAMES pwsh powershell REQUIRED)
-include("${ROOT}/cmake/BuildParallelism.cmake")
+include("${ROOT}/cmake/modules/project/BuildParallelism.cmake")
+ap_configure_parallelism()
 foreach(required WORK BUILD_ROOT QT_ROOT SOURCE_CACHE DEPS_DIR CXX)
   if(NOT ${required})
     message(FATAL_ERROR "Set ${required} for the real Windows identity graph regression")
@@ -34,8 +35,8 @@ if(SNAPSHOT_REF)
     WORKING_DIRECTORY "${ROOT}" COMMAND_ERROR_IS_FATAL ANY)
   file(ARCHIVE_EXTRACT INPUT "${scratch}/snapshot.tar" DESTINATION "${source}")
 else()
-  include("${ROOT}/cmake/PublicSources.cmake")
-  ap_public_sources(files "${ROOT}")
+  include("${ROOT}/cmake/modules/common/PublicSources.cmake")
+  ap_public_sources(OUTPUT files ROOT "${ROOT}")
   foreach(name IN LISTS files)
     get_filename_component(parent "${name}" DIRECTORY)
     file(MAKE_DIRECTORY "${source}/${parent}")
@@ -85,7 +86,7 @@ function(check expected phase)
       if(NOT actual STREQUAL "${app} ${expected}")
         message(FATAL_ERROR "${layout}/${app} CLI version '${actual}' != '${expected}': ${error}")
       endif()
-      execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/cmake/CheckExeVersion.ps1"
+      execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/tools/windows/CheckExeVersion.ps1"
         -Path "${folder}/${app}.exe" -ExpectedVersion "${expected}" OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
     endforeach()
     execute_process(COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${source}/build/${layout}"
@@ -149,7 +150,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -P "${source}/build/root/check-packag
 file(WRITE "${scratch}/wrong-identity.cmake" "set(ALLPOWERS_VERSION \"9.8.7\")\n")
 execute_process(COMMAND "${CMAKE_COMMAND}"
   "-DEXE=${source}/build/standalone/AllpowersWidget.exe" "-DIDENTITY_FILE=${scratch}/wrong-identity.cmake"
-  "-DWORK=${scratch}/wrong-exe" -DWIDGET=ON -P "${ROOT}/cmake/CheckSingleExe.cmake"
+  "-DWORK=${scratch}/wrong-exe" -DWIDGET=ON -P "${ROOT}/cmake/scripts/quality/CheckSingleExe.cmake"
   RESULT_VARIABLE accepted OUTPUT_QUIET ERROR_QUIET)
 if(accepted EQUAL 0)
   message(FATAL_ERROR "A wrong generated expected identity accepted the executable")
@@ -199,7 +200,7 @@ endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DEXE=${monitor_binary}/AllpowersMonitor.exe"
   "-DIDENTITY_FILE=${root_binary}/identity/product-identity.cmake"
   "-DDRIVER_PACKAGE=${driver_copy}" "-DWORK=${scratch}/changed-payload-check"
-  -P "${ROOT}/cmake/CheckSingleExe.cmake" COMMAND_ERROR_IS_FATAL ANY)
+  -P "${ROOT}/cmake/scripts/quality/CheckSingleExe.cmake" COMMAND_ERROR_IS_FATAL ANY)
 
 file(APPEND "${source}/apps/windows/CMakeLists.txt" [=[
 

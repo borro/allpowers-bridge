@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 4.4)
 if(DEFINED BINARY)
-  include("${ROOT}/cmake/Partitions.cmake")
+  include("${ROOT}/cmake/modules/release/Partitions.cmake")
   file(READ "${ROOT}/tests/fixtures/usb-contract.json" contract)
-  ap_partitions(actual "${BINARY}" "${contract}")
+  ap_partitions(OUTPUT actual BINARY "${BINARY}" CONTRACT "${contract}")
   return()
 endif()
 if(WIN32)
@@ -10,7 +10,7 @@ if(WIN32)
 endif()
 find_program(NINJA NAMES ninja REQUIRED)
 file(MAKE_DIRECTORY "${WORK}/source")
-file(WRITE "${WORK}/source/CMakeLists.txt" "cmake_minimum_required(VERSION 3.25)\nproject(PartitionFixture LANGUAGES CXX)\nadd_executable(partition-fixture \"${ROOT}/tests/cmake/partition_fixture.cpp\")\ntarget_compile_features(partition-fixture PRIVATE cxx_std_17)\n")
+file(WRITE "${WORK}/source/CMakeLists.txt" "cmake_minimum_required(VERSION 4.4)\nproject(PartitionFixture LANGUAGES CXX)\nadd_executable(partition-fixture \"${ROOT}/tests/cmake/partition_fixture.cpp\")\ntarget_compile_features(partition-fixture PRIVATE cxx_std_17)\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${WORK}/source" -B "${WORK}/build" -G Ninja
   "-DCMAKE_CXX_COMPILER=${CXX}" "-DCMAKE_MAKE_PROGRAM=${NINJA}"
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release

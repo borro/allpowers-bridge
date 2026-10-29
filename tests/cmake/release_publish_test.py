@@ -152,7 +152,7 @@ def run_tests(root, work, assets, tag):
         subprocess.run(["git", "add", "README.md"], check=True)
         subprocess.run(["git", "commit", "--allow-empty", "-qm", "Synthetic release fixture"], check=True)
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        spec = importlib.util.spec_from_file_location("publisher", root / "cmake/publish_release.py")
+        spec = importlib.util.spec_from_file_location("publisher", root / "tools/release/publish_release.py")
         publisher = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(publisher)
         modes = ("stale-list-after-create", "success", "resume-draft", "upload-failure", "partial-upload", "bad-digest",

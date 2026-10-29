@@ -32,11 +32,11 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --build "${scratch}/probe-build"
   OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
 find_program(powershell NAMES pwsh powershell REQUIRED)
 foreach(app AllpowersMonitor AllpowersWidget)
-  execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/cmake/CheckExeVersion.ps1"
+  execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/tools/windows/CheckExeVersion.ps1"
     -Path "${scratch}/probe-build/${app}.exe" -ExpectedVersion "${version}"
     OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
 endforeach()
-execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/cmake/CheckExeVersion.ps1"
+execute_process(COMMAND "${powershell}" -NoProfile -File "${ROOT}/tools/windows/CheckExeVersion.ps1"
   -Path "${scratch}/probe-build/AllpowersMonitor.exe" -ExpectedVersion "1.2.3-alpha.8"
   RESULT_VARIABLE result OUTPUT_QUIET ERROR_QUIET)
 if(result EQUAL 0)
@@ -86,7 +86,7 @@ foreach(board waveshare-147 pocket-096)
 endforeach()
 function(prepare name expected)
   execute_process(COMMAND "${CMAKE_COMMAND}" "-DINPUT=${input}" "-DOUTPUT=${scratch}/output-${name}"
-    "-DTAG=v${version}" -DCOMMIT=fixture-commit -DEXPECTED_FIRMWARE_HOST=Linux -P "${ROOT}/cmake/PrepareRelease.cmake"
+    "-DTAG=v${version}" -DCOMMIT=fixture-commit -DEXPECTED_FIRMWARE_HOST=Linux -P "${ROOT}/cmake/scripts/release/PrepareRelease.cmake"
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
   if(expected STREQUAL pass AND NOT result EQUAL 0)
     message(FATAL_ERROR "Valid release assets rejected: ${output}${error}")
@@ -96,7 +96,7 @@ function(prepare name expected)
 endfunction()
 prepare(valid pass)
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DINPUT=${input}" "-DOUTPUT=${scratch}/output-no-commit"
-  "-DTAG=v${version}" -P "${ROOT}/cmake/PrepareRelease.cmake"
+  "-DTAG=v${version}" -P "${ROOT}/cmake/scripts/release/PrepareRelease.cmake"
   RESULT_VARIABLE missing_commit OUTPUT_QUIET ERROR_QUIET)
 if(missing_commit EQUAL 0)
   message(FATAL_ERROR "Release accepted source references without an exact commit")

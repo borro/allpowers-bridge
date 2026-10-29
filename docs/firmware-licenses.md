@@ -73,7 +73,7 @@ does not waive GPL obligations for distributing standalone compiler libraries.
    deliberately rejects an altered SDK until its corresponding sources and
    notices have also been updated. For local experiments, invoke Arduino CLI
    compile directly with the FQBN and C++ flags in `allpowers/cmake/Dependencies.cmake`
-   and `allpowers/cmake/BuildFirmware.cmake`.
+   and `allpowers/cmake/scripts/project/BuildFirmware.cmake`.
 4. Developers using the internally generated object kit can install
    `esp-x32/2601` and run:
 

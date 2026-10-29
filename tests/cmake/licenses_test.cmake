@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.4)
 file(TO_CMAKE_PATH "${ROOT}" ROOT)
 file(TO_CMAKE_PATH "${WORK}" WORK)
-include("${ROOT}/cmake/CollectQtNotices.cmake")
+include("${ROOT}/cmake/modules/release/CollectQtNotices.cmake")
 file(MAKE_DIRECTORY "${WORK}/source/component" "${WORK}/source/LICENSES")
 file(WRITE "${WORK}/source/component/LICENCE.md" "PCRE license\n")
 file(WRITE "${WORK}/source/component/BDF-LICENSE.txt" "BDF attribution\n")
@@ -12,7 +12,7 @@ file(WRITE "${WORK}/source/component/qt_attribution.json" [=[
 [{"LicenseFile":"LICENCE.md","Path":"unused"},
  {"LicenseFiles":["BDF-LICENSE.txt","terms.custom"],"CopyrightFile":"authors.custom"}]
 ]=])
-ap_collect_qt_notices("${WORK}/source" "${WORK}/notices")
+ap_collect_qt_notices(SOURCE "${WORK}/source" DESTINATION "${WORK}/notices")
 foreach(name LICENCE.md BDF-LICENSE.txt terms.custom authors.custom qt_attribution.json)
   file(SHA256 "${WORK}/source/component/${name}" source_hash)
   file(SHA256 "${WORK}/notices/component/${name}" notice_hash)
@@ -22,7 +22,7 @@ foreach(name LICENCE.md BDF-LICENSE.txt terms.custom authors.custom qt_attributi
 endforeach()
 file(WRITE "${WORK}/source/component/qt_attribution.json" "{\"LicenseFile\":\"missing.txt\"}")
 file(WRITE "${WORK}/missing.cmake"
-  "include(\"${ROOT}/cmake/CollectQtNotices.cmake\")\nap_collect_qt_notices(\"${WORK}/source\" \"${WORK}/notices\")\n")
+  "include(\"${ROOT}/cmake/modules/release/CollectQtNotices.cmake\")\nap_collect_qt_notices(SOURCE \"${WORK}/source\" DESTINATION \"${WORK}/notices\")\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -P "${WORK}/missing.cmake" RESULT_VARIABLE result
   OUTPUT_VARIABLE output ERROR_VARIABLE error)
 if(result EQUAL 0 OR NOT error MATCHES "Missing/unsafe Qt attribution")
@@ -33,7 +33,7 @@ endif()
 # build, and without changing the real dependency cache or installed SDK.
 set(identity "${WORK}/identity")
 file(MAKE_DIRECTORY "${identity}/scripts" "${identity}/archives" "${identity}/sdk/lib")
-file(COPY_FILE "${ROOT}/cmake/QtSourceIdentity.cmake" "${identity}/scripts/QtSourceIdentity.cmake")
+file(COPY "${ROOT}/cmake" DESTINATION "${identity}")
 set(dependencies "set(ALLPOWERS_QT_VERSION test)\n")
 foreach(module qtbase qtconnectivity qttools)
   set(source "${identity}/sources/${module}-everywhere-src-test")
@@ -46,7 +46,7 @@ foreach(module qtbase qtconnectivity qttools)
   string(TOUPPER "${module}" key)
   string(APPEND dependencies "set(ALLPOWERS_${key}_SHA256 ${hash})\n")
 endforeach()
-file(WRITE "${identity}/scripts/Dependencies.cmake" "${dependencies}")
+file(WRITE "${identity}/cmake/Dependencies.cmake" "${dependencies}")
 file(MAKE_DIRECTORY "${identity}/sdk/bin")
 file(WRITE "${identity}/sdk/bin/lrelease.exe" "Original lrelease\n")
 file(WRITE "${identity}/sdk/bin/lupdate.exe" "Original lupdate\n")
@@ -57,7 +57,7 @@ function(check_identity mode expected)
     "-Dqtbase_SOURCE=${identity}/sources/qtbase-everywhere-src-test"
     "-Dqttools_SOURCE=${identity}/sources/qttools-everywhere-src-test"
     "-Dqtconnectivity_SOURCE=${identity}/sources/qtconnectivity-everywhere-src-test"
-    -P "${identity}/scripts/QtSourceIdentity.cmake"
+    -P "${identity}/cmake/scripts/sdk/QtSourceIdentity.cmake"
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
   if(expected STREQUAL pass AND NOT result EQUAL 0)
     message(FATAL_ERROR "Valid source identity rejected: ${output}${error}")

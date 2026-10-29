@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 4.4)
 # The only platform adapter needed by native Windows hook tasks.
 include("${CMAKE_CURRENT_LIST_DIR}/Host.cmake")
-ap_hook_host_tools("${CONFIG}" ninja)
+ap_hook_host_tools(CONFIG "${CONFIG}" OUTPUT ninja)
 foreach(key vcvars windowsCMake windowsNinja windowsDeps windowsPython qt windowsCoverage)
-  ap_hook_setting("${key}" "${key}")
+  ap_hook_setting(NAME "${key}" OUTPUT "${key}")
 endforeach()
 set(temporary "${ROOT}/build/git-hooks/temp/${TASK}")
 file(MAKE_DIRECTORY "${temporary}")
@@ -27,5 +27,5 @@ cmake_path(GET windowsNinja PARENT_PATH ninja_bin)
 set(ENV{PATH} "${cmake_bin};${ninja_bin};$ENV{PATH}")
 execute_process(COMMAND "${windowsCMake}" "-DROOT=${SOURCE}" "-DTASK=${TASK}"
   "-DNINJA=${windowsNinja}" "-DDEPS=${windowsDeps}" "-DPYTHON=${windowsPython}"
-  "-DQT=${qt}" "-DCOVERAGE_TOOL=${windowsCoverage}" -P "${ROOT}/cmake/RunHookCheck.cmake"
+  "-DQT=${qt}" "-DCOVERAGE_TOOL=${windowsCoverage}" -P "${ROOT}/cmake/scripts/hooks/RunHookCheck.cmake"
   WORKING_DIRECTORY "${ROOT}" COMMAND_ERROR_IS_FATAL ANY)

@@ -1,0 +1,22 @@
+include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/../common/Download.cmake")
+
+function(ap_setup_wdk)
+  cmake_parse_arguments(PARSE_ARGV 0 AP "" "DEPS_DIR;OUTPUT" "")
+  ap_require_arguments(PREFIX AP REQUIRED DEPS_DIR OUTPUT)
+  include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../Dependencies.cmake")
+  get_filename_component(DEPS_DIR "${AP_DEPS_DIR}" ABSOLUTE)
+  set(package "microsoft.windows.wdk.x64.${ALLPOWERS_WDK_VERSION}.nupkg")
+  file(MAKE_DIRECTORY "${DEPS_DIR}/downloads")
+  file(LOCK "${DEPS_DIR}/wdk-${ALLPOWERS_WDK_VERSION}.lock" GUARD FUNCTION TIMEOUT 180)
+  set(archive "${DEPS_DIR}/downloads/${package}")
+  ap_download_verified(URL "https://api.nuget.org/v3-flatcontainer/microsoft.windows.wdk.x64/${ALLPOWERS_WDK_VERSION}/${package}" DESTINATION "${archive}"
+    SHA256 "${ALLPOWERS_WDK_SHA256}" MISMATCH FAIL)
+  set(destination "${DEPS_DIR}/wdk/${ALLPOWERS_WDK_VERSION}")
+  if(NOT EXISTS "${destination}/.complete" OR
+      NOT EXISTS "${destination}/c/Include/wdf/kmdf/${ALLPOWERS_KMDF_VERSION}/wdf.h")
+    file(ARCHIVE_EXTRACT INPUT "${archive}" DESTINATION "${destination}")
+    file(WRITE "${destination}/.complete" "${ALLPOWERS_WDK_SHA256}\n")
+  endif()
+  set(${AP_OUTPUT} "${destination}" PARENT_SCOPE)
+endfunction()

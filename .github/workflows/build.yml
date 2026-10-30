@@ -35,7 +35,10 @@ jobs:
       id: check-out-source-and-tags
     - name: Read pinned tool versions
       id: tools
-      run: cmake -P cmake/scripts/ci/CiTools.cmake
+      # Exercise both bootstrap entries before installing the pinned CMake.
+      run: |-
+        python3 -I -S -B -m unittest discover -s tests/maintenance -p test_dependency_snapshot.py -v
+        cmake -P cmake/scripts/ci/CiTools.cmake
     - name: Select pinned host compiler
       run: |-
         g++-${{ steps.tools.outputs.gcc }} --version

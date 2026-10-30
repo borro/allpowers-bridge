@@ -23,6 +23,21 @@ class DependencySnapshotTests(unittest.TestCase):
     def setUpClass(cls):
         cls.values = graph.read_dependencies(ROOT, CMAKE)
 
+    def test_ci_bootstrap_exports_evaluated_tool_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "github-output"
+            output.write_text("existing=value\n", encoding="utf-8")
+            subprocess.run([CMAKE, "-P", str(ROOT / "cmake/scripts/ci/CiTools.cmake")],
+                           env={**os.environ, "GITHUB_OUTPUT": str(output)}, check=True)
+            actual = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+        expected = {"existing": "value"}
+        for name, variable in {
+                "cmake": "CMAKE_VERSION", "msvc": "MSVC_TOOLSET_VERSION", "sdk": "WINDOWS_SDK_VERSION",
+                "fuzz-llvm": "FUZZ_LLVM_VERSION", "mull-llvm": "MULL_LLVM_VERSION",
+                "gcc": "GCC_MAJOR", "tidy-llvm": "TIDY_LLVM_VERSION"}.items():
+            expected[name] = self.values[f"ALLPOWERS_{variable}"][0]
+        self.assertEqual(actual, expected)
+
     def test_api_contract_and_sdk_containment(self):
         result = graph.snapshot(self.values, ENV, "2026-01-01T00:00:00Z")
         self.assertEqual(result["version"], 0)

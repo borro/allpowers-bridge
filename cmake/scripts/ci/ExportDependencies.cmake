@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 4.4)
+# Dependency submission runs with the runner's CMake, without a product toolchain.
+cmake_minimum_required(VERSION 3.25)
 # Evaluate the real CMake inputs rather than parsing CMake syntax in Python.
 if(NOT OUTPUT)
   message(FATAL_ERROR "OUTPUT is required")

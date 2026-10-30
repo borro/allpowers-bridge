@@ -96,6 +96,8 @@ Builds and analyzers run in parallel; release packages are published only for va
 
 Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/analyze` for Windows products, and actionlint/ShellCheck for workflows and Bash. [Local commands and scope](docs/building.md#static-analysis).
 
+After configuration, local checks and CI use CMake targets (`audit`, `format-check`, `workflow-lint`, `static-analysis`); [standalone bootstrap entries](docs/cmake.md) prepare tools before configuration.
+
 CI also requires Windows application formatting and per-area host coverage minimums. [Formatting](docs/building.md#formatting) · [Coverage policy](docs/building.md#test-coverage).
 
 [Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the toolchains.

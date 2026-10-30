@@ -220,13 +220,13 @@ scope. The checker uses `--dry-run --Werror`; it never edits sources. CI also
 checks that deliberately malformed input fails and valid input passes.
 
 ```sh
-cmake -DROOT=. -DWORK=build/format -P cmake/scripts/quality/RunFormat.cmake
+cmake --preset native
+cmake --build --preset native --target format-check
 ```
 
-The `format-check` build target runs the same check. The first run downloads the
-platform's version- and SHA256-pinned binary into `WORK`; later runs verify and
-reuse that archive. No pip environment is installed. Pass `-DTOOL=<clang-format>`
-to use an existing executable of exactly the pinned version. Versions and hashes
+The `format-check` target includes the passing and failing controls. The first run downloads the
+platform's version- and SHA256-pinned binary into the build's `format/` directory; later runs verify and
+reuse that archive. No pip environment is installed. Versions and hashes
 are maintained in `cmake/Dependencies.cmake`.
 
 ## Mutation testing
@@ -485,6 +485,8 @@ In an MSVC developer shell, enable analysis in the ordinary Windows build:
 cmake --preset windows -DALLPOWERS_STATIC_ANALYSIS=ON
 cmake --build --preset windows --parallel 2
 cmake --build build/windows --target static-analysis
+# Validate existing reports without rebuilding (also usable after a build failure):
+cmake --build build/windows --target static-analysis-report
 ctest --test-dir build/windows -R static-analysis-controls --output-on-failure
 ```
 
@@ -521,9 +523,7 @@ verified before testing. Install the Ubuntu `valgrind` package for local use.
 ```sh
 cmake --preset valgrind-linux
 cmake --build build/valgrind-linux --target native-tests valgrind_control --parallel 2
-cmake -DCONTROL="$PWD/build/valgrind-linux/tests/native/valgrind_control" \
-  -DWORK="$PWD/build/valgrind-linux/valgrind-policy" \
-  -P tests/cmake/valgrind_policy_test.cmake
+cmake --build build/valgrind-linux --target valgrind-policy-check
 ctest --test-dir build/valgrind-linux -T memcheck -L coverage \
   --output-on-failure --timeout 180 --parallel 2 \
   --overwrite MemoryCheckCommand=/usr/bin/valgrind \

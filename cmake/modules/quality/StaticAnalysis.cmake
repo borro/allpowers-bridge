@@ -94,9 +94,11 @@ function(ap_add_analysis_targets)
   endif()
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   if(MSVC)
-    add_custom_target(static-analysis
-      COMMAND "${Python3_EXECUTABLE}" -I -S -B "${AP_ANALYSIS_ROOT}/tools/quality/static_analysis.py" msvc
-        --root "${AP_ANALYSIS_ROOT}" --build "${PROJECT_BINARY_DIR}" --output "${PROJECT_BINARY_DIR}/analysis"
+    set(report_command "${Python3_EXECUTABLE}" -I -S -B "${AP_ANALYSIS_ROOT}/tools/quality/static_analysis.py" msvc
+      --root "${AP_ANALYSIS_ROOT}" --build "${PROJECT_BINARY_DIR}" --output "${PROJECT_BINARY_DIR}/analysis")
+    # CI must be able to inspect a failed build without rebuilding it first.
+    add_custom_target(static-analysis-report COMMAND ${report_command} USES_TERMINAL VERBATIM)
+    add_custom_target(static-analysis COMMAND ${report_command}
       DEPENDS core USES_TERMINAL VERBATIM)
     if(ALLPOWERS_BUILD_WINDOWS)
       add_dependencies(static-analysis windows)
@@ -109,15 +111,17 @@ function(ap_add_analysis_targets)
     endif()
     find_program(ALLPOWERS_CLANG_TIDY NAMES "clang-tidy-${ALLPOWERS_TIDY_LLVM_VERSION}" REQUIRED)
     set(ALLPOWERS_CPPCHECK_ROOT "${PROJECT_BINARY_DIR}/tools/cppcheck" CACHE PATH "Pinned Cppcheck tool directory")
-    add_custom_target(static-analysis
+    add_custom_target(cppcheck-setup
       COMMAND "${CMAKE_COMMAND}" -DKIND=cppcheck "-DWORK=${ALLPOWERS_CPPCHECK_ROOT}"
         -P "${AP_ANALYSIS_ROOT}/cmake/scripts/sdk/SetupAnalysisTools.cmake"
+      USES_TERMINAL VERBATIM)
+    add_custom_target(static-analysis
       COMMAND "${Python3_EXECUTABLE}" -I -S -B "${AP_ANALYSIS_ROOT}/tools/quality/static_analysis.py" linux
         --root "${AP_ANALYSIS_ROOT}" --build "${PROJECT_BINARY_DIR}" --output "${PROJECT_BINARY_DIR}/analysis"
         --tidy "${ALLPOWERS_CLANG_TIDY}" --cppcheck "${ALLPOWERS_CPPCHECK_ROOT}/install/bin/cppcheck"
       COMMAND "${Python3_EXECUTABLE}" -I -S -B "${AP_ANALYSIS_ROOT}/tools/quality/analysis_controls.py" linux
         --root "${AP_ANALYSIS_ROOT}" --tidy "${ALLPOWERS_CLANG_TIDY}"
         --cppcheck "${ALLPOWERS_CPPCHECK_ROOT}/install/bin/cppcheck"
-      DEPENDS core native-tests USES_TERMINAL VERBATIM)
+      DEPENDS core native-tests cppcheck-setup USES_TERMINAL VERBATIM)
   endif()
 endfunction()

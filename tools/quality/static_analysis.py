@@ -303,7 +303,7 @@ def main():
     parser.add_argument("--cppcheck", default="cppcheck")
     parser.add_argument("--actionlint", default="actionlint")
     parser.add_argument("--shellcheck", default="shellcheck")
-    parser.add_argument("--build-status", default="success")
+    parser.add_argument("--build-status", default=os.environ.get("ANALYSIS_BUILD_STATUS", "success"))
     args = parser.parse_args()
     args.root, args.output = args.root.resolve(), args.output.resolve()
     if args.build:

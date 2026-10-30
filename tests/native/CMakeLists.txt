@@ -27,6 +27,11 @@ add_custom_target(native-tests)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_executable(valgrind_control EXCLUDE_FROM_ALL valgrind_control.cpp)
   target_compile_options(valgrind_control PRIVATE -O0 -g)
+  add_custom_target(valgrind-policy-check
+    COMMAND "${CMAKE_COMMAND}" "-DCONTROL=$<TARGET_FILE:valgrind_control>"
+      "-DWORK=${PROJECT_BINARY_DIR}/valgrind-policy"
+      -P "${PROJECT_SOURCE_DIR}/tests/cmake/valgrind_policy_test.cmake"
+    DEPENDS valgrind_control USES_TERMINAL VERBATIM)
 endif()
 add_dependencies(native-tests models_test abi_test ups_test firmware_test history_rollback_test)
 add_test(NAME models COMMAND models_test)

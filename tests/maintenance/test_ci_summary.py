@@ -44,6 +44,14 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("Report unavailable or incomplete", text)
         self.assertNotIn("0 passed", text)
 
+    def test_audit_reads_workflow_target_report(self):
+        self.write("build/native/workflow-lint/workflow-lint.json", json.dumps(dict(
+            analyzer="actionlint + ShellCheck", version="test", expected=2, completed=2,
+            complete=True, findings=[], errors=[], seconds=0.1)))
+        text = summary.render(self.root, "audit", "success", {}, {})
+        self.assertIn("2/2", text)
+        self.assertIn("0 findings", text)
+
     def test_analysis_summary_is_bounded_and_marks_incomplete(self):
         data = dict(analyzer="Cppcheck", version="2.22.0", expected=6, completed=5, complete=False,
                     seconds=3.5, errors=[], findings=[dict(file=f"core/f{i}.h", line=i, rule="nullPointer",

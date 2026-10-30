@@ -9,7 +9,8 @@ function(ap_add_maintenance_targets)
   add_custom_target(audit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
     -P "${PROJECT_SOURCE_DIR}/cmake/scripts/quality/Audit.cmake" VERBATIM)
   add_custom_target(format-check COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
-    "-DWORK=${PROJECT_BINARY_DIR}/format" -P "${PROJECT_SOURCE_DIR}/cmake/scripts/quality/RunFormat.cmake" VERBATIM)
+    "-DWORK=${PROJECT_BINARY_DIR}/format" -DCHECK_CONTROLS=ON
+    -P "${PROJECT_SOURCE_DIR}/cmake/scripts/quality/RunFormat.cmake" VERBATIM)
   add_custom_target(pre-commit COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"
     -DPHASE=commit -P "${PROJECT_SOURCE_DIR}/cmake/scripts/hooks/GitHooks.cmake" USES_TERMINAL VERBATIM)
   add_custom_target(pre-push COMMAND "${CMAKE_COMMAND}" "-DROOT=${PROJECT_SOURCE_DIR}"

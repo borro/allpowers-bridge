@@ -188,7 +188,7 @@ def render(root, job, status, steps, needs):
 
     directory = root / "build" / BUILD_DIRS.get(job, job)
     if job == "audit":
-        report("Workflow static analysis", lambda: analysis(root / "build/workflow-lint/workflow-lint.json"))
+        report("Workflow static analysis", lambda: analysis(root / "build/native/workflow-lint/workflow-lint.json"))
     if job == "static-analysis":
         for analyzer in ("clang-tidy", "cppcheck"):
             report(analyzer, lambda analyzer=analyzer: analysis(root / f"build/static-analysis-linux/analysis/{analyzer}.json"))

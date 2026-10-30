@@ -103,14 +103,25 @@ ctest --preset native
 cmake -P cmake/scripts/hooks/InstallGitHooks.cmake
 cmake --build --preset native --target pre-commit
 cmake --build --preset native --target pre-push
-cmake -DROOT=. -DMODE=worktree -P cmake/scripts/quality/Audit.cmake
+cmake --build --preset native --target audit-worktree workflow-lint format-check
 cmake -DGROUP=qt -P cmake/scripts/ci/DependencyKeys.cmake
 ```
 
 `pre-commit` checks the index snapshot; `pre-push` checks the selected committed
 revision. Their task lists and coverage thresholds are documented in
 [local Git hooks](ci.md#local-git-hooks). The old flat script paths are removed;
-CI, source kits and local automation must use `cmake/scripts/...`.
+Normal CI checks use targets, so their script paths remain implementation details.
+Standalone `cmake -P` entries remain for bootstrap and operations without a configured
+build: reading pinned versions, installing Ninja, preparing SDKs/tools needed by
+configuration, computing cache keys, recording the host environment, and assembling
+or validating downloaded release assets. `CiTools.cmake` and dependency export run
+on the runner's CMake 3.25+; actual builds use the pinned version.
+
+`cppcheck-setup` prepares and validates the analysis tool before CI saves its cache;
+`static-analysis` depends on it. `valgrind-policy-check` builds its defective control
+before checking Memcheck's failure policy. On MSVC, `static-analysis-report` only
+reads reports: it never starts a product build and honors `ANALYSIS_BUILD_STATUS`
+from CI. A failed compilation therefore cannot be hidden by a report-only rerun.
 
 ## Regression checks
 

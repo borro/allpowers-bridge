@@ -96,6 +96,8 @@ Linux поддерживает ядро и сборку прошивок, при
 
 Статический анализ блокирует сборку при дефектах: clang-tidy и Cppcheck проверяют переносимый C++, MSVC `/analyze` — Windows-продукты, actionlint/ShellCheck — workflow и Bash. [Локальный запуск и охват](docs/building.md#static-analysis).
 
+После конфигурации локальные проверки и CI используют цели CMake (`audit`, `format-check`, `workflow-lint`, `static-analysis`); [отдельные стартовые скрипты](docs/cmake.md) готовят инструменты до конфигурации.
+
 CI также требует соблюдения форматирования Windows-приложения и минимального покрытия host-кода по отдельным областям. [Форматирование](docs/building.md#formatting) · [Правила покрытия](docs/building.md#test-coverage).
 
 [Локальные Git-хуки](docs/ci.md#local-git-hooks) используют CMake/CTest для параллельных проверок подготовленного к коммиту снимка и отправляемых коммитов, без запуска через PowerShell. Windows использует WSL; на Linux Windows-проверки остаются CI. Установка после подготовки инструментов: `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake`.

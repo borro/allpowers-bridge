@@ -76,6 +76,16 @@ class AnalysisReports(unittest.TestCase):
             args.build_status = "failure"
             self.assertFalse(analysis.msvc(args))
 
+    def test_report_cli_preserves_failed_ci_build_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            result = subprocess.run([sys.executable, "-I", "-S", "-B", str(ROOT / "tools/quality/static_analysis.py"),
+                                     "msvc", "--root", str(ROOT), "--build", str(work), "--output", str(work)],
+                                    env={**os.environ, "ANALYSIS_BUILD_STATUS": "failure"}, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Product build did not complete successfully",
+                          json.loads((work / "msvc.json").read_text())["errors"])
+
     def test_tidy_memory_error_and_source_parse_error(self):
         findings = analysis.parse_tidy(
             f"{ROOT.as_posix()}/core/a.cpp:2:3: error: null [clang-analyzer-core.NullDereference,-warnings-as-errors]\n"

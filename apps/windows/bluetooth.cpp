@@ -1,4 +1,5 @@
 #include "bluetooth.h"
+#include "runtime_log.h"
 #include <QBluetoothUuid>
 #include <QCoreApplication>
 
@@ -170,6 +171,15 @@ void BleTransport::stop() {
 void BleTransport::fail(const QString &message, QJsonObject descriptor) {
   if (!active_)
     return;
+  auto incident = diagnostics();
+  const auto value = session.snapshot(quint32(nowMs()));
+  incident["failure"] = message;
+  incident["reason"] = descriptor;
+  incident["main_age_ms"] = qint64(value.main_age_ms);
+  incident["settings_age_ms"] = qint64(value.settings_age_ms);
+  incident["valid_frames"] = qint64(value.valid_frames);
+  incident["invalid_frames"] = qint64(value.invalid_frames);
+  RuntimeLog::record("ble.failure", incident);
   error_ = message;
   errorMessage_ = std::move(descriptor);
   drops++;
@@ -238,9 +248,13 @@ void BleTransport::connectDevice() {
       c->discoverServices();
     }
   });
-  connect(c, &QLowEnergyController::errorOccurred, this, [this, c, current](auto) {
-    if (current())
+  connect(c, &QLowEnergyController::errorOccurred, this, [this, c, current](auto code) {
+    if (current()) {
+      RuntimeLog::record(
+          "ble.controller_error",
+          {{"code", int(code)}, {"state", int(c->state())}, {"error", c->errorString()}});
       fail(c->errorString());
+    }
   });
   connect(c, &QLowEnergyController::disconnected, this, [this, current] {
     if (current())
@@ -411,6 +425,9 @@ QJsonObject BleTransport::diagnostics() const {
           {"gatt_deadline_ms", deadlineAt_},
           {"polls", qint64(polls)},
           {"packets", qint64(packets)},
+          {"connection_generation", qint64(epoch)},
+          {"controller_state", controller ? int(controller->state()) : -1},
+          {"service_state", service ? int(service->state()) : -1},
           {"mtu", controller ? controller->mtu() : 0},
           {"service", QString::fromLatin1(ap_uuid(0))},
           {"notify", QString::fromLatin1(ap_uuid(1))},

@@ -2,12 +2,14 @@
 #include "i18n.h"
 #include "integration.h"
 #include "notices.h"
+#include "runtime_log.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -24,6 +26,7 @@
 #include <QScreen>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <cmath>
 
@@ -301,6 +304,7 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
             refreshHistory();
           });
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
+    RuntimeLog::record("history.error", {{"message", message}});
     historyError = message;
     refresh();
   });
@@ -335,7 +339,12 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   menu.addAction(QCoreApplication::translate("Allpowers", "Licenses…"), this,
                  [] { showNotices(nullptr); });
   menu.addSeparator();
-  menu.addAction(QCoreApplication::translate("Allpowers", "Quit"), qApp, &QApplication::quit);
+  menu.addAction(QCoreApplication::translate("Allpowers", "Open diagnostics folder"), this,
+                 [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(directory)); });
+  menu.addAction(QCoreApplication::translate("Allpowers", "Quit"), this, [] {
+    RuntimeLog::record("widget.quit_menu");
+    qApp->quit();
+  });
   tray.setContextMenu(&menu);
   connect(&tray, &QSystemTrayIcon::activated, this, [this](auto reason) {
     if (reason == QSystemTrayIcon::DoubleClick)
@@ -344,6 +353,7 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   connect(&card_, &WidgetCard::menuRequested, this, [this](QPoint point) { menu.popup(point); });
   connect(&card_, &WidgetCard::positionChanged, this, &WidgetController::save);
   connect(&card_, &DesktopSurface::attachmentChanged, this, [this] {
+    RuntimeLog::record("widget.attachment", card_.nativeDiagnostics());
     if (!card_.attached() && !offline_)
       tray.showMessage("ALLPOWERS Widget", card_.attachmentError());
     refresh();
@@ -355,8 +365,14 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
     refresh();
   });
   timer.start();
+  new TransportTrace(&transport, this, [this] {
+    auto info = diagnostics();
+    info.remove("transport"); // The trace already includes the complete transport context.
+    return info;
+  });
 }
 WidgetController::~WidgetController() {
+  RuntimeLog::record("widget.destroy_begin", diagnostics());
   timer.stop();
   transport.disconnect(this);
   disconnectStation();
@@ -367,6 +383,7 @@ WidgetController::~WidgetController() {
   QMetaObject::invokeMethod(history, [] {}, Qt::BlockingQueuedConnection);
   historyThread.quit();
   historyThread.wait();
+  RuntimeLog::record("widget.destroy_end");
 }
 bool WidgetController::save() {
   settings["locked"] = locked;
@@ -631,6 +648,10 @@ void WidgetController::loadDemo() {
 QJsonObject WidgetController::diagnostics() const {
   auto result = card_.nativeDiagnostics();
   const QJsonObject values{{"history_error", historyError},
+                           {"diagnostic_log", RuntimeLog::path()},
+                           {"transport", transport.diagnostics()},
+                           {"snapshot_age_ms", receivedAt < 0 ? -1 : elapsedNow() - receivedAt},
+                           {"fresh", bool(latest.fresh)},
                            {"history_ready", historyReady},
                            {"ui_language", qApp->property("ui_language").toString()},
                            {"history_worker_busy", sampleQueue.busy()},

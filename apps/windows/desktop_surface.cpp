@@ -1,4 +1,5 @@
 #include "desktop_surface.h"
+#include "runtime_log.h"
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
@@ -134,6 +135,8 @@ void DesktopSurface::attach() {
         SetThreadDpiAwarenessContext(previous);
       handle = reinterpret_cast<quintptr>(window);
       shell = window ? reinterpret_cast<quintptr>(parent) : 0;
+      RuntimeLog::record("desktop.create",
+                         {{"success", bool(window)}, {"windows_error", int(error)}});
       changed = true;
       if (!window)
         error_ = QCoreApplication::translate("Allpowers", "Could not create card: %1").arg(error);
@@ -276,6 +279,7 @@ qintptr DesktopSurface::dispatchNative(quintptr id, quint32 message, quintptr wp
       return 0;
     }
     case WM_NCDESTROY:
+      RuntimeLog::record("desktop.destroy", self->nativeDiagnostics());
       self->handle = 0;
       self->shell = 0;
       self->published_ = false;
@@ -293,5 +297,6 @@ QJsonObject DesktopSurface::nativeDiagnostics() const {
           {"native_child", valid && bool(style & WS_CHILD)},
           {"native_parent_matches", valid && GetParent(window) == reinterpret_cast<HWND>(shell)},
           {"native_popup", valid && bool(style & WS_POPUP)},
+          {"desktop_error", error_},
           {"native_frame_published", published_}};
 }

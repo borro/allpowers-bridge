@@ -83,6 +83,7 @@
 - [Первый запуск](docs/getting-started.md) — загрузка, подключение и подготовка платы.
 - [Приложения Windows](docs/windows-apps.md) — языки, графики, виджет, хранение данных и диагностика.
 - [Диагностика обрывов Bluetooth](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — плата хранит восемь причин отключения до перезагрузки; они доступны в USB-диагностике Monitor.
+- [Постоянные журналы ПК](docs/troubleshooting.md#widget-is-not-visible-or-its-language-did-not-change) — Monitor и Widget сохраняют сбои USB/BLE, свежесть данных и события работы приложения; папка журналов открывается из меню виджета в трее.
 - [Устранение неполадок](docs/troubleshooting.md) — подключение, устаревшие показания и пропуски истории.
 - [Оглавление документации](docs/README.md) — платы, протокол USB, восстановление и справочник.
 - [Сборка из исходников](docs/building.md) · [Структура CMake](docs/cmake.md) · [Архитектура](docs/architecture.md) · [Участие в проекте](CONTRIBUTING.md).

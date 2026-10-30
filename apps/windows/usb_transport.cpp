@@ -2,6 +2,7 @@
 #include "../../firmware/R2500Adapter/HistoryOperation.h"
 #include "../../firmware/R2500Adapter/HistoryWire.h"
 #include "AllpowersModels.h"
+#include "runtime_log.h"
 #include <QBluetoothAddress>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -126,6 +127,7 @@ UsbTransport::UsbTransport(QObject *parent, bool offline, UsbChannel *io, Ports 
       opened_ = true;
       openedAt = elapsedMs();
       command("STATUS\n");
+      RuntimeLog::record("usb.opened", diagnostics());
       emit stateChanged();
     });
     connect(channel, &UsbChannel::received, this, &UsbTransport::receive);
@@ -168,6 +170,20 @@ QJsonObject UsbTransport::diagnostics() const {
   info["usb_board"] = board_;
   info["usb_verified"] = verified_;
   info["usb_bad_lines"] = badLines;
+  const auto now = elapsedMs();
+  info["usb_opened"] = opened_;
+  info["usb_bytes"] = qint64(receivedBytes);
+  info["usb_lines"] = qint64(receivedLines);
+  info["usb_commands"] = qint64(commands);
+  info["usb_open_attempts"] = qint64(openAttempts);
+  info["usb_failures"] = qint64(failures);
+  info["usb_bytes_age_ms"] = bytesAt < 0 ? -1 : now - bytesAt;
+  info["usb_status_age_ms"] = statusAt < 0 ? -1 : now - statusAt;
+  info["usb_frame_age_ms"] = frameAt < 0 ? -1 : now - frameAt;
+  info["usb_buffer_bytes"] = buffer.size();
+  info["usb_status_pending"] = pending;
+  info["usb_known_pending"] = knownPending;
+  info["usb_retry_at_ms"] = retryAt;
   info["usb_history_busy"] = importing;
   info["usb_history_bad"] = historyBad;
   info["usb_history_undated"] = historyUndated;
@@ -221,7 +237,10 @@ void UsbTransport::connectPort() {
       currentSession = anchorTick = 0;
       anchorWall = 0;
       port_ = p.port;
+      bytesAt = -1;
+      ++openAttempts;
       error_.clear();
+      RuntimeLog::record("usb.open_attempt", diagnostics());
       channel->open(port_);
       return;
     }
@@ -251,6 +270,10 @@ void UsbTransport::stop() {
 void UsbTransport::fail(QString error) {
   if (!active_)
     return;
+  ++failures;
+  auto incident = diagnostics();
+  incident["failure"] = error;
+  RuntimeLog::record("usb.failure", incident);
   if (channel)
     channel->close();
   opened_ = verified_ = pending = false;
@@ -271,8 +294,10 @@ void UsbTransport::command(const QByteArray &data) {
     return;
   if (data == "STATUS\n" || data == "DIAG\n" ||
       (importing && (data.startsWith("HISTORY-READ ") || data.startsWith("HISTORY-EXPORT ")) &&
-       data.size() < HistoryFormat::kHistoryCommandCapacity))
+       data.size() < HistoryFormat::kHistoryCommandCapacity)) {
+    ++commands;
     channel->write(data);
+  }
 }
 void UsbTransport::tick() {
   if (!active_)
@@ -309,6 +334,10 @@ void UsbTransport::tick() {
 void UsbTransport::receive(const QByteArray &bytes) {
   if (!active_ || !opened_)
     return;
+  if (!bytes.isEmpty()) {
+    receivedBytes += quint64(bytes.size());
+    bytesAt = elapsedMs();
+  }
   if (bytes.size() > 65536 || buffer.size() + bytes.size() > 65536) {
     badLines++;
     if (importing && (importVersion != 3 || importBegun))
@@ -322,6 +351,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
     buffer.remove(0, end + 1);
     if (line.isEmpty())
       continue;
+    ++receivedLines;
     if (line.size() > 8192) {
       badLines++;
       if (importing && (importVersion != 3 || importBegun))
@@ -455,6 +485,7 @@ void UsbTransport::row(const QJsonObject &o) {
       badLines++;
       return;
     }
+    const auto previousDiagnostics = boardDiagnostics;
     boardDiagnostics = {};
     for (const auto &r : rows) {
       auto item = r.toObject();
@@ -462,6 +493,11 @@ void UsbTransport::row(const QJsonObject &o) {
       if (!label.isEmpty() && label.size() <= 64)
         boardDiagnostics[label] = item["value"].toString().left(256);
     }
+    for (auto it = boardDiagnostics.begin(); it != boardDiagnostics.end(); ++it)
+      if (it.key().startsWith("BLE DROP ") && previousDiagnostics[it.key()] != it.value())
+        RuntimeLog::record("board.ble_drop", {{"label", it.key()},
+                                              {"detail", it.value()},
+                                              {"history_session", details_["history_session"]}});
     emit stateChanged();
   } else if (o["history_export_begin"].toBool() && importing) {
     quint32 version, request, session, generation, count, oldest, latest;

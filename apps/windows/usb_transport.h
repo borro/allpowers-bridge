@@ -65,6 +65,8 @@ private:
          importDeadline = 0;
   quint32 lastFrames = 0, anchorTick = 0, currentSession = 0;
   int badLines = 0, historyBad = 0, historyUndated = 0;
+  quint64 receivedBytes = 0, receivedLines = 0, commands = 0, openAttempts = 0, failures = 0;
+  qint64 bytesAt = -1;
   HistoryPoints importPoints;
   QSet<quint32> importSequences;
   quint32 importRequest = 0, requestCounter = 0, importSession = 0, importGeneration = 0,

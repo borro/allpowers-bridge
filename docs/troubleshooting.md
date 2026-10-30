@@ -72,6 +72,36 @@ to preserve stored history.
 
 ## Widget is not visible or its language did not change
 
+Monitor and Widget now keep `diagnostics.jsonl` in their respective local data
+directories (`%LOCALAPPDATA%/AllpowersMonitor` and `%LOCALAPPDATA%/AllpowersWidget`
+by default). Widget's tray menu has **Open diagnostics folder**. Keep the current
+file and its `.1`/`.2` rotations together; each rotates at 2 MiB (at most one
+additional bounded record). No firmware update is needed for these PC logs.
+
+The journal is independent of the history database. It records startup, requested
+exit, completed teardown, Qt warnings/errors, transport/freshness transitions and
+a heartbeat every 30 seconds. Each record has UTC time, process/run identity and
+monotonic uptime. A run with no `runtime.end` means orderly teardown was not
+recorded; it does **not** prove a crash (forced termination, power loss, log write
+failure or rotation can also explain missing records). A delayed heartbeat can
+indicate suspend or a stalled event loop; it does not distinguish them by itself.
+
+USB records separate last received bytes, last accepted status, changing station
+frame counters, firmware GATT state and archive activity. `usb.failure` preserves
+these before closing the port. New `BLE DROP` rows from firmware are saved as
+`board.ble_drop`, even if later diagnostics overwrite them. A firmware version
+without those rows cannot supply the raw disconnect cause. Direct PC Bluetooth
+records connection generations, Qt controller/service state and failure context;
+Qt's error is not necessarily a raw radio disconnect reason.
+
+For the next incident, note its time and whether the tray icon/process remains,
+then keep these three log files before repeated restarts. `desktop.destroy` and
+`desktop.create` help identify Explorer attachment recreation. The log masks
+common device addresses, board serials and the home-directory prefix, but inspect
+free-form error messages before sharing. It does not collect raw packet payloads
+or the history database. Repeated events are rate-limited; `dropped_records`
+reports omitted records when the next write succeeds. Nothing is uploaded.
+
 Look for Widget's tray icon and its Explorer attachment status. The card is on
 the desktop, behind normal windows; **Win+D** reveals the desktop. If attachment
 is unavailable, the app retries and reports the reason in the tray instead of

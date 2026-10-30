@@ -41,7 +41,7 @@ if(NOT bluetooth_features MATCHES "#define QT_FEATURE_winrt_bt 1")
   message(FATAL_ERROR "Qt Bluetooth must contain the real WinRT backend")
 endif()
 add_library(monitor_backend STATIC i18n.cpp session.cpp history.cpp bluetooth.cpp ipc.cpp service_host.cpp service_client.cpp integration.cpp battery_probe.cpp
-  transport.h transport_router.cpp connection_lease.cpp usb_serial.cpp usb_transport.cpp)
+  transport.h transport_router.cpp connection_lease.cpp usb_serial.cpp usb_transport.cpp runtime_log.cpp)
 target_include_directories(monitor_backend PUBLIC . ../../core/native ../../core/src)
 target_compile_definitions(monitor_backend PUBLIC NOMINMAX)
 target_link_libraries(monitor_backend PUBLIC Qt6::Core Qt6::Bluetooth Qt6::Sql Qt6::Network

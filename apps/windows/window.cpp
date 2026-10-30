@@ -4,6 +4,7 @@
 #include "integration.h"
 #include "notices.h"
 #include "product-version.h"
+#include "runtime_log.h"
 #include "service_client.h"
 #include "transport_router.h"
 #include <QAbstractItemView>
@@ -406,6 +407,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
     emit historyImport(values, QDateTime::currentSecsSinceEpoch());
   });
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
+    RuntimeLog::record("history.error", {{"message", message}});
     historyError = message;
     appendLog(QCoreApplication::translate("Allpowers", "History error · ") + message);
     refreshDiagnostics();
@@ -416,6 +418,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   });
   historyThread.start();
   historyStarted = true;
+  new TransportTrace(ble, this);
   saveSettings();
   emit openHistory(QDir(dataPath).filePath("history.sqlite3"));
   emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
@@ -969,6 +972,7 @@ void MonitorWindow::updateSnapshot(ap_snapshot s) {
 }
 QJsonObject MonitorWindow::diagnostics() const {
   auto info = ble->diagnostics();
+  info["diagnostic_log"] = RuntimeLog::path();
   info["application"] = APP_VERSION;
   info["language"] = "C++23";
   info["ui_language"] = qApp->property("ui_language").toString();

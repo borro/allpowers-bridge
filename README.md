@@ -83,6 +83,7 @@ Chinese. Detailed guides are maintained in English.
 - [Getting started](docs/getting-started.md) — downloads, first connection and board setup.
 - [Windows applications](docs/windows-apps.md) — languages, graphs, Widget, storage and diagnostics.
 - [Bluetooth disconnect diagnostics](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — the board retains eight disconnect reasons until reboot; read them in USB Monitor diagnostics.
+- [Persistent PC diagnostics](docs/troubleshooting.md#widget-is-not-visible-or-its-language-did-not-change) — bounded Monitor/Widget journals preserve USB/BLE failures, freshness and application lifecycle; Widget opens their folder from its tray menu.
 - [Troubleshooting](docs/troubleshooting.md) — connection issues, stale readings and history gaps.
 - [Documentation index](docs/README.md) — hardware, USB protocol, recovery and reference material.
 - [Build from source](docs/building.md) · [CMake structure](docs/cmake.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md).

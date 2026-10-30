@@ -2,6 +2,7 @@
 #include "i18n.h"
 #include "notices.h"
 #include "product-version.h"
+#include "runtime_log.h"
 #include "widget.h"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -59,6 +60,9 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  RuntimeLog runtimeLog(directory);
+  QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
+                   [] { RuntimeLog::record("runtime.quit_requested"); });
   WidgetController widget(directory, offline, QGuiApplication::platformName() != "offscreen");
   widget.start();
   if (offline)

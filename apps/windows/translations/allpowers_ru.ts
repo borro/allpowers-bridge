@@ -3,6 +3,10 @@
   <context>
     <name>Allpowers</name>
     <message>
+      <source>Open diagnostics folder</source>
+      <translation>Открыть папку диагностики</translation>
+    </message>
+    <message>
       <location filename="../bluetooth.cpp" line="31" />
       <source>Unnamed</source>
       <translation>Без имени</translation>

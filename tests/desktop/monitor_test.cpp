@@ -12,6 +12,7 @@
 #include "../../firmware/R2500Adapter/BleDisconnectLog.h"
 #include "window.h"
 #include "monitor_application.h"
+#include "runtime_log.h"
 #include <QAbstractItemView>
 #include <QBuffer>
 #include <QApplication>
@@ -779,6 +780,8 @@ private slots:
     QVERIFY(!session.snapshot(301).main_seen);
   }
   void usbTelemetryArchiveAndStaleData() {
+    QTemporaryDir logDirectory;
+    RuntimeLog log(logDirectory.path());
     qint64 now = 0;
     auto *io = new FakeUsbChannel;
     UsbTransport usb(nullptr, false, io, fakeUsbPorts, [&] { return now; },deterministicHistoryEntropy());
@@ -854,8 +857,19 @@ private slots:
     const auto drop=usb.diagnostics()["usb_diagnostics"].toObject()["BLE DROP 1"].toString();
     QVERIFY(drop.contains("up_ms=12345")&&drop.contains("reason=0x0008 CONNECTION_TIMEOUT"));
     QVERIFY(drop.contains("request=none")&&drop.contains("main_ms=20 cfg_ms=100 scan_dbm=-89"));
+    const auto receivedBytes = usb.diagnostics()["usb_bytes"].toInteger();
+    QVERIFY(receivedBytes > 0);
+    QCOMPARE(usb.diagnostics()["usb_status_age_ms"].toInteger(), qint64(0));
+    QCOMPARE(usb.diagnostics()["usb_bytes_age_ms"].toInteger(), qint64(0));
     now += 7000;
     QTRY_VERIFY(!usb.connected());
+    QFile recorded(RuntimeLog::path());
+    QVERIFY(recorded.open(QIODevice::ReadOnly));
+    const auto incidents = recorded.readAll();
+    QVERIFY(incidents.contains("board.ble_drop"));
+    QVERIFY(incidents.contains("CONNECTION_TIMEOUT"));
+    QVERIFY(incidents.contains("usb.failure"));
+    QVERIFY(incidents.contains("\"usb_status_age_ms\":7000"));
     usb.stop();
     QVERIFY(!usb.active());
     QVERIFY(!io->writes.contains("BOOT"));

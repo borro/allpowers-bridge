@@ -5,6 +5,7 @@
 #include "integration.h"
 #include "notices.h"
 #include "product-version.h"
+#include "runtime_log.h"
 #include "usb_transport.h"
 #include "window.h"
 #include <QApplication>
@@ -15,6 +16,7 @@
 #include <QIcon>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <memory>
@@ -213,6 +215,10 @@ int runMonitorApplication(QApplication &app, const QStringList &arguments,
   }
   if (selfTest || demo)
     qputenv("ALLPOWERS_DATA_DIR", temporary.path().toUtf8());
+  RuntimeLog runtimeLog(monitorDataDirectory());
+  const auto quitLog = QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
+                                        [] { RuntimeLog::record("runtime.quit_requested"); });
+  const auto disconnectQuitLog = qScopeGuard([&] { QObject::disconnect(quitLog); });
   UiLanguage language(parser.isSet("language") ? parser.value("language")
                                                : savedUiLanguage(monitorDataDirectory()));
   if (!language.valid())

@@ -13,10 +13,17 @@ struct HistoryPoint {
   qint64 wall = 0, tick = 0;
   ap_snapshot data{};
   int stride = 1;
+  quint32 sequence = 0;
   // Derived by USB fusion only; never persisted or accepted over IPC.
   bool bridgeFromPrevious = false;
 };
 using HistoryPoints = QList<HistoryPoint>;
+quint32 historyEpoch(const HistoryPoint &);
+QString historyBoard(const HistoryPoint &);
+HistoryPoints sharedUsbHistory(const HistoryPoints &station, const HistoryPoints &archive,
+                               const HistoryPoints &undated, const QString &currentSession);
+HistoryPoints historyByEpoch(const HistoryPoints &dated, const HistoryPoints &undated);
+bool joinEpochPoints(const HistoryPoint &, const HistoryPoint &);
 // One dispatched write and one coalesced newest sample, independent of worker
 // speed. Completion is explicit even when SQLite cannot accept the sample.
 class HistorySampleQueue {
@@ -91,9 +98,11 @@ public:
   }
   QString error() const;
   void newSession();
-  bool record(const QString &, const ap_snapshot &, qint64 wall, qint64 tick);
+  bool record(const QString &, const ap_snapshot &, qint64 wall, qint64 tick,
+              const QString &board = {}, quint32 epoch = 0);
   bool importPoints(const HistoryPoints &, qint64 now);
   HistoryPoints points(const QString &, qint64 now) const;
+  HistoryPoints undatedPoints(const QString &) const;
   QJsonObject stats() const;
   bool exportCsv(const QString &, qint64, const QString &) const;
 };
@@ -103,6 +112,8 @@ class HistoryWorker : public QObject {
   Q_OBJECT
   HistoryStore *store = nullptr;
   QString directory;
+  void writeSample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick,
+                   const QString &board = {}, quint32 epoch = 0);
 
 public:
   ~HistoryWorker() override;
@@ -112,6 +123,8 @@ public slots:
   virtual void open(const QString &path);
   void newSession();
   virtual void sample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick);
+  void sampleUsb(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick, QString board,
+                 quint32 epoch);
   void load(QString address, qint64 now);
   void exportFile(QString address, qint64 now, QString path);
   void log(QString message);
@@ -120,6 +133,7 @@ signals:
   void opened();
   void sampleFinished();
   void loaded(QString address, HistoryPoints points, QJsonObject stats);
+  void undatedLoaded(QString address, HistoryPoints points);
   void problem(QString message);
   void exported(QString path, bool ok);
 };

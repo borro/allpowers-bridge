@@ -82,6 +82,7 @@ Chinese. Detailed guides are maintained in English.
 
 - [Getting started](docs/getting-started.md) — downloads, first connection and board setup.
 - [Windows applications](docs/windows-apps.md) — languages, graphs, Widget, storage and diagnostics.
+- [Shared USB HID](docs/usb-monitor.md) — Monitor and Widget read one adapter independently, including archive export. Application CDC is removed; maintenance HID and the ROM updater remain.
 - [Bluetooth disconnect diagnostics](docs/troubleshooting.md#bluetooth-is-busy-or-the-station-is-missing) — the board retains eight disconnect reasons until reboot; read them in USB Monitor diagnostics.
 - [Persistent PC diagnostics](docs/troubleshooting.md#widget-is-not-visible-or-its-language-did-not-change) — bounded Monitor/Widget journals preserve USB/BLE failures, freshness and application lifecycle; Widget opens their folder from its tray menu.
 - [Troubleshooting](docs/troubleshooting.md) — connection issues, stale readings and history gaps.
@@ -106,6 +107,13 @@ CI also requires Windows application formatting and per-area host coverage minim
 [Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the toolchains.
 
 CI submits the pinned C/C++ dependencies from `cmake/Dependencies.cmake` to the [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). Pull requests validate the snapshot; submission runs only from the default branch. CI summaries and artifacts include an inventory with repository, source and notice links. [Scope and local validation](docs/ci.md#cc-dependency-graph).
+
+Board history uses one current format (AHP3), with a persistent boot counter and
+UTC synchronization from either viewer. Monitor can show all records grouped by boot
+epoch, including records without a date. Time and epoch views share the same
+archive and live readings; undated records appear only in the epoch view. New live readings retain the board epoch; older local readings with no
+boot information appear under “Unknown epoch”. Incompatible old board statistics and USB caches are
+discarded on transition; station settings remain intact.
 
 ## License
 

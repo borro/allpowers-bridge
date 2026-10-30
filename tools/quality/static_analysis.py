@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 
 PORTABLE_SOURCES = ("core/native/api.cpp", *(f"tests/native/{name}.cpp" for name in
-                    ("models_test", "abi_test", "ups_test", "firmware_test", "history_rollback_test")))
+                    ("models_test", "abi_test", "ups_test", "firmware_test", "history_rollback_test", "hid_telemetry_test")))
 
 
 def run(command, cwd=None, env=None):

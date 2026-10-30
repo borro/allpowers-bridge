@@ -3,8 +3,13 @@
 [Documentation](README.md)
 
 Building is separate from writing. No build/test/setup command opens USB or BLE.
-The firmware keeps CDC and vendor HID maintenance even if station data is absent.
-The USB descriptor contract and partition offsets are checked against fixtures.
+The firmware keeps vendor HID maintenance even if station data is absent.
+Application CDC is removed. The unchanged ROM bootloader still exposes its own
+USB serial interface for flashing after the maintenance HID boot command or
+physical BOOT/RESET entry.
+The UPS descriptor, maintenance HID, telemetry HID and partition contracts are
+checked independently. Normal viewers open only telemetry Usage Page 0xFF01;
+maintenance tools select the unchanged 0xFF00 collection.
 
 ## Before replacing code
 
@@ -38,41 +43,34 @@ do not automatically qualify as safe rollback for the current history format.
 The Pocket factory backup was waived; partial reads are not a full backup.
 Historical bundles and original Git history are private because they embed images.
 
-## AHP1/AHP2 storage and supported rollback
+## AHP3 storage and supported rollback
 
-New firmware reads both physical AHP1 and AHP2 records and writes AHP2. AHP2 keeps
-the existing partition and 32-byte slots, adding CRC-protected known/model data.
-An old AHP1-only writer can mistake an AHP2 archive for empty flash and erase a
-sector when it starts again. Restoring its application bytes does not preserve
-that archive safely.
+Current firmware reads and writes AHP3 only. Each 32-byte CRC-protected record
+contains the persistent boot epoch, sequence, uptime, optional UTC date and
+known/model data. Partition addresses and sizes are unchanged. The transition
+discards incompatible AHP1/AHP2 statistics with the owner's authorization; it
+does not erase station settings. Preserve external backups before transitioning.
+There is no legacy archive decoder or downgrade migration in product code.
 
-The supported rollback therefore retains an AHP1/AHP2-capable writer. It does not
-migrate history back to an AHP1-only writer. Every writable image and registered
-rollback must have the exact `history_storage` contract: schema 1, readers `[1,2]`,
-writer 2, 32-byte records, and capability `ALLPOWERS_HISTORY_R12_W2_S32`. That
-capability must also occur in the compiled application; an added JSON sidecar
-alone cannot qualify an unchanged old binary. The image's file hashes and the
-registered rollback application SHA256 must match the complete package manifest.
+Every writable image and registered rollback must have the exact
+`history_storage` contract: schema 1, readers `[3]`, writer 3, 32-byte records,
+and capability `ALLPOWERS_HISTORY_R3_W3_S32`. The capability must occur in the
+compiled application; adding a JSON sidecar cannot qualify an old binary.
+The image hashes and registered rollback SHA256 must match the complete manifest.
 
-Register `rollback.path`, `rollback.sha256` and `rollback.manifest` using the
-compatible package in external storage; see `config/devices.example.json`.
-The normal `flash` path rejects a missing contract, an AHP1-only image, a raw
-rollback without its manifest, or metadata bound to another application **before
-opening ROM USB**. The same conservative gate applies when the current archive
-contents are unknown. This avoids guessing safety from an old version number.
+Register `rollback.path`, `rollback.sha256` and `rollback.manifest` using a
+compatible, verified package in external storage. The normal flash path rejects
+an old format, missing contract, raw rollback without its manifest or mismatched
+metadata before opening ROM USB. Keep prior recovery material privately, but do
+not relabel an AHP1/AHP2 image as compatible.
 
-For a supported rollback, keep the existing NVS/history partitions, select the
-compatible package explicitly with `--image-dir` and the registered board
-profile, and use the ordinary identity-checked update procedure. The compatible
-reader recovers both formats before it appends. Retain prior external archive
-copies and factory material; do not relabel an AHP1-only backup as compatible.
-Downgrade to AHP1-only firmware is outside this supported maintenance path.
-
-The automatic test uses the frozen original AHP1 Ring and current production
-Ring on one RAM flash: it demonstrates the unsupported erase, then checks
-AHP1 → AHP2 → compatible rollback/write → upgrade without losing records.
-Maintenance tests independently prove rejection before device access. These are
-offline checks, not physical recovery or second-write evidence for new images.
+For supported rollback preserve NVS/history partitions, use the explicitly
+selected board profile and compatible `--image-dir`. The persistent boot counter
+must remain in NVS so newly appended records cannot reuse an earlier epoch.
+Offline tests cover counter persistence failures, overflow refusal, clock
+validation and dated/undated records across reboot. Maintenance tests check
+rejection before device access. These do not prove physical recovery or a real
+second write on a new image.
 
 ## Explicit commands
 

@@ -3,6 +3,10 @@
   <context>
     <name>Allpowers</name>
     <message>
+      <source>Firmware update required</source>
+      <translation>Требуется обновление прошивки</translation>
+    </message>
+    <message>
       <source>Open diagnostics folder</source>
       <translation>Открыть папку диагностики</translation>
     </message>
@@ -824,6 +828,10 @@ Qt © The Qt Company Ltd. and other contributors.
     </message>
     <message>
       <location filename="../window.cpp" line="589" />
+      <source>Reading… %1 / %2</source>
+      <translation>Считывание… %1 / %2</translation>
+    </message>
+    <message>
       <source>Read from board</source>
       <translation>Считать с платы</translation>
     </message>
@@ -1474,6 +1482,60 @@ Qt © The Qt Company Ltd. and other contributors.
       <location filename="../widget.h" line="25" />
       <source>No connection</source>
       <translation>Нет подключения</translation>
+    </message>
+    <message>
+      <source>History by epochs</source>
+      <translation>История по эпохам</translation>
+    </message>
+    <message>
+      <source>Epoch %1 · record %2 · uptime %3 s</source>
+      <translation>Эпоха %1 · запись %2 · от запуска %3 с</translation>
+    </message>
+    <message>
+      <source>Records without a date</source>
+      <translation>Записи без даты</translation>
+    </message>
+    <message>
+      <source>
+USB archive · epoch %1 · record %2</source>
+      <translation>
+Архив USB · эпоха %1 · запись %2</translation>
+    </message>
+    <message>
+      <source>No archive records</source>
+      <translation>В архиве пока нет записей</translation>
+    </message>
+    <message>
+      <source>Last record</source>
+      <translation>К последней записи</translation>
+    </message>
+<message>
+      <source>Last record: %1 · Read from board refreshes the archive</source>
+      <translation>Последняя запись: %1 · «Считать с платы» обновляет архив</translation>
+    </message>
+    <message>
+      <source>Epoch %1</source>
+      <translation>Эпоха %1</translation>
+    </message>
+    <message>
+      <source>All epochs</source>
+      <translation>Все эпохи</translation>
+    </message>
+    <message>
+      <source>Records: %1 · groups: %2 · live readings and archive</source>
+      <translation>Записей: %1 · групп: %2 · текущие показания и архив</translation>
+    </message>
+    <message>
+      <source>Unknown epoch</source>
+      <translation>Эпоха неизвестна</translation>
+    </message>
+    <message>
+      <source>Epoch %1 · live reading · uptime %2 s</source>
+      <translation>Эпоха %1 · текущие показания · от запуска %2 с</translation>
+    </message>
+    <message>
+      <source>Records: %1 · live readings and archive</source>
+      <translation>Записей: %1 · текущие показания и архив</translation>
     </message>
   </context>
 </TS>

@@ -291,7 +291,8 @@ cmake --build --preset mutation-linux --parallel 2
 
 The preset builds and runs the `mutation-report` target, using an isolated tree
 with coverage and sanitizers disabled. Ordinary builds do not require LLVM or Mull.
-Five native test programs exercise the core, host firmware logic and portable
+Six native test programs exercise the core, HID framing/archive server, host
+firmware logic and portable
 `ups_state.h` adapter. The shared core library is scanned separately with both
 its test programs. Qt, test sources, dependencies and hardware execution are outside
 this scope. Built-in `selfTest()` routines remain included because they also run
@@ -320,6 +321,12 @@ reason and category for each mutation. The job fails for any unreviewed survivor
 any uncovered mutation, or a baseline/tool/report error. There is no minimum
 percentage: acceptance leaves the original statuses and mutation score unchanged.
 The mutation job gates CI result and release publication.
+
+HID tests cover both 64-bit boot halves, exact limits, malformed reports,
+fragment overlap, both archive slots, final pages and expiry boundaries. Three
+reviewed HID survivors replace `<` with `<=` in a minimum calculation: when the
+operands are equal, both branches return the same 28-byte or eight-record limit.
+Their exact identities and source hashes are recorded in the acceptance file.
 
 An acceptance matches the exact file, Mull mutation ID (operator and coordinates),
 replacement and SHA-256 of the entire source file, normalized to LF. Changing
@@ -459,11 +466,12 @@ external preservation folders when cleaning build output.
 
 ## Parser fuzzing
 
-The `fuzz` job exercises the portable BLE notification decoder and CDC command
-collector/controller with Clang 18 libFuzzer plus fatal ASan/UBSan. It runs on
+The `fuzz` job exercises the portable BLE decoder, HID wire codec and archive
+server with Clang 18
+libFuzzer and fatal ASan/UBSan. It runs on
 full push/PR and manual runs and gates release publication. Each target
 runs for 120 seconds, with a 5-second per-input timeout and a 1024 MiB RSS limit;
-CTest runs both targets in parallel with a 180-second outer timeout per target.
+CTest runs two targets in parallel with a 180-second outer timeout per target.
 The CI job has a 20-minute limit including dependency installation. Crashes,
 failed invariants, sanitizer findings, input timeouts and memory-limit failures
 produce a nonzero test result. Successful bounded fuzzing is not proof that all
@@ -474,7 +482,11 @@ division by zero to fail with a UBSan diagnostic and an exact saved reproducer.
 BLE checks all four model selections, unchanged output on rejection, and decoded
 field invariants. CDC covers direct commands and byte-by-byte collection, blocked
 and short writes, and expiration with an empty in-memory archive. It does not
-exercise BLE/USB hardware, Windows/Qt, or arbitrary archive/storage histories.
+exercise BLE/USB hardware or Windows/Qt. HID wire fuzzing exercises raw and
+CRC-correct malformed reports, round trips, corrupted/foreign/duplicate/missing
+fragments and bounded reassembly. Stateful HID server fuzzing mixes four archive
+identities, page retries, close, slot pressure, expiry and timer wraparound,
+checking repeatable replies, record CRCs and the two-slot limit.
 
 Install Ubuntu's `clang-18` and `libclang-rt-18-dev`, then run:
 
@@ -487,7 +499,7 @@ ctest --preset fuzz-linux --verbose
 Only fuzz targets receive libFuzzer/ASan/UBSan flags. Coverage, mutation and ordinary
 sanitizer builds must use separate directories. `tests/fuzz/seed_corpus.py` creates
 reviewable protocol seeds (valid packets/commands, overflow and malformed cases)
-under `build/fuzz-linux/fuzz/{ble,cdc}/corpus`; it does not delete local discoveries.
+under `build/fuzz-linux/fuzz/{ble,cdc,hid_wire,hid_server}/corpus`; it does not delete local discoveries.
 CI starts from these seeds on each fresh checkout and uses seed `20261027`.
 Elapsed-time scheduling can still change the number of explored inputs.
 
@@ -497,10 +509,10 @@ seed generator or making it a permanent regression test. To reproduce a saved
 CDC failure after rebuilding the same revision:
 
 ```sh
-build/fuzz-linux/tests/fuzz/fuzz_cdc path/to/crash-input -runs=1
+build/fuzz-linux/tests/fuzz/fuzz_hid_wire path/to/crash-input -runs=1
 ```
 
-For a BLE failure use `fuzz_ble`. Replay uses the exact saved bytes rather than
+For BLE or HID failures use `fuzz_ble`, `fuzz_hid_wire` or `fuzz_hid_server`. Replay uses the exact saved bytes rather than
 depending on timing or re-running the entire random search.
 
 ## Static analysis
@@ -515,7 +527,7 @@ cmake --build build/static-analysis-linux --target workflow-lint
 ```
 
 The `static-analysis` target always reruns both analyzers on `core/native/api.cpp`
-and the five native test translation units. Their included product headers cover
+and the six native test translation units. Their included product headers cover
 host firmware logic. Test harness findings and external headers are not product
 findings; parse/tool failures still fail the run. A tidy failure does not skip
 Cppcheck. Cppcheck uses its own parser, C++23/unix64 and the actual compilation
@@ -558,7 +570,7 @@ source location and explain why the reported path is impossible.
 
 ## Memory checking with Valgrind
 
-The `valgrind` job runs the five portable native tests through CTest Memcheck on
+The `valgrind` job runs the six portable native tests through CTest Memcheck on
 Ubuntu 24.04, in full push/PR and manual runs. It uses a separate Debug build,
 without ASan/UBSan, coverage or Mull instrumentation. It checks the portable
 core/shared ABI, UPS logic and host firmware, not Windows/Qt or physical devices.
@@ -581,7 +593,7 @@ fail the job. Still-reachable allocations are reported for review. No project
 suppression file is used. A deliberately uninitialised read must be diagnosed
 with exit code 99, while its ordinary execution returns zero; this verifies that
 Memcheck findings cannot silently pass. The control is excluded from normal
-builds and from the five passing tests.
+builds and from the six passing tests.
 
 Logs and CTest XML are retained for 14 days in the `valgrind-linux` Actions
 artifact, including on failure. The Valgrind job gates release publication.

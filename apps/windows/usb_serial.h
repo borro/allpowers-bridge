@@ -11,8 +11,15 @@ class UsbChannel : public QObject {
 public:
   using QObject::QObject;
   virtual void open(const QString &port) = 0;
+  virtual void openDevice(const UsbPort &device) {
+    open(device.port);
+  }
   virtual void close() = 0;
   virtual void write(const QByteArray &) = 0;
+  virtual void cancelHistory() {}
+  virtual bool hid() const {
+    return false;
+  }
 signals:
   void opened();
   void received(QByteArray bytes);

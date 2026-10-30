@@ -1,6 +1,7 @@
 #include "i18n.h"
 #include "usb_transport.h"
 #include "widget.h"
+#include "archive_fixture.h"
 #include <QApplication>
 #include <QDialog>
 #include <QComboBox>
@@ -170,7 +171,7 @@ static QByteArray widgetUsbStatus(const QString &board, int frames, int output =
        {"history_records", 2},
        {"history_latest", 2},
        {"history_oldest", 1},
-       {"history_export_version", 2},
+       {"history_export_version", 3}, {"history_nonce_bits", 128}, {"history_generation", 10},
        {"history_session", 7},
        {"history_clock", false}},
       {{"board", board}}};
@@ -426,15 +427,11 @@ private slots:
     };
     QTRY_VERIFY(has(cached)); // Cached archive appears before the USB dump completes.
     QVERIFY(!has(other));
-    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT 1 2\n"));
-    const QByteArray dump =
-        "{\"history_record\":true,\"sequence\":1,\"session\":7,\"uptime_s\":100,\"epoch\":0,"
-        "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
-        "\"crc\":3397945926}\n"
-        "{\"history_record\":true,\"sequence\":2,\"session\":7,\"uptime_s\":160,\"epoch\":0,"
-        "\"soc\":50,\"charge_w\":0,\"output_w\":150,\"runtime_minutes\":30,\"flags\":13,"
-        "\"crc\":874804455}\n{\"history_dump_done\":true}\n";
-    io->feed(dump);
+    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT "));
+    QVector<HistoryFormat::Record> records;
+    for(int i=0;i<2;++i){auto r=HistoryFormat::example();r.sequence=i+1;r.session=7;r.uptimeSeconds=100+i*60;
+      r.outputWatts=150;r.soc=50;records.append(r);}
+    io->feed(archiveBytes(io,records));
     QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 3);
     QVERIFY(widget.diagnostics()["history_error"].toString().isEmpty());
     QTRY_VERIFY(widget.diagnostics()["output_segments"].toInt() > 0);
@@ -459,8 +456,8 @@ private slots:
     io->writes.clear();
     usb->resume("R2500-000000000001", {}, 0);
     io->feed(widgetUsbStatus(board, 11));
-    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT 1 2\n"));
-    io->feed(dump);
+    QTRY_VERIFY(io->writes.contains("HISTORY-EXPORT "));
+    io->feed(archiveBytes(io,records));
     QTRY_COMPARE(widget.diagnostics()["usb_history_points"].toInt(), 3);
     usb->resume("R2500-000000000002", {}, 0);
     io->feed(widgetUsbStatus(board, 12));

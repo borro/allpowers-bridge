@@ -17,9 +17,11 @@
 #include "BuildVersion.h"
 #include "ProductIdentity.h"
 #include "HistoryCompatibility.h"
-#include "OutputController.h"
+#include "HidTelemetryServer.h"
+#include "StatusWire.h"
+#include <freertos/queue.h>
 #if ARDUINO_USB_MODE != 0 || ARDUINO_USB_CDC_ON_BOOT
-#error Use TinyUSB OTG with manual CDC; register all HID collections before USB starts.
+#error Use TinyUSB OTG without CDC; register all HID collections before USB starts.
 #endif
 static portMUX_TYPE dataLock = portMUX_INITIALIZER_UNLOCKED;
 static Telemetry telemetry;
@@ -37,12 +39,13 @@ static std::atomic<uint32_t> upsGets{0}, staticGets{0};
 static uint32_t upsSent=0,upsSendFailed=0,vendorSent=0,vendorSendFailed=0,hidNotReady=0;
 static uint32_t bleConnects=0,bleDrops=0;
 static BleDisconnects::Log bleDisconnectLog;
-static USBCDC Console;
 static USBHID hid;
 static Dashboard screen;
 static HistoryStore history;
-static SemaphoreHandle_t consoleOperation=nullptr;
-static std::atomic<bool> outputBusy{false};
+static portMUX_TYPE hidLock = portMUX_INITIALIZER_UNLOCKED;
+static QueueHandle_t hidRequests=nullptr;
+static uint64_t hidBoot=0;
+static uint8_t hidLive[HidTelemetry::Payload]{};
 static char pendingNotification[600]{};
 static size_t pendingNotificationBytes=0;
 static bool captureStatus(HistoryFormat::StatusSnapshot &frame,uint32_t now);
@@ -59,20 +62,40 @@ public:
     return archive?archive->read(ordinal,record):HistoryFormat::ReadState::Error;
   }
   void close()override{delete archive;archive=nullptr;free(memory);memory=nullptr;}
-} historySource;
-class HistoryConsoleSink:public HistoryFormat::ExportSink {
-  bool owns=false;
+} hidArchives[2];
+static size_t diagnosticText(uint8_t *out,size_t capacity);
+class HidProvider:public HidTelemetry::Provider {
 public:
-  size_t write(const char *bytes,size_t length)override{
-    if(consoleOperation&&!owns){if(xSemaphoreTake(consoleOperation,0)!=pdTRUE)return 0;owns=true;}
-    return Console.write(reinterpret_cast<const uint8_t*>(bytes),length);
+  size_t text(HidTelemetry::Op op,uint8_t *out,size_t capacity)override{
+    if(op==HidTelemetry::Op::Diagnostics)return diagnosticText(out,capacity);
+    HistoryFormat::StatusSnapshot frame;if(!captureStatus(frame,millis()))return 0;
+    size_t used=0;
+    for(uint8_t i=0;i<HistoryFormat::kStatusRows;++i){
+      int n=HistoryFormat::serializeStatus(frame,i,reinterpret_cast<char*>(out+used),capacity-used);
+      if(n<=0||size_t(n)>=capacity-used)return 0;used+=size_t(n);
+    }
+    return used;
   }
-  void release(){if(owns){xSemaphoreGive(consoleOperation);owns=false;}}
-} historySink;
-class FirmwareStatusProvider:public HistoryFormat::StatusProvider {
-  bool capture(HistoryFormat::StatusSnapshot &frame,uint32_t now)override{return captureStatus(frame,now);}
-} statusProvider;
-static HistoryFormat::OutputController serialOutput(historySource,historySink,statusProvider);
+  HistoryFormat::ReadState open(unsigned slot,HistoryFormat::ExportMetadata &meta,uint32_t &digest)override{
+    auto state=hidArchives[slot].open(meta);
+    if(state!=HistoryFormat::ReadState::Record){hidArchives[slot].close();return state;}
+    digest=HistoryFormat::kDigestSeed;
+    for(uint32_t i=0;i<meta.count;++i){HistoryFormat::Record r;
+      if(hidArchives[slot].read(i,r)!=HistoryFormat::ReadState::Record){hidArchives[slot].close();return HistoryFormat::ReadState::Error;}
+      digest=HistoryFormat::digestRecord(digest,r);
+    }
+    return state;
+  }
+  bool record(unsigned slot,uint32_t ordinal,HistoryFormat::Record &out)override{
+    return hidArchives[slot].read(ordinal,out)==HistoryFormat::ReadState::Record;
+  }
+  void close(unsigned slot)override{hidArchives[slot].close();}
+  HidTelemetry::Result clock(uint32_t epoch,uint32_t uptime)override{
+    Telemetry copy;portENTER_CRITICAL(&dataLock);copy=telemetry;portEXIT_CRITICAL(&dataLock);
+    return history.setTime(epoch,uptime,copy)?HidTelemetry::Result::Ok:HidTelemetry::Result::Error;
+  }
+} hidProvider;
+static HidTelemetry::Server hidServer(hidProvider);
 static BootGestures button;
 static uint8_t displayPage=0;
 static bool displayDirty=false;
@@ -130,6 +153,19 @@ static bool descriptorSelfTest(){
     if(r.report_id==3 && r.report_type==ESP_HID_REPORT_TYPE_FEATURE && r.value_len==9)stat=true;
   }
   esp_hid_free_report_map(map);return input&&feature&&stat;
+}
+static bool telemetryDescriptorSelfTest(){
+  auto *map=esp_hid_parse_report_map(HidTelemetry::Descriptor,sizeof(HidTelemetry::Descriptor));
+  if(!map)return false;
+  unsigned seen=0;
+  for(uint8_t i=0;i<map->reports_len;++i){const auto &r=map->reports[i];
+    if(r.protocol_mode!=ESP_HID_PROTOCOL_MODE_REPORT||r.value_len!=HidTelemetry::Payload)continue;
+    if(r.report_id==4&&r.report_type==ESP_HID_REPORT_TYPE_FEATURE)seen|=1;
+    if(r.report_id==5&&r.report_type==ESP_HID_REPORT_TYPE_FEATURE)seen|=2;
+    if(r.report_id==6&&r.report_type==ESP_HID_REPORT_TYPE_OUTPUT)seen|=4;
+    if(r.report_id==7&&r.report_type==ESP_HID_REPORT_TYPE_INPUT)seen|=8;
+  }
+  esp_hid_free_report_map(map);return seen==15;
 }
 static StationPicker::Target targetSnapshot(uint32_t &revision){
   portENTER_CRITICAL(&dataLock);auto copy=requestedTarget;revision=targetRevision;portEXIT_CRITICAL(&dataLock);return copy;
@@ -253,22 +289,58 @@ public:
     return 0;
   }
 } ups;
-static void cdcEvent(void *,esp_event_base_t base,int32_t event,void *data) {
-  if(base==ARDUINO_USB_CDC_EVENTS && event==ARDUINO_USB_CDC_LINE_CODING_EVENT &&
-    static_cast<arduino_usb_cdc_event_data_t*>(data)->line_coding.bit_rate==1200)requestBoot=true;
+class TelemetryHID:public USBHIDDevice {
+public:
+  bool enable(){return USBHID::addDevice(this,sizeof(HidTelemetry::Descriptor));}
+  uint16_t _onGetDescriptor(uint8_t *b)override{
+    memcpy(b,HidTelemetry::Descriptor,sizeof(HidTelemetry::Descriptor));return sizeof(HidTelemetry::Descriptor);
+  }
+  uint16_t _onGetFeature(uint8_t id,uint8_t *b,uint16_t n)override{
+    if(n<HidTelemetry::Payload)return 0;
+    if(id==HidTelemetry::CapsReport)HidTelemetry::capabilities(b,hidBoot,true);
+    else if(id==HidTelemetry::LiveReport){
+      portENTER_CRITICAL(&hidLock);memcpy(b,hidLive,sizeof(hidLive));portEXIT_CRITICAL(&hidLock);
+    }else return 0;
+    return HidTelemetry::Payload;
+  }
+  void _onOutput(uint8_t id,const uint8_t *b,uint16_t n)override{
+    HidTelemetry::Request r;
+    if(id==HidTelemetry::RequestReport&&hidRequests&&HidTelemetry::decode(b,n,r)&&r.boot==hidBoot)
+      xQueueSend(hidRequests,&r,0);
+  }
+} telemetryHid;
+static void refreshHidLive(){
+  using namespace HidTelemetry;
+  const auto view=connectionSnapshot();const auto &s=view.telemetry;
+  Live v;v.boot=hidBoot;v.uptime=millis();v.model=s.protocol;v.known=s.known;
+  v.uptimeSeconds=uint32_t(uint64_t(esp_timer_get_time())/1000000);
+  v.flags=(view.connected?Connected:0)|(telemetryFresh(s,v.uptime)?Fresh:0)|
+    (s.mainSeen?MainSeen:0)|(s.settingsSeen?SettingsSeen:0)|(s.mainFlags&2?AcOn:0)|
+    (s.mainFlags&1?UsbOn:0)|(s.settingsFlags&0x10?DcOn:0)|(upsEnabled?UpsEnabled:0);
+  unsigned mac[6]{};
+  if(sscanf(view.identity.address,"%2x:%2x:%2x:%2x:%2x:%2x",&mac[0],&mac[1],&mac[2],&mac[3],&mac[4],&mac[5])==6)
+    for(unsigned i=0;i<6;++i)v.address[i]=uint8_t(mac[i]);
+  v.soc=s.soc;v.input=s.chargeWatts;v.output=s.outputWatts;v.runtime=uint32_t(s.minutes)*60;
+  v.source=uint8_t(s.source);v.sourceRaw=s.sourceRaw;
+  v.mainAge=s.mainSeen?uint32_t(v.uptime-s.mainAt):UINT32_MAX;
+  v.settingsAge=s.settingsSeen?uint32_t(v.uptime-s.settingsAt):UINT32_MAX;
+  v.valid=s.validFrames;v.invalid=s.invalidFrames;v.ups=upsSnapshot().status;v.firmware=ADAPTER_VERSION;
+  uint8_t bytes[Payload];encode(v,bytes);
+  portENTER_CRITICAL(&hidLock);memcpy(hidLive,bytes,sizeof(bytes));portEXIT_CRITICAL(&hidLock);
 }
 static void notifyStation(BLERemoteCharacteristic *sender,uint8_t *bytes,size_t length,bool,uint32_t revision,uint32_t token) {
   portENTER_CRITICAL(&dataLock);
   if(revision!=activeRevision||revision!=targetRevision||token!=activeConnectionToken||sender!=activeRx){portEXIT_CRITICAL(&dataLock);return;}
   bool valid=decodeStationTelemetry(telemetry,bytes,length,millis(),activeModel);
   portEXIT_CRITICAL(&dataLock);
-  if(usbStarted && length<=256 && !outputBusy && consoleOperation && xSemaphoreTake(consoleOperation,0)==pdTRUE){
+  if(usbStarted && length<=256){
     char hex[513];for(size_t i=0;i<length;++i)snprintf(hex+i*2,3,"%02x",bytes[i]);hex[length*2]=0;
-    if(!outputBusy&&!pendingNotificationBytes){
+    portENTER_CRITICAL(&hidLock);
+    if(!pendingNotificationBytes){
       const int n=snprintf(pendingNotification,sizeof(pendingNotification),"{\"station_notification_hex\":\"%s\",\"valid\":%s}\n",hex,valid?"true":"false");
       if(n>0&&size_t(n)<sizeof(pendingNotification))pendingNotificationBytes=size_t(n);
     }
-    xSemaphoreGive(consoleOperation);
+    portEXIT_CRITICAL(&hidLock);
   }
 }
 class ClientEvents:public BLEClientCallbacks {
@@ -431,21 +503,20 @@ static DiagnosticData diagnosticsSnapshot(){
   portEXIT_CRITICAL(&dataLock);
   d.nowMs=millis();d.uptimeSeconds=uint64_t(esp_timer_get_time())/1000000;
   d.log=history.status();d.reset=resetReasonName();d.resetCode=uint32_t(esp_reset_reason());
-  d.usbMounted=bool(USB);d.cdcOpen=bool(Console);d.upsEnabled=upsEnabled;
+  d.usbMounted=bool(USB);d.cdcOpen=false;d.upsEnabled=upsEnabled;
   d.upsGets=upsGets;d.upsSent=upsSent;d.upsFailed=upsSendFailed;
   d.heapFree=ESP.getFreeHeap();d.heapMin=ESP.getMinFreeHeap();d.psramFree=ESP.getFreePsram();return d;
 }
-static void printDiagnostics(){
-
+static size_t diagnosticText(uint8_t *out,size_t capacity){
   auto d=diagnosticsSnapshot();auto view=diagnosticView(d);static char body[6144];
   size_t used=snprintf(body,sizeof(body),"{\"diagnostic\":true,\"version\":\"%c\",\"page\":%u,\"heading\":\"%s\",\"footer\":\"%s\",\"rows\":[",ADAPTER_VERSION,displayPage,view.heading,view.footer);
   for(unsigned i=0;i<DiagnosticView::Count&&used<sizeof(body)-3;++i){auto &r=view.rows[i];
     used+=snprintf(body+used,sizeof(body)-used,"%s{\"label\":\"%s\",\"value\":\"%s\",\"tone\":%u}",i?",":"",r.label,r.value,unsigned(r.tone));
   }
-  if(used>=sizeof(body)-3)return;
+  if(used>=sizeof(body)-3)return 0;
   const int extra=BleDisconnects::appendDiagnosticRows(body+used,sizeof(body)-used-3,d.bleDisconnects);
-  if(extra<0)return;
-  used+=size_t(extra);memcpy(body+used,"]}\n",3);serialOutput.queueOptional(body,used+3);
+  if(extra<0)return 0;
+  used+=size_t(extra);memcpy(body+used,"]}\n",3);if(used+3>capacity)return 0;memcpy(out,body,used+3);return used+3;
 }
 static bool captureStatus(HistoryFormat::StatusSnapshot &frame,uint32_t now){
   frame={};frame.nowMs=now;frame.state=connectionSnapshot();auto report=upsSnapshot();
@@ -477,7 +548,6 @@ static bool captureStatus(HistoryFormat::StatusSnapshot &frame,uint32_t now){
   frame.displayPage=displayPage;
   return true;
 }
-static void printStatus(){serialOutput.command("STATUS",millis());}
 static void historyTask(void*){
   history.initialize();uint64_t lastSample=uint64_t(esp_timer_get_time())/1000000,lastLive=0;
   bool attempted=false,minuteGap=false,liveGap=false,liveStarted=false;
@@ -495,29 +565,31 @@ static void historyTask(void*){
     vTaskDelay(pdMS_TO_TICKS(200));
   }
 }
-static void printDevices(){
-  auto *body=static_cast<char*>(ps_malloc(6144));if(!body)return;
-  auto state=connectionSnapshot();StationPicker::Snapshot pages[4];
-  portENTER_CRITICAL(&dataLock);for(int i=0;i<4;++i)pages[i]=deviceCatalog.snapshot(i*6);portEXIT_CRITICAL(&dataLock);
-  size_t used=0;bool fits=true;
-  auto append=[&](const char *format,auto... args){
-    if(!fits)return;int n=snprintf(body+used,6144-used,format,args...);
-    if(n<=0||size_t(n)>=6144-used)fits=false;else used+=size_t(n);
-  };
-  append("{\"device_count\":%u,\"picker_open\":%s,\"scanning\":%s}\n",pages[0].total,pickerOpen?"true":"false",state.scanning?"true":"false");
-  for(auto &page:pages)for(int i=0;i<page.count;++i){auto &e=page.entries[i];
-    append("{\"ble_device\":true,\"name\":\"%s\",\"address\":\"%s\",\"rssi\":%d,\"connectable\":%s,\"profile\":%u,\"seen_age_ms\":%lu}\n",
-      e.identity.name,e.identity.address,e.rssi,e.connectable?"true":"false",e.model,(unsigned long)(millis()-e.seenAt));
+static void pumpHid(){
+  using namespace HidTelemetry;
+  static Request current;static uint8_t message[MessageLimit];
+  static size_t size=0,offset=0;static Result result=Result::Ok;static uint32_t started=0;
+  const uint32_t now=millis();hidServer.expire(now);
+  if(size&&uint32_t(now-started)>5000){size=offset=0;}
+  if(!size){
+    if(hidRequests&&xQueueReceive(hidRequests,&current,0)==pdTRUE){
+      result=hidServer.respond(current,now,message,size);offset=0;started=now;
+    }else{
+      portENTER_CRITICAL(&hidLock);
+      if(pendingNotificationBytes){
+        memcpy(message,pendingNotification,pendingNotificationBytes);size=pendingNotificationBytes;
+        pendingNotificationBytes=0;current={};current.op=Op::Packet;current.boot=hidBoot;
+        offset=0;started=now;result=Result::Ok;
+      }
+      portEXIT_CRITICAL(&hidLock);
+    }
   }
-  append("{\"devices_done\":true}\n");if(fits)serialOutput.queueOptional(body,used);free(body);
-}
-static void streamHistory(){
-  if(consoleOperation&&xSemaphoreTake(consoleOperation,0)==pdTRUE){
-    if(pendingNotificationBytes&&serialOutput.queueOptional(pendingNotification,pendingNotificationBytes))pendingNotificationBytes=0;
-    xSemaphoreGive(consoleOperation);
+  if(size&&hid.ready()){
+    uint8_t report[Payload];size_t count=fragment(current,result,message,size,offset,report);
+    if(count&&hid.SendReport(ResponseReport,report,sizeof(report),5)){
+      offset+=count;if(offset==size)size=offset=0;
+    }
   }
-  serialOutput.pump(millis());outputBusy=serialOutput.busy();
-  if(!serialOutput.busy())historySink.release();
 }
 static void startUsb(bool withUps) {
   // Prime the retained report before USB can request it. If BLE disappeared
@@ -529,11 +601,13 @@ static void startUsb(bool withUps) {
   snprintf(serialNumber,sizeof(serialNumber),"R2500-%02X%02X%02X%02X%02X%02X",unsigned(chipMac&255),unsigned(chipMac>>8&255),unsigned(chipMac>>16&255),unsigned(chipMac>>24&255),unsigned(chipMac>>32&255),unsigned(chipMac>>40&255));
   USB.serialNumber(serialNumber);USB.PID(0x4002); // Lab development identity.
   USB.firmwareVersion(0x0101+ADAPTER_VERSION-'A');
-  Console.begin(115200);Console.enableReboot(false);Console.onEvent(cdcEvent);Console.setTxTimeoutMs(10);
+  if(telemetryDescriptorSelfTest())telemetryHid.enable();
+  USB.usbClass(0);USB.usbSubClass(0);USB.usbProtocol(0);refreshHidLive();
   hid.begin();USB.begin();usbStarted=true;
 }
 void setup() {
-  consoleOperation=xSemaphoreCreateMutex();
+  hidBoot=(uint64_t(esp_random())<<32)|esp_random();if(!hidBoot)hidBoot=1;
+  hidRequests=xQueueCreate(8,sizeof(HidTelemetry::Request));
   buttonPassed=BootGestures::selfTest();pickerPassed=StationPicker::selfTest()&&AllpowersModels::selfTest();
   loadLastTarget();pinMode(Board::boot,INPUT_PULLUP);button.begin(digitalRead(Board::boot)==LOW,millis());
   led(0,0,12); // Optional board-specific RGB; absent on Pocket.
@@ -541,7 +615,7 @@ void setup() {
   if(parserPassed)bleTaskStarted=xTaskCreatePinnedToCore(bleTask,"station_ble",10240,nullptr,1,nullptr,0)==pdPASS;
   uint32_t start=millis();
   // Never enumerate a battery with fabricated zero SOC before station data arrives.
-  // A bounded timeout always exposes maintenance CDC/vendor HID for recovery.
+  // A bounded timeout always exposes maintenance vendor HID for recovery.
   while(targetLoaded&&parserPassed&&bleTaskStarted&&!bleStartupFailed&&!upsTelemetryFresh(snapshot(),millis())&&!(connectionSnapshot().connected&&connectionSnapshot().noUpsProfile)&&uint32_t(millis()-start)<25000){
     updateLed(snapshot());drawScreen();delay(200);
   }
@@ -549,30 +623,10 @@ void setup() {
   if(history.begin())historyTaskStarted=xTaskCreatePinnedToCore(historyTask,"history_log",6144,nullptr,1,nullptr,1)==pdPASS;
 }
 void loop() {
-  static HistoryFormat::HistoryCommandLine commandInput;
   static uint32_t lastReport=0,bootDeadline=0;
   if(buttonPassed)menuGesture(button.update(digitalRead(Board::boot)==LOW,millis()));
-  while(Console.available()){
-    if(const char *command=commandInput.feed(char(Console.read()))){
-      if(serialOutput.command(command,millis())){}
-      else if(!strcmp(command,"BOOT-R2500!!"))requestBoot=true;
-      else if(!strcmp(command,"RETRY-USB"))requestRestart=true;
-      else if(!strcmp(command,"DIAG"))printDiagnostics();
-      else if(!strcmp(command,"DEVICES"))printDevices();
-      else if(!strcmp(command,"PICKER")){if(!pickerOpen)menuGesture(BootGestures::Event::Double);}
-      else if(!strcmp(command,"NEXT")){if(pickerOpen)menuGesture(BootGestures::Event::Single);}
-      else if(!strcmp(command,"SELECT")){if(pickerOpen)menuGesture(BootGestures::Event::Double);}
-      else if(!strcmp(command,"PICKER-CLOSE")){portENTER_CRITICAL(&dataLock);pickerOpen=false;portEXIT_CRITICAL(&dataLock);displayDirty=true;}
-      else if(!strncmp(command,"SCREEN ",7)&&command[7]>='0'&&command[7]<'0'+Board::screenCount&&!command[8]){
-        displayPage=command[7]-'0';displayDirty=true;printStatus();
-      }else if(!strncmp(command,"TIME ",5)){
-        char *end=nullptr;unsigned long epoch=strtoul(command+5,&end,10);
-        if(end&&!*end&&epoch>=1577836800UL&&epoch<=4102444800UL){history.setTime(epoch);serialOutput.queueOptional("{\"time_set\":true}\n",18);}
-      }
-    }
-  }
   if(requestBoot||requestRestart){
-    history.requestPause();
+    hidServer.stop();history.requestPause();
     if(!bootDeadline){updateLed(snapshot());bootDeadline=millis()+150;}
     if(int32_t(millis()-bootDeadline)>=0&&history.pausedAndIdle()&&settingsIdle()){
       if(requestBoot)usb_persist_restart(RESTART_BOOTLOADER);else ESP.restart();
@@ -584,7 +638,7 @@ void loop() {
   }
   uint32_t now=millis();
   if(uint32_t(now-lastReport)>=1000){
-    lastReport=now;auto p=probeSnapshot();
+    lastReport=now;refreshHidLive();auto p=probeSnapshot();
     if(hid.ready()){
       if(hid.SendReport(1,&p,sizeof(p),5))vendorSent++;else vendorSendFailed++;
       if(upsEnabled){auto u=upsSnapshot();if(hid.SendReport(2,&u,sizeof(u),5))upsSent++;else upsSendFailed++;}
@@ -593,6 +647,6 @@ void loop() {
     updateLed(snapshot());
   }
   if(displayDirty){drawScreen();displayDirty=false;}
-  streamHistory();
+  if(!requestBoot&&!requestRestart)pumpHid();
   delay(5);
 }

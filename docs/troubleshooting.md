@@ -67,7 +67,7 @@ during long reads. Switching boards clears the previous overlay.
 Older firmware has weaker operation correlation across client restarts. Read
 [archive compatibility](usb-monitor.md#archive-protocol-compatibility-and-completion)
 before attributing an issue to missing history. Updates and rollback must follow
-the [AHP1/AHP2 recovery contract](recovery.md#ahp1ahp2-storage-and-supported-rollback)
+the [AHP3 recovery contract](recovery.md#ahp3-storage-and-supported-rollback)
 to preserve stored history.
 
 ## Widget is not visible or its language did not change

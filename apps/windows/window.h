@@ -22,7 +22,7 @@ class MonitorWindow : public QMainWindow {
   HistoryChart *chart;
   QComboBox *devices, *profile, *horizon, *transportMode, *historySource;
   QCheckBox *stationsOnly, *logScale;
-  QPushButton *scanButton, *connectButton, *exportButton, *liveButton;
+  QPushButton *scanButton, *connectButton, *exportButton, *liveButton, *readBoard;
   QLabel *status, *soc, *input, *output, *source, *runtime, *freshness, *outputAC, *outputUSB,
       *outputDC, *transportNote, *footer, *usbHistoryNote;
   QStackedWidget *pages;
@@ -35,7 +35,7 @@ class MonitorWindow : public QMainWindow {
   QString dataPath;
   ap_snapshot last{};
   HistoryPoints points;
-  HistoryPoints localPoints, servicePoints, usbPoints;
+  HistoryPoints localPoints, servicePoints, usbPoints, usbUndated;
   QElapsedTimer uptime;
   bool historyBusy = false, offline = false;
   bool wasScanning = false;
@@ -73,6 +73,8 @@ signals:
   void openHistory(QString path);
   void historySession();
   void historySample(QString address, ap_snapshot data, qint64 wall, qint64 tick);
+  void historyUsbSample(QString address, ap_snapshot data, qint64 wall, qint64 tick, QString board,
+                        quint32 epoch);
   void historyLoad(QString address, qint64 now);
   void historyExport(QString address, qint64 now, QString path);
   void historyExportPoints(HistoryPoints points, QString path);

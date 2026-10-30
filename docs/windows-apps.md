@@ -5,6 +5,10 @@
 Monitor and Widget run on Windows 10/11 x64. Each is a standalone EXE with Qt,
 SQLite, platform plugins, the protocol core and the C++ runtime statically linked.
 Neither needs a separate Qt/Python installation or a UPS driver for viewing.
+USB HID allows Monitor and Widget to read the same adapter independently, including
+archive exports. No broker or service is started. Direct BLE still uses its
+existing exclusive connection lease. Older CDC firmware requires an explicit
+firmware update; the applications do not fall back to COM.
 
 ## Monitor
 
@@ -133,3 +137,12 @@ actions are not validated; VM tests remain deferred.
 the Git-derived embedded version. Published EXEs are UPX-packed; see
 [Troubleshooting](troubleshooting.md#download-or-launch-problems) and
 [relinking](relinking.md) for distribution details.
+
+Time and epoch views use the same combined station/USB dataset, including live
+readings as they arrive. Application samples take priority over overlapping
+archive minutes in both views. Undated records are hidden on the time
+chart and retained in epoch mode, which groups all samples by board and boot. New USB samples
+persist their board identity, boot epoch and board uptime. Older local samples
+without this information appear in an explicit unknown-epoch group. Power axes
+remain independent, and CSV exports retain original dates rather than chart
+positions. The archive-only view remains a snapshot refreshed by Read from board.

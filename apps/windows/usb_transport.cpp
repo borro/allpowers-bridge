@@ -3,6 +3,7 @@
 #include "../../firmware/R2500Adapter/HistoryWire.h"
 #include "AllpowersModels.h"
 #include "runtime_log.h"
+#include "usb_hid.h"
 #include <QBluetoothAddress>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -31,11 +32,11 @@ quint32 crc32(const QByteArray &data) {
 bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quint32 &epoch) {
   quint32 seq, tick, soc, in, out, minutes, flags, check;
   quint32 version = 1, known = 0, model = 0;
-  if (o.contains("record_version") && !number(o, "record_version", version, 2))
+  if (!number(o, "record_version", version, 3))
     return false;
-  if (version != 1 && version != 2)
+  if (version != 3)
     return false;
-  if (version == 2 && (!number(o, "known", known, 4095) || !number(o, "protocol", model, 3)))
+  if (!number(o, "known", known, 4095) || !number(o, "protocol", model, 3))
     return false;
   if (!number(o, "sequence", seq) || !seq || !number(o, "session", session) ||
       !number(o, "uptime_s", tick) || !number(o, "epoch", epoch) || !number(o, "soc", soc, 255) ||
@@ -45,8 +46,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
     return false;
   QByteArray bytes(28, 0);
   auto *d = reinterpret_cast<uchar *>(bytes.data());
-  qToLittleEndian<quint32>(
-      version == 2 ? HistoryFormat::header(known, quint8(model)) : HistoryFormat::kMagic, d);
+  qToLittleEndian<quint32>(HistoryFormat::header(known, quint8(model)), d);
   qToLittleEndian(seq, d + 4);
   qToLittleEndian(session, d + 8);
   qToLittleEndian(tick, d + 12);
@@ -59,6 +59,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
   if (crc32(bytes) != check || ((flags & 1) && soc > 100) || ((flags & 6) == 6))
     return false;
   p.tick = tick;
+  p.sequence = seq;
   p.stride = 60;
   p.session = QString("usb-%1").arg(session);
   if (flags & 128)
@@ -85,9 +86,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
     s.known |= 8;
   }
   if (s.fresh) {
-    // AHP1 never recorded output known bits. Do not turn unknown into OFF.
-    if (version == 2)
-      s.known |= known & (16 | 32 | 64);
+    s.known |= known & (16 | 32 | 64);
     s.ac_output = bool(flags & 8);
     s.usb_output = bool(flags & 16);
     s.dc_output = bool(flags & 32);
@@ -96,8 +95,7 @@ bool historyRecord(const QJsonObject &o, HistoryPoint &p, quint32 &session, quin
       s.known |= 512;
     }
   }
-  if (version == 2)
-    s.known &= known;
+  s.known &= known;
   if (!(flags & 64))
     epoch = 0;
   return true;
@@ -116,9 +114,9 @@ UsbTransport::UsbTransport(QObject *parent, bool offline, UsbChannel *io, Ports 
     operationEntropy = HistoryOperationIds::random128;
   last.abi_version = 1;
   if (!ports)
-    ports = allpowersUsbPorts;
+    ports = allpowersHidPorts;
   if (!channel && !offline)
-    channel = nativeUsbChannel(this);
+    channel = nativeHidChannel(this);
   if (channel) {
     channel->setParent(this);
     connect(channel, &UsbChannel::opened, this, [this] {
@@ -163,7 +161,7 @@ QString UsbTransport::phase() const {
 }
 QJsonObject UsbTransport::diagnostics() const {
   auto info = details_;
-  info["transport"] = "USB CDC · Waveshare / Pocket";
+  info["transport"] = "USB HID · Waveshare / Pocket";
   info["endpoint"] = serial_;
   info["usb_serial"] = serial_;
   info["usb_port"] = port_;
@@ -185,6 +183,10 @@ QJsonObject UsbTransport::diagnostics() const {
   info["usb_known_pending"] = knownPending;
   info["usb_retry_at_ms"] = retryAt;
   info["usb_history_busy"] = importing;
+  if (importing) {
+    info["usb_history_received"] = importSequences.size();
+    info["usb_history_expected"] = int(importExpected);
+  }
   info["usb_history_bad"] = historyBad;
   info["usb_history_undated"] = historyUndated;
   info["usb_diagnostics"] = boardDiagnostics;
@@ -241,7 +243,7 @@ void UsbTransport::connectPort() {
       ++openAttempts;
       error_.clear();
       RuntimeLog::record("usb.open_attempt", diagnostics());
-      channel->open(port_);
+      channel->openDevice(p);
       return;
     }
   error_ = QCoreApplication::translate("Allpowers", "Selected USB board not found");
@@ -293,7 +295,7 @@ void UsbTransport::command(const QByteArray &data) {
   if (!channel || !opened_)
     return;
   if (data == "STATUS\n" || data == "DIAG\n" ||
-      (importing && (data.startsWith("HISTORY-READ ") || data.startsWith("HISTORY-EXPORT ")) &&
+      (importing && data.startsWith("HISTORY-EXPORT ") &&
        data.size() < HistoryFormat::kHistoryCommandCapacity)) {
     ++commands;
     channel->write(data);
@@ -309,7 +311,8 @@ void UsbTransport::tick() {
     return;
   }
   if (!importing &&
-      ((statusAt < 0 && now - openedAt > 5000) || (statusAt >= 0 && now - statusAt > 6000))) {
+      ((statusAt < 0 && now - openedAt > (channel && channel->hid() ? 10000 : 5000)) ||
+       (statusAt >= 0 && now - statusAt > 6000))) {
     fail(QCoreApplication::translate("Allpowers", "No valid firmware response over USB"));
     return;
   }
@@ -319,7 +322,13 @@ void UsbTransport::tick() {
                                 "Allpowers", "Archive timed out; data may be incomplete"));
     auto copy = last;
     const auto age = frameAt < 0 ? 15000 : qMin<qint64>(UINT32_MAX, now - frameAt);
-    copy.main_age_ms = copy.settings_age_ms = quint32(age);
+    if (status_["hid_live"].toBool()) {
+      const auto since = qMax<qint64>(0, now - statusAt);
+      copy.main_age_ms = quint32(qMin<qint64>(UINT32_MAX, qint64(last.main_age_ms) + since));
+      copy.settings_age_ms =
+          quint32(qMin<qint64>(UINT32_MAX, qint64(last.settings_age_ms) + since));
+    } else
+      copy.main_age_ms = copy.settings_age_ms = quint32(age);
     if (age >= 15000 || now - statusAt > 2500)
       copy.fresh = 0;
     emit snapshot(copy);
@@ -340,7 +349,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
   }
   if (bytes.size() > 65536 || buffer.size() + bytes.size() > 65536) {
     badLines++;
-    if (importing && (importVersion != 3 || importBegun))
+    if (importing && importBegun)
       importCompromised = true;
     buffer.clear();
     return;
@@ -354,7 +363,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
     ++receivedLines;
     if (line.size() > 8192) {
       badLines++;
-      if (importing && (importVersion != 3 || importBegun))
+      if (importing && importBegun)
         importCompromised = true;
       continue;
     }
@@ -362,7 +371,7 @@ void UsbTransport::receive(const QByteArray &bytes) {
     auto doc = QJsonDocument::fromJson(line, &error);
     if (error.error != QJsonParseError::NoError || !doc.isObject()) {
       badLines++;
-      if (importing && (importVersion != 3 || importBegun))
+      if (importing && importBegun)
         importCompromised = true;
       continue;
     }
@@ -371,35 +380,20 @@ void UsbTransport::receive(const QByteArray &bytes) {
   if (buffer.size() > 8192) {
     buffer.clear();
     badLines++;
-    if (importing && (importVersion != 3 || importBegun))
+    if (importing && importBegun)
       importCompromised = true;
   }
 }
 void UsbTransport::row(const QJsonObject &o) {
   const bool operationFrame = o.contains("history_export_begin") || o.contains("history_record") ||
                               o.contains("history_dump_done");
-  if (importing && importVersion == 3 && importNonceRequired && operationFrame) {
+  if (importing && operationFrame) {
     const auto nonce = o["operation_nonce"].toString().toLatin1();
     // Correlate the operation before interpreting any metadata or errors.
     // STATUS updates cannot change this requirement while an import is active.
     if (!o["operation_nonce"].isString() ||
         !HistoryFormat::validOperationNonce(nonce.constData(), size_t(nonce.size())) ||
         nonce != importNonce)
-      return;
-  }
-  // Versioned frames identify their operation independently of record contents.
-  // Delayed complete frames from another request (or a previous boot after our
-  // authoritative begin) must not finish or damage the current transaction.
-  if (importing && importVersion == 3 && !importNonceRequired &&
-      (o["history_export_begin"].toBool() || o["history_record"].toBool() ||
-       o["history_dump_done"].toBool())) {
-    quint32 version, request, session, generation;
-    if (number(o, "history_export_version", version, 3) && version == 3 &&
-        number(o, "request", request) && request && request != importRequest)
-      return;
-    if (number(o, "history_export_version", version, 3) && version == 3 &&
-        number(o, "request", request) && request && number(o, "export_session", session) &&
-        session && number(o, "generation", generation) && importBegun && session != importSession)
       return;
   }
   if (o.contains("product_version")) {
@@ -501,13 +495,8 @@ void UsbTransport::row(const QJsonObject &o) {
     emit stateChanged();
   } else if (o["history_export_begin"].toBool() && importing) {
     quint32 version, request, session, generation, count, oldest, latest;
-    // Before our authoritative begin, complete frames from a timed-out prior
-    // request are channel residue rather than records of the new transaction.
-    if (importVersion == 3 && !importNonceRequired && !importBegun &&
-        (!number(o, "request", request) || request != importRequest))
-      return;
-    if (importVersion != 3 || importBegun || !number(o, "history_export_version", version, 3) ||
-        version != 3 || !number(o, "request", request) || request != importRequest ||
+    if (importBegun || !number(o, "history_export_version", version, 3) || version != 3 ||
+        !number(o, "request", request) || request != importRequest ||
         !number(o, "export_session", session) || !session || session != importSession ||
         !number(o, "generation", generation) || !number(o, "count", count, 2880) ||
         !number(o, "oldest", oldest) || !number(o, "latest", latest) ||
@@ -547,17 +536,9 @@ void UsbTransport::row(const QJsonObject &o) {
     if (importing && !o["history_ready"].toBool())
       finishImport("error", QCoreApplication::translate("Allpowers",
                                                         "Board archive unavailable during read"));
-    else if (importing &&
-             (session != importSession ||
-              (importVersion != 3 && (count != importExpected || latest != importLatest))))
+    else if (importing && session != importSession)
       finishImport("partial", QCoreApplication::translate(
                                   "Allpowers", "Archive changed during read; import again"));
-    else if (importing && legacyVerification) {
-      finishImport(importCompromised ? "partial" : "complete",
-                   importCompromised ? QCoreApplication::translate(
-                                           "Allpowers", "Some USB archive rows are corrupt")
-                                     : QString{});
-    }
     if (currentSession && session != currentSession) {
       historyAttempted = false;
       emit newSession();
@@ -586,6 +567,8 @@ void UsbTransport::row(const QJsonObject &o) {
     details_["board_history_clock"] = o["history_clock"];
     if (o["history_error"].isString())
       details_["board_history_error"] = o["history_error"].toString().left(128);
+  } else if (o.contains("history_clock_sync_ok")) {
+    details_["history_clock_sync_ok"] = o["history_clock_sync_ok"].toBool();
   } else if (o.contains("graph_live_latest_s")) {
     quint32 tick;
     if (number(o, "graph_live_latest_s", tick)) {
@@ -593,7 +576,7 @@ void UsbTransport::row(const QJsonObject &o) {
       anchorWall = QDateTime::currentSecsSinceEpoch();
     }
   } else if (o["history_record"].toBool() && importing) {
-    if (importVersion == 3 && !importBegun)
+    if (!importBegun)
       return;
     HistoryPoint p;
     quint32 session, epoch;
@@ -605,7 +588,7 @@ void UsbTransport::row(const QJsonObject &o) {
     quint32 sequence = 0, crc = 0;
     number(o, "sequence", sequence);
     number(o, "crc", crc);
-    if (importVersion == 3) {
+    {
       quint32 version, request, exportSession, generation, ordinal;
       if (!importBegun || !number(o, "history_export_version", version, 3) || version != 3 ||
           !number(o, "request", request) || request != importRequest ||
@@ -626,11 +609,6 @@ void UsbTransport::row(const QJsonObject &o) {
       }
       if (!importCursor && sequence != importOldest)
         importCompromised = true;
-    } else if (importVersion == 0 &&
-               HistoryFormat::sequenceDistance(legacyFirst, sequence) >= legacySpan) {
-      historyBad++;
-      importCompromised = true;
-      return;
     }
     if (importSequences.contains(sequence))
       return;
@@ -641,8 +619,6 @@ void UsbTransport::row(const QJsonObject &o) {
     }
     importSequences.insert(sequence);
     importCursor = sequence;
-    if (importVersion == 0)
-      ++legacyReceivedPage;
     HistoryFormat::Record digestRow{};
     digestRow.sequence = sequence;
     digestRow.crc = crc;
@@ -656,33 +632,16 @@ void UsbTransport::row(const QJsonObject &o) {
       p.wall = anchorWall - (anchorTick - p.tick);
     else {
       historyUndated++;
-      return;
+      p.wall = 0;
     }
     const auto now = QDateTime::currentSecsSinceEpoch();
-    if (p.wall > now + 2 || p.wall < now - 172800) {
+    if (p.wall > now + 2 || (p.wall && p.wall < 1577836800)) {
       historyUndated++;
-      return;
+      p.wall = 0;
     }
     importPoints.append(p);
   } else if (o["history_dump_done"].toBool() && importing) {
-    if (importVersion == 3 && !importNonceRequired && !importBegun) {
-      quint32 previousRequest;
-      if (number(o, "request", previousRequest) && previousRequest != importRequest)
-        return;
-    }
-    if (importVersion != 3 && o.contains("history_legacy_status")) {
-      quint32 sent = 0;
-      if (o["history_legacy_status"] != "complete") {
-        finishImport(o["history_legacy_status"] == "error" ? "error" : "partial",
-                     QCoreApplication::translate("Allpowers",
-                                                 "Firmware did not finish reading archive page"));
-        return;
-      }
-      if (importVersion == 0 &&
-          (!number(o, "history_sent", sent, 2880) || sent != legacyReceivedPage))
-        importCompromised = true;
-    }
-    if (importVersion == 3) {
+    {
       quint32 version, request, session, generation, count, sent, cursor, digest, oldest, latest;
       const bool valid =
           importBegun && number(o, "history_export_version", version, 3) && version == 3 &&
@@ -705,21 +664,7 @@ void UsbTransport::row(const QJsonObject &o) {
                          "Allpowers", "USB archive integrity or completeness unconfirmed"));
       else
         finishImport("complete");
-    } else if (importVersion == 2) {
-      finishImport("partial",
-                   QCoreApplication::translate(
-                       "Allpowers", "Legacy export does not confirm archive completeness"));
-    } else if (quint32(importSequences.size()) > importExpected) {
-      finishImport("partial", QCoreApplication::translate(
-                                  "Allpowers", "Legacy archive record count changed during read"));
-    } else if (quint32(importSequences.size()) == importExpected &&
-               importSequences.contains(importLatest)) {
-      // The legacy completion has no session, count or checksum. Verify the
-      // advertised inventory again before calling the import complete.
-      legacyVerification = true;
-      command("STATUS\n");
-    } else
-      nextLegacyPage();
+    }
   } else {
     for (auto it = o.begin(); it != o.end(); ++it)
       if ((it.key().startsWith("hid_") || it.key().startsWith("ble_") ||
@@ -730,6 +675,12 @@ void UsbTransport::row(const QJsonObject &o) {
   }
 }
 void UsbTransport::publish() {
+  quint32 boardUptime = 0;
+  if (status_["hid_live"].toBool() && number(status_, "board_uptime_s", boardUptime))
+    details_["board_uptime_s"] = double(boardUptime);
+  else
+    details_.remove("board_uptime_s");
+
   if (!pending || !verified_ || !knownPending)
     return;
   pending = false;
@@ -744,7 +695,8 @@ void UsbTransport::publish() {
   last.runtime_s = quint32(status_["runtime_s"].toDouble());
   // STATUS exposes runtime from the HID UPS report, which may be retained when
   // the UPS profile is unavailable. Do not present that cached value as current.
-  if (last.model != 3 || !details_["ups_source_known"].toBool() || last.runtime_s >= 0x80000000u)
+  if (!status_["hid_live"].toBool() &&
+      (last.model != 3 || !details_["ups_source_known"].toBool() || last.runtime_s >= 0x80000000u))
     last.known &= ~quint32(AllpowersModels::RuntimeMinutes);
   last.source_raw = status_["source_raw"].toInt();
   last.valid_frames = quint32(status_["valid_frames"].toDouble());
@@ -775,19 +727,25 @@ void UsbTransport::publish() {
   if (now - frameAt >= 15000)
     last.fresh = 0;
   last.main_age_ms = last.settings_age_ms = quint32(qMin<qint64>(UINT32_MAX, now - frameAt));
+  if (status_["hid_live"].toBool()) {
+    last.main_seen = status_["main_seen"].toBool();
+    last.settings_seen = status_["settings_seen"].toBool();
+    last.main_age_ms = quint32(status_["main_age_ms"].toDouble());
+    last.settings_age_ms = quint32(status_["settings_age_ms"].toDouble());
+  }
   statusAt = now;
   error_.clear();
   emit snapshot(last);
   emit stateChanged();
 }
 void UsbTransport::finishImport(const QString &result, const QString &reason) {
+  if (channel)
+    channel->cancelHistory();
   importing = false;
-  legacyVerification = false;
   details_["usb_history_result"] = result;
   details_["usb_history_complete"] = result == "complete";
   details_["usb_history_imported"] = importPoints.size();
   details_["usb_history_received"] = importSequences.size();
-  details_["usb_history_pages"] = int(legacyPages);
   if (reason.isEmpty())
     details_.remove("usb_history_error");
   else
@@ -803,33 +761,6 @@ void UsbTransport::finishImport(const QString &result, const QString &reason) {
           .arg(historyBad));
   command("STATUS\n");
 }
-void UsbTransport::nextLegacyPage() {
-  // Legacy boot recovery scans kKeep sequence positions. The first append may
-  // skip at most one 128-slot erase sector, then successful appends are
-  // contiguous; a failed append disables recording until reboot. A recovered
-  // RAM record can survive <kKeep more appends: 2*kKeep+128 is conservative.
-  constexpr quint32 maxSpan = 2 * 2880 + 128;
-  if (legacyScanned >= maxSpan) {
-    finishImport(
-        "partial",
-        QCoreApplication::translate(
-            "Allpowers", "Legacy USB archive completeness unconfirmed within allowed range"));
-    return;
-  }
-  if (legacyPages)
-    legacyFirst = HistoryFormat::previous(legacyFirst);
-  else
-    legacyFirst = importLatest;
-  legacySpan = qMin<quint32>(2880, maxSpan - legacyScanned);
-  legacyScanned += legacySpan;
-  legacyReceivedPage = 0;
-  for (quint32 i = 1; i < legacySpan; ++i)
-    legacyFirst = HistoryFormat::previous(legacyFirst);
-  ++legacyPages;
-  details_["usb_history_pages"] = int(legacyPages);
-  command("HISTORY-READ " + QByteArray::number(legacyFirst) + " " + QByteArray::number(legacySpan) +
-          "\n");
-}
 void UsbTransport::requestHistory() {
   if (!opened_ || !verified_ || importing || !details_["history_ready"].toBool())
     return;
@@ -837,70 +768,38 @@ void UsbTransport::requestHistory() {
   historyBad = historyUndated = 0;
   importPoints.clear();
   importSequences.clear();
-  importBegun = importCompromised = legacyVerification = false;
+  importBegun = importCompromised = false;
   importCursor = 0;
   importDigest = HistoryFormat::kDigestSeed;
-  legacyPages = legacyScanned = legacySpan = 0;
   importExpected = details_["history_records"].toInt();
   importLatest = quint32(details_["history_latest"].toDouble());
   importOldest = quint32(details_["history_oldest"].toDouble());
   importSession = quint32(details_["history_session"].toDouble());
   importGeneration = quint32(details_["history_generation"].toDouble());
-  importVersion = details_["history_export_version"].toInt();
+  const auto importVersion = details_["history_export_version"].toInt();
   importRequest = ++requestCounter;
   if (!importRequest)
     importRequest = ++requestCounter;
   importing = true;
-  importDeadline = elapsedMs() + (importVersion == 3 ? 70000 : 120000);
+  importDeadline = elapsedMs() + 180000;
   details_["usb_history_result"] = "reading";
   details_["usb_history_complete"] = false;
   details_["usb_history_frozen"] = false;
   details_.remove("usb_history_error");
-  importNonceRequired = false;
   importNonce.clear();
-  details_["usb_history_nonce_bits"] = 0;
-  details_.remove("usb_history_operation_nonce");
-  if (importVersion == 3) {
-    quint32 bits = 0;
-    if (details_.contains("history_nonce_bits")) {
-      if (!number(details_, "history_nonce_bits", bits) ||
-          bits != HistoryFormat::kHistoryNonceBits) {
-        finishImport("error", QCoreApplication::translate(
-                                  "Allpowers", "Unsupported USB archive operation ID protection"));
-        return;
-      }
-      importNonceRequired = true;
-    }
-    const auto raw = operationEntropy();
-    if (raw.size() != 16 || (!importNonceRequired && !HistoryOperationIds::fallbackRequest(raw))) {
-      finishImport("error", QCoreApplication::translate(
-                                "Allpowers", "Could not create USB archive operation ID"));
-      return;
-    }
-    if (importNonceRequired)
-      importNonce = raw.toHex();
-    else
-      importRequest = HistoryOperationIds::fallbackRequest(raw);
-    details_["usb_history_nonce_bits"] =
-        importNonceRequired ? int(HistoryFormat::kHistoryNonceBits) : 0;
-    details_["usb_history_operation_nonce"] = QString::fromLatin1(importNonce);
-    command("HISTORY-EXPORT " + QByteArray::number(importRequest) +
-            (importNonceRequired ? " " + importNonce : QByteArray{}) + "\n");
-  } else if (!importExpected) {
-    if (importVersion == 2)
-      finishImport("partial", QCoreApplication::translate(
-                                  "Allpowers", "Legacy export does not confirm an empty archive"));
-    else {
-      importVersion = 0;
-      legacyVerification = true;
-      command("STATUS\n");
-    }
-  } else if (importVersion == 2 && importOldest)
-    command("HISTORY-EXPORT " + QByteArray::number(importOldest) + " " +
-            QByteArray::number(importExpected) + "\n");
-  else {
-    importVersion = 0;
-    nextLegacyPage();
+  if (importVersion != 3 || details_["history_nonce_bits"].toInt() != 128) {
+    finishImport("error", QCoreApplication::translate("Allpowers", "Firmware update required"));
+    return;
   }
+  const auto raw = operationEntropy();
+  if (raw.size() != 16 || raw == QByteArray(16, 0)) {
+    finishImport("error", QCoreApplication::translate("Allpowers",
+                                                      "Could not create USB archive operation ID"));
+    return;
+  }
+  importNonce = raw.toHex();
+  details_["usb_history_nonce_bits"] = 128;
+  details_["usb_history_operation_nonce"] = QString::fromLatin1(importNonce);
+  command("HISTORY-EXPORT " + QByteArray::number(importRequest) + " " + importNonce + "\n");
   emit stateChanged();
 }

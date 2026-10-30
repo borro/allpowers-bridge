@@ -25,6 +25,7 @@
 #include <QPainter>
 #include <QSaveFile>
 #include <QScrollBar>
+#include <QSet>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QStandardPaths>
@@ -301,15 +302,19 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       if (id != usbEndpoint) {
         usbEndpoint = id;
         usbPoints.clear();
+        usbUndated.clear();
         refreshHistory();
         if (!id.isEmpty())
           emit historyLoad("usb-board:" + id, QDateTime::currentSecsSinceEpoch());
       }
       const auto board = info["usb_board"].toString();
       if (!id.isEmpty() && !board.isEmpty()) {
-        const auto label = QString("%1 · %2 · %3")
-                               .arg(board == "waveshare-147" ? "Waveshare 1.47″" : "Pocket 0.96″",
-                                    info["usb_port"].toString(), info["name"].toString());
+        QStringList parts{board == "waveshare-147" ? "Waveshare 1.47″" : "Pocket 0.96″"};
+        const auto stationName = info["name"].toString().trimmed();
+        if (!stationName.isEmpty())
+          parts.append(stationName);
+        parts.append("#" + id.right(6));
+        const auto label = parts.join(" · ");
         if (discovered[id]["name"] != label) {
           discovered[id]["name"] = label;
           rebuildDevices();
@@ -374,6 +379,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(this, &MonitorWindow::openHistory, history, &HistoryWorker::open);
   connect(this, &MonitorWindow::historySession, history, &HistoryWorker::newSession);
   connect(this, &MonitorWindow::historySample, history, &HistoryWorker::sample);
+  connect(this, &MonitorWindow::historyUsbSample, history, &HistoryWorker::sampleUsb);
   connect(history, &HistoryWorker::sampleFinished, this, [this] { historyBusy = false; });
   connect(this, &MonitorWindow::historyLoad, history, &HistoryWorker::load);
   connect(this, &MonitorWindow::historyExport, history, &HistoryWorker::exportFile);
@@ -396,6 +402,13 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
             else
               localPoints = values;
             refreshHistory();
+          });
+  connect(history, &HistoryWorker::undatedLoaded, this,
+          [this](QString address, HistoryPoints values) {
+            if (ble->usb() && address == "usb-board:" + ble->endpoint()) {
+              usbUndated = std::move(values);
+              refreshHistory();
+            }
           });
   connect(ble, &TelemetryTransport::historyReady, this, [this](HistoryPoints values) {
     servicePoints = values;
@@ -455,24 +468,55 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   }
 }
 QString MonitorWindow::historyKey() const {
-  return ble->usb() && historySource->currentIndex() == 1 ? "usb-board:" + ble->endpoint()
+  return ble->usb() && historySource->currentIndex() != 0 ? "usb-board:" + ble->endpoint()
                                                           : selectedAddress;
 }
 void MonitorWindow::refreshHistory() {
+  const bool archiveOnly = ble->usb() && historySource->currentIndex() != 0;
+  const bool byEpoch = archiveOnly && historySource->currentIndex() == 2;
   points = ble->remote() ? mergeHistory(localPoints, servicePoints) : localPoints;
   if (ble->usb()) {
     const auto boot = ble->diagnostics()["history_session"].toInteger();
-    points = historySource->currentIndex() == 1
-                 ? usbPoints
-                 : mergeUsbHistory(points, usbPoints,
-                                   ble->connected() ? QString("usb-%1").arg(boot) : QString{});
+    const auto combined = sharedUsbHistory(
+        points, usbPoints, usbUndated, ble->connected() ? QString("usb-%1").arg(boot) : QString{});
+    points = historySource->currentIndex() == 1 ? usbPoints
+             : byEpoch                          ? historyByEpoch(combined, {})
+                                                : combined;
   }
-  chart->setPoints(points, QDateTime::currentSecsSinceEpoch());
+  chart->setEpochMode(byEpoch);
+  horizon->setVisible(!byEpoch);
+  logScale->setVisible(!byEpoch);
+  chart->setLogarithmic(!byEpoch && logScale->isChecked());
+  chart->setPoints(points, archiveOnly && !byEpoch && !points.isEmpty()
+                               ? points.last().wall
+                               : QDateTime::currentSecsSinceEpoch());
+  liveButton->setText(byEpoch       ? QCoreApplication::translate("Allpowers", "All epochs")
+                      : archiveOnly ? QCoreApplication::translate("Allpowers", "Last record")
+                                    : QCoreApplication::translate("Allpowers", "Back to live"));
   exportButton->setEnabled(!points.isEmpty());
   usbHistoryNote->setVisible(ble->usb());
-  usbHistoryNote->setText(
-      QCoreApplication::translate("Allpowers", "USB archive: %1 points · station unspecified")
-          .arg(usbPoints.size()));
+  QString note =
+      byEpoch ? QCoreApplication::translate("Allpowers",
+                                            "Records: %1 · groups: %2 · live readings and archive")
+                    .arg(points.size())
+                    .arg([&] {
+                      QSet<QString> epochs;
+                      for (const auto &p : points)
+                        epochs.insert(historyBoard(p) + ":" + QString::number(historyEpoch(p)));
+                      return epochs.size();
+                    }())
+      : archiveOnly
+          ? QCoreApplication::translate("Allpowers", "USB archive: %1 points · station unspecified")
+                .arg(usbPoints.size())
+          : QCoreApplication::translate("Allpowers", "Records: %1 · live readings and archive")
+                .arg(points.size());
+  if (archiveOnly && !byEpoch && !points.isEmpty())
+    note +=
+        "\n" +
+        QCoreApplication::translate("Allpowers",
+                                    "Last record: %1 · Read from board refreshes the archive")
+            .arg(QDateTime::fromSecsSinceEpoch(points.last().wall).toString("dd.MM.yyyy HH:mm:ss"));
+  usbHistoryNote->setText(note);
 }
 void MonitorWindow::changeTransport() {
   auto *router = qobject_cast<TransportRouter *>(ble);
@@ -485,6 +529,7 @@ void MonitorWindow::changeTransport() {
   localPoints.clear();
   servicePoints.clear();
   usbPoints.clear();
+  usbUndated.clear();
   usbEndpoint.clear();
   points.clear();
   lastSample = -1;
@@ -610,9 +655,11 @@ QWidget *MonitorWindow::historyPage() {
   historySource = new Select;
   historySource->setObjectName("historySource");
   historySource->addItems({QCoreApplication::translate("Allpowers", "Station history + USB"),
-                           QCoreApplication::translate("Allpowers", "USB board archive only")});
+                           QCoreApplication::translate("Allpowers", "USB board archive only"),
+                           QCoreApplication::translate("Allpowers", "History by epochs")});
+  historySource->setCurrentIndex(qBound(0, settings["usb_history_view"].toInt(), 2));
   usbTools->addWidget(historySource, 1);
-  auto *readBoard = new QPushButton(QCoreApplication::translate("Allpowers", "Read from board"));
+  readBoard = new QPushButton(QCoreApplication::translate("Allpowers", "Read from board"));
   readBoard->setObjectName("usbHistoryRead");
   usbTools->addWidget(readBoard);
   layout->addWidget(usbHistoryControls);
@@ -627,6 +674,9 @@ QWidget *MonitorWindow::historyPage() {
   usbHistoryNote->hide();
   layout->addWidget(usbHistoryNote);
   connect(historySource, &QComboBox::currentIndexChanged, this, [this] {
+    settings["usb_history_view"] = historySource->currentIndex();
+    saveSettings();
+    chart->setHorizon(horizon->currentData().toInt());
     refreshHistory();
     emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
   });
@@ -750,8 +800,7 @@ QWidget *MonitorWindow::diagnosticPage() {
       {"usb_bad_lines", QCoreApplication::translate("Allpowers", "Invalid USB lines")},
       {"usb_history_busy", QCoreApplication::translate("Allpowers", "Archive loading")},
       {"usb_history_imported", QCoreApplication::translate("Allpowers", "Archive points received")},
-      {"usb_history_undated",
-       QCoreApplication::translate("Allpowers", "Skipped without reliable date")},
+      {"usb_history_undated", QCoreApplication::translate("Allpowers", "Records without a date")},
       {"usb_history_bad", QCoreApplication::translate("Allpowers", "Corrupt archive records")},
       {"usb_history_error", QCoreApplication::translate("Allpowers", "Archive read error")},
       {"", QCoreApplication::translate("Allpowers", "Telemetry")},
@@ -870,6 +919,14 @@ void MonitorWindow::updateControls() {
   profile->setVisible(!usb);
   stationsOnly->setVisible(!usb);
   usbHistoryControls->setVisible(usb);
+  const auto archiveInfo = ble->diagnostics();
+  const bool reading = archiveInfo["usb_history_busy"].toBool();
+  readBoard->setEnabled(usb && ble->connected() && archiveInfo["history_ready"].toBool() &&
+                        !reading);
+  readBoard->setText(reading ? QCoreApplication::translate("Allpowers", "Reading… %1 / %2")
+                                   .arg(archiveInfo["usb_history_received"].toInt())
+                                   .arg(archiveInfo["usb_history_expected"].toInt())
+                             : QCoreApplication::translate("Allpowers", "Read from board"));
   transportNote->setText(
       usb ? QCoreApplication::translate("Allpowers", "Board receives BLE · computer reads USB")
       : ble->remote()
@@ -965,7 +1022,16 @@ void MonitorWindow::updateSnapshot(ap_snapshot s) {
       !historyBusy) {
     historyBusy = true;
     lastSample = now;
-    emit historySample(selectedAddress, s, now, uptime.elapsed() / 1000);
+    const auto info = ble->diagnostics();
+    const auto epoch = quint32(info["history_session"].toInteger());
+    const auto age = info["usb_status_age_ms"].toInteger(-1);
+    if (ble->usb() && ble->connected() && epoch && info.contains("board_uptime_s") && age >= 0 &&
+        age < 2500)
+      emit historyUsbSample(selectedAddress, s, now,
+                            info["board_uptime_s"].toInteger() + age / 1000, ble->endpoint(),
+                            epoch);
+    else
+      emit historySample(selectedAddress, s, now, uptime.elapsed() / 1000);
   }
   if (pages->currentIndex() == 2)
     refreshDiagnostics();

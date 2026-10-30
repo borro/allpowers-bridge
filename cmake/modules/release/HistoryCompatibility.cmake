@@ -1,8 +1,8 @@
 include("${CMAKE_CURRENT_LIST_DIR}/../common/Arguments.cmake")
 # Maintained together with HistoryCompatibility.h and the offline maintenance
 # validator. This describes archive capabilities, independently of product tags.
-set(AP_HISTORY_CAPABILITY "ALLPOWERS_HISTORY_R12_W2_S32")
-set(AP_HISTORY_STORAGE_JSON "{\"schema\":1,\"read_versions\":[1,2],\"write_version\":2,\"record_bytes\":32,\"capability\":\"${AP_HISTORY_CAPABILITY}\"}")
+set(AP_HISTORY_CAPABILITY "ALLPOWERS_HISTORY_R3_W3_S32")
+set(AP_HISTORY_STORAGE_JSON "{\"schema\":1,\"read_versions\":[3],\"write_version\":3,\"record_bytes\":32,\"capability\":\"${AP_HISTORY_CAPABILITY}\"}")
 
 function(ap_history_metadata)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "OUTPUT;BINARY" "")
@@ -11,7 +11,7 @@ function(ap_history_metadata)
   string(HEX "${AP_HISTORY_CAPABILITY}" marker)
   string(FIND "${image}" "${marker}" position)
   if(position LESS 0)
-    message(FATAL_ERROR "Compiled image lacks the AHP1/AHP2 storage capability")
+    message(FATAL_ERROR "Compiled image lacks the AHP3 storage capability")
   endif()
   set(${AP_OUTPUT} "${AP_HISTORY_STORAGE_JSON}" PARENT_SCOPE)
 endfunction()

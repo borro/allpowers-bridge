@@ -17,7 +17,7 @@
        "CMAKE_CXX_SCAN_FOR_MODULES": "OFF",
        "ALLPOWERS_COVERAGE": "OFF", "ALLPOWERS_SANITIZERS": "OFF", "ALLPOWERS_MUTATION": "OFF",
        "ALLPOWERS_FUZZING": "OFF", "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}},
-    {"name": "fuzz-linux", "inherits": "native", "displayName": "Linux BLE and CDC fuzzing",
+    {"name": "fuzz-linux", "inherits": "native", "displayName": "Linux BLE and HID fuzzing",
      "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux"},
      "cacheVariables": {"CMAKE_CXX_COMPILER": "clang++-18", "ALLPOWERS_FUZZING": "ON",
        "ALLPOWERS_COVERAGE": "OFF", "ALLPOWERS_SANITIZERS": "OFF", "ALLPOWERS_MUTATION": "OFF",

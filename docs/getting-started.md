@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | See station readings on a PC | Windows 10/11 x64, PC Bluetooth, Monitor or Widget | Reads station BLE telemetry directly; no board, service or UPS driver required |
 | Report battery state through USB HID UPS | A supported ESP32-S3 board running the project firmware | The board connects to the station over BLE and reports supported battery state to the computer, independently of the desktop application |
-| See detailed readings from that board | Windows 10/11 x64, a USB data connection, Monitor or Widget | Reads the board over USB CDC while the board keeps its BLE connection and HID UPS reporting |
+| See detailed readings from that board | Windows 10/11 x64, a USB data connection, Monitor or Widget | Reads the board over USB HID while the board keeps its BLE connection and HID UPS reporting |
 
 Check [model compatibility](BLUETOOTH.md#compatibility-and-evidence) first.
 R2500 V2 + Waveshare has BLE/GATT and Windows HID UPS hardware evidence.

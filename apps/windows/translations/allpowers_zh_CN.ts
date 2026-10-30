@@ -3,6 +3,10 @@
   <context>
     <name>Allpowers</name>
     <message>
+      <source>Firmware update required</source>
+      <translation>需要更新固件</translation>
+    </message>
+    <message>
       <source>Open diagnostics folder</source>
       <translation>打开诊断文件夹</translation>
     </message>
@@ -824,6 +828,10 @@ Qt © The Qt Company Ltd. and other contributors.
     </message>
     <message>
       <location filename="../window.cpp" line="589" />
+      <source>Reading… %1 / %2</source>
+      <translation>正在读取… %1 / %2</translation>
+    </message>
+    <message>
       <source>Read from board</source>
       <translation>读取板卡</translation>
     </message>
@@ -1474,6 +1482,60 @@ Qt © The Qt Company Ltd. and other contributors.
       <location filename="../widget.h" line="25" />
       <source>No connection</source>
       <translation>未连接</translation>
+    </message>
+    <message>
+      <source>History by epochs</source>
+      <translation>按启动周期查看历史</translation>
+    </message>
+    <message>
+      <source>Epoch %1 · record %2 · uptime %3 s</source>
+      <translation>启动 %1 · 记录 %2 · 运行 %3 秒</translation>
+    </message>
+    <message>
+      <source>Records without a date</source>
+      <translation>无日期记录</translation>
+    </message>
+    <message>
+      <source>
+USB archive · epoch %1 · record %2</source>
+      <translation>
+USB 存档 · 启动 %1 · 记录 %2</translation>
+    </message>
+    <message>
+      <source>No archive records</source>
+      <translation>存档中暂无记录</translation>
+    </message>
+    <message>
+      <source>Last record</source>
+      <translation>最后一条记录</translation>
+    </message>
+<message>
+      <source>Last record: %1 · Read from board refreshes the archive</source>
+      <translation>最后记录：%1 · “从开发板读取”可刷新存档</translation>
+    </message>
+    <message>
+      <source>Epoch %1</source>
+      <translation>启动周期 %1</translation>
+    </message>
+    <message>
+      <source>All epochs</source>
+      <translation>所有启动周期</translation>
+    </message>
+    <message>
+      <source>Records: %1 · groups: %2 · live readings and archive</source>
+      <translation>记录：%1 · 分组：%2 · 实时读数和存档</translation>
+    </message>
+    <message>
+      <source>Unknown epoch</source>
+      <translation>未知启动周期</translation>
+    </message>
+    <message>
+      <source>Epoch %1 · live reading · uptime %2 s</source>
+      <translation>周期 %1 · 实时读数 · 运行 %2 秒</translation>
+    </message>
+    <message>
+      <source>Records: %1 · live readings and archive</source>
+      <translation>记录：%1 · 实时读数和存档</translation>
     </message>
   </context>
 </TS>

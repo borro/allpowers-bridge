@@ -1,242 +1,130 @@
-# USB telemetry in Windows Monitor
+# USB HID telemetry
 
-[Documentation](README.md)
+[Documentation](README.md) · [Updating and recovery](recovery.md)
 
-Choose **USB · Waveshare / Pocket** at the top, click **Найти платы**, select the
-board and connect. Bluetooth mode remains in the same selector. The app saves
-the last transport, board serial and Bluetooth station/profile separately.
-Discovery does not open arbitrary ports. A selected absent board is retried by
-serial even if its COM number changes. An occupied port produces an error; the
-monitor does not force-close another application.
+Choose **USB · Waveshare / Pocket**, discover the board and connect. Monitor and
+Widget can select the same board at the same time. Each reads directly through
+Windows HID; there is no broker, service or extra driver. Direct PC Bluetooth
+retains its existing exclusive connection policy.
 
 ```text
-ALLPOWERS → BLE Central/GATT on board → USB CDC → Monitor → charts/history/CSV
+ALLPOWERS → BLE Central/GATT on board → USB HID → Monitor
+                                            → Widget
+                                   HID UPS → Windows battery driver
+                           maintenance HID → explicit ROM update
 ```
 
-Both `waveshare-147` and `pocket-096` use the existing firmware protocol. A ROM
-bootloader or factory demo without that protocol is not a telemetry source. No
-flashing is needed with our application firmware. USB HID UPS and the existing
-recovery/update interfaces remain unchanged. No virtual battery driver or extra
-runtime is required for the monitor's USB mode.
+The application firmware no longer enumerates CDC/COM. Old CDC firmware is
+listed with **Firmware update required**; the new applications do not fall back
+to COM or update a board automatically. ROM still exposes its separate serial
+interface when deliberately entered for flashing. Saved board serials and station history remain valid. The incompatible old USB
+archive cache is discarded when moving to the new format.
 
-The app checks VID 303A/PID 4002 and the firmware serial pattern, then requires
-valid UPSDEV status, protocol/known-field information and a supported board ID.
-Native serial I/O runs in a worker at 115200 baud, with timeouts, bounded reads
-and connection generations. The GUI receives bounded complete JSON lines.
-Known-field masks are retained; missing fields do not become zeros. Firmware
-freshness, frame progress and USB silence gate freshness in the UI/history.
-The old STATUS command takes runtime from the HID report. Runtime is therefore
-shown only for a current confirmed UPS report; unsupported profiles or a retained
-HID runtime produce an unknown value rather than an old estimate.
+Discovery selects VID 303A/PID 4002, the generated board serial, Usage Page
+`0xFF01`, Usage `1`, and 64-byte report capabilities. It queries HID metadata
+without requesting telemetry. Opening a selected board revalidates VID/PID,
+serial and collection before any telemetry request. Duplicate identities are
+not selected arbitrarily. The worker uses shared read/write handles, bounded
+overlapped I/O and cancellation; the UI never waits for USB.
 
-Only `STATUS`, `DIAG` and bounded archive read requests are sent. Export v3 uses
-`HISTORY-EXPORT <request-id>` and freezes at most 2880 retained records. Begin,
-each row and completion identify the request, boot session and captured generation.
-Count, order, final cursor and a rolling record digest must agree before the
-desktop reports `complete`. The monitor
-never sends 1200-baud touch, boot/reset/firmware/clock/screen/station-selection
-commands. **Отключить** closes the USB port; the board continues BLE, HID reporting
-and recording. Change the station with the board's BOOT picker. Some stations
-allow one BLE client: to switch to direct PC Bluetooth, release the board's
-connection yourself, for example by unplugging it.
+## Collections and reports
+
+The existing maintenance collection remains at `0xFF00`, report 1; its probe and
+`BOOT-R2500!!` command are unchanged. The UPS descriptor and reports 2/3 are
+unchanged. Telemetry is registered after those collections before USB starts.
+The HID-only USB device uses class/subclass/protocol zero at device level.
+
+| Report | Type | Purpose |
+| --- | --- | --- |
+| 4 | Feature | `APHID1`, protocol version 2, random boot identity, limits and clock capability |
+| 5 | Feature, volatile | Atomic live snapshot, independently polled once per second |
+| 6 | Output | Metadata, diagnostics, archive and boot clock synchronization |
+| 7 | Input | Correlated response fragments and optional station packet events |
+
+Every report is 64 bytes including its report ID. Payload integers use explicit
+little-endian encoding; C++ structure layout is not the wire format. The shared
+[wire codec](../core/src/HidTelemetryWire.h) specifies offsets and checksums.
+Capabilities, live snapshots and requests have a CRC32 over their first 59
+payload bytes. Request IDs contain 128 random bits from Windows CNG.
+
+Responses echo the operation ID, boot identity and opcode. Each fragment carries
+its byte offset, complete message length and CRC32, followed by up to 28 bytes.
+Messages are bounded to 8192 bytes. Each client continuously drains Input reports,
+ignores foreign IDs, rejects gaps/corruption, and retries the same operation after
+10 seconds, at most three times. A reboot invalidates the session. Optional packet
+events use a zero operation ID; they are best effort and do not confirm an archive.
+
+Live Feature reads have no shared cursor and cannot consume another reader's
+data. They include station identity, model, known-field mask, connection/freshness,
+separate main/settings ages, frame counts and uptime seconds. Unknown values remain unknown.
+Metadata and diagnostics retain their existing JSON content inside framed messages.
+The desktop projects HID messages into the existing UI/history decoder internally;
+legacy line commands are not transmitted over USB.
+Initial metadata bootstraps board verification. After the first Live snapshot,
+metadata continues updating board/archive information and the station-name cache,
+but only Live publishes telemetry and station changes. Legacy STATUS rows inside
+metadata cannot replace runtime, known fields or the separate firmware ages.
 
 ## History and diagnostics
 
-Current readings use the station address reported by the board and share local
-station history, charts, source-change markers and CSV export. Board diagnostic
-rows appear in the existing parameter/value table, alongside USB port, serial,
-profile, errors and archive progress. Optional Windows driver controls are in
-**Диагностика → ИБП Windows…**.
+Two independent archive snapshots are supported, each holding at most 2880
+records in PSRAM. `Open` uses the client's random archive identity and returns
+session/generation, record count, first/last sequence and full digest. Retrying an
+active Open returns the same snapshot. `Page` reads up to eight records by ordinal;
+retries return the same bytes. `Close` releases only the named snapshot. Busy
+slots return `BUSY`; a new reader never cancels another reader.
 
-Flash records do not contain a station identity. Their records are
-stored in a separate `usb_minutes` table keyed by board serial. On connection,
-the monitor automatically reads the archive and merges it into the main History
-chart (**История станции + USB**, the default). Saved archive points also appear
-before a new read finishes. Application history takes priority in overlapping
-minute buckets. The archive note and point tooltip identify board records whose
-station is unknown; they retain their board identity in storage and CSV export.
-There is one fused line per metric, not separate archive/live layers. A source
-or application-session boundary is connected only where consecutive fresh board
-records establish continuity. The verified current USB boot also allows the live
-tail to follow its latest minute sample (up to 90 seconds). No link is persisted
-as raw telemetry or accepted over IPC. Actual stale samples, marked gaps and boot
-boundaries without coverage still interrupt the line.
-**Только архив USB-платы** remains available for inspecting the archive alone.
-Switching boards clears the previous board's overlay. Import does not evict
-station history. CRC32 is checked, repeated imports deduplicate minute buckets,
-and at most 2880 archive points within 48 hours are retained separately from the
-existing 3600 live / 2880 station-minute points.
+Snapshots expire after 30 seconds without requests or 180 seconds total. Clean
+disconnect attempts Close; a crashed client is reclaimed by expiry. Requests are
+bounded and queued in USB callbacks; capture/serialization runs in the firmware
+loop. Clients request one archive page at a time. One response fragment is sent
+per loop after due UPS reports, so archive traffic yields to the system UPS.
 
-Clocked records keep their timestamps. Without a clock, only the current boot can
-be anchored to PC time using session and uptime. Previous unclocked boots are
-skipped and counted under **Пропущено без достоверной даты**. No clock-setting
-command is sent automatically. **Считать с платы** repeats the bounded read.
-New v3 firmware bounds capture/transmission retries to 60 seconds with a final
-2-second drain limit; the desktop allows 70 seconds. Legacy multi-page reads
-have a 120-second overall deadline. SQLite/import/export work remains outside
-the UI thread.
+The client verifies record CRCs, operation/boot identity, count, sequence order,
+cursor and the firmware's frozen digest before reporting a complete import.
+CRC failures, gaps, expiry or disconnect cannot become a successful empty archive.
+Station changes terminate the current import. NVS station settings, flash partitions
+and 32-byte slots are unchanged. Storage is **AHP3 only**; AHP1/AHP2 readers,
+writers, legacy CDC archive commands and frozen old transport copies are removed.
+The incompatible old board archive is intentionally discarded on transition.
 
-## Archive protocol compatibility and completion
+Each boot reserves a monotonically increasing 32-bit epoch in NVS before any
+history record is written. Failed persistence or exhaustion disables history
+rather than reusing an epoch. Every record carries this epoch, a sequence number
+and uptime seconds. The HID session additionally uses a random boot identity to
+reject responses from an earlier connection.
 
-`HISTORY-READ <first> <sequence-count>` retains the old limit of 2880 sequence
-numbers per request. New firmware projects physical AHP2 records to an AHP1 wire
-record and recalculates its CRC for this command, leaving flash bytes unchanged.
-An old parser can therefore read mixed archives. AHP1 cannot carry AHP2's field
-validity/model. If a new record has unknown outputs, its legacy projection clears
-`Fresh`: an old graph may omit that point instead of inventing a known OFF state.
-Use the versioned export with a current desktop to preserve known/model data.
-Wire compatibility does not make an AHP1-only firmware writer a safe rollback;
-the separate [maintenance gate](recovery.md#ahp1ahp2-storage-and-supported-rollback)
-checks that case.
+Monitor and Widget offer UTC time with the uptime from a recent live snapshot.
+The first accepted Clock request writes a dated sample before activating the
+clock for that boot. Retries and another client cannot move this anchor or cause
+extra writes. The board has no battery-backed clock: a new boot needs a new
+anchor. Desktop imports infer missing dates only within the same board and boot
+epoch; conflicting anchors do not produce guessed dates.
 
-### Operation identity across client restarts
+Board records have no station identity and remain separately keyed by board
+serial. Up to 2880 records are retained, including undated records and dated
+records older than 48 hours after downtime. Monitor's **History by epochs** view includes all
+retained records, with or without dates. Each equally sized section represents
+one boot epoch; samples inside it follow record order. Sections are separated,
+and hover shows the epoch, sequence and uptime. Wall-clock dates are neither
+invented nor modified by this view or its CSV export. Zoom and pan remain
+available; **All epochs** restores the complete view. The selected history view
+is remembered between launches. Dated views use real timestamps and show dates across day boundaries.
+The archive-only view ends at its last imported sample, shows that timestamp,
+and refreshes with **Read from board**. CSV includes sequence and epoch
+(session); wall zero denotes an unknown date. Neither viewer sends station
+selection, screen, reset, firmware or power-control commands. Select a station
+with the board's physical controls.
 
-Nonce-capable firmware advertises `history_export_version:3` together with
-`history_nonce_bits:128`. The extended read command is
-`HISTORY-EXPORT <nonzero-request> <32-lowercase-hex-operation-nonce>`.
-The firmware validates the whole command before replacing an export and echoes
-`operation_nonce` in every begin, record and done/error frame. The command line
-is bounded to 80 bytes; overflow and embedded NUL discard the entire line through
-the next newline. Numeric-only v3 commands retain their previous response format.
+## Validation and maintenance
 
-The updated desktop obtains 16 fresh bytes from Windows CNG for each v3 operation,
-including the first read in a new process. It does not reconstruct identity from
-an application counter, PID, time or saved settings. A CNG failure or invalid
-injected entropy produces an error before any export command is sent, without
-an insecure fallback. See the [BCryptGenRandom contract](https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/nf-bcrypt-bcryptgenrandom).
+Host tests cover framing, corruption, retries, two concurrent exports, snapshot
+limits/expiry, independent clients and shared transport leases. They do not open
+real USB devices. Firmware builds and package checks do not flash a board.
 
-For a negotiated nonce operation, the desktop checks the exact nonce before
-interpreting any begin, record, completion or error. Frames with an absent or
-different nonce do not change the import, even if request, board boot and archive
-generation coincide. The selected mode and nonce stay fixed until that operation
-finishes; later STATUS messages cannot silently downgrade it. Only then are the
-current operation's version, request/session/generation, ordinal, CRC, count,
-cursor and digest checked. A matching-nonce duplicate or malformed begin remains
-an error; real missing/corrupt current records still prevent complete.
-
-This handles independent queues in both directions: an old begin can already be
-buffered before the new command reaches the board. The desktop knows its new
-nonce before sending that command, so it rejects the queued old operation before
-the board's replacement begin arrives. The same rule rejects an old complete or
-error footer without ending the new import.
-
-| Desktop / firmware | Correlation and compatibility |
-| --- | --- |
-| Updated desktop / nonce-capable v3 | Fresh 128-bit nonce plus existing metadata and completeness checks |
-| Older desktop / nonce-capable firmware | Original numeric v3 or HISTORY-READ; extra STATUS capability is ignored. An old v3 desktop still has its original request-reuse limitation |
-| Updated desktop / original v3 without capability | Fresh nonzero random 32-bit request from the same CNG output; structural checks remain, but correlation is weaker |
-| Updated desktop / v2 or legacy firmware | Existing bounded compatibility paths; unverified v2 remains partial |
-| Unsupported advertised nonce width | Explicit error; no silent numeric downgrade |
-
-Random uniqueness is probabilistic. Assuming independent uniform CNG output, a
-new nonce matches any one distinct stale nonce with probability `1/2^128`; with
-`m` stale values the bound is `m/2^128`. The numeric fallback chooses the first
-nonzero 32-bit word from the 16 bytes, giving conditional collision probability
-`m/(2^32-1)`; all-zero output fails instead of retrying indefinitely. A complete
-identity collision cannot be distinguished from the old operation and can admit
-stale data or cause a duplicate-begin error. These are not absolute uniqueness or
-authentication guarantees. Use matching updated desktop/firmware for nonce128
-correlation; numeric-only compatibility cannot provide that same bound.
-
-For v3, firmware captures a bounded immutable copy under the storage mutex and
-then transmits outside that lock. Busy, end and storage error are distinct; short
-writes retain their offset and acknowledge a cursor only after the whole line.
-One output controller owns the CDC byte stream, including STATUS, archive rows
-and optional diagnostic lines. It finishes each JSON line before changing the
-writer. During a long dump it continues the released desktop's real STATUS
-cycle: adapter, station, known/protocol and board, followed by the graph-time
-anchor and archive inventory. The periodic interval is one second after the
-primary cycle completes. This updates the old transport's watchdog; archive
-rows alone do not. STATUS reads current telemetry without changing the frozen
-archive. A busy history-status mutex produces an advisory instead of a false
-unavailable inventory or a fabricated time anchor.
-
-STATUS rows and complete optional diagnostic/log rows may occur between archive
-lines. Optional output has one bounded batch and may be dropped when that slot
-is occupied; it cannot splice an unfinished archive or STATUS line. Appends and
-retention after capture do not change the frozen snapshot.
-
-Every valid new `HISTORY-READ` or `HISTORY-EXPORT` command replaces the active
-request immediately, releasing its snapshot. Multiple quick requests retain
-only the latest operation. An in-progress STATUS/diagnostic line keeps its
-writer until it finishes or reaches its deadline. If cancel/timeout abandoned
-an archive prefix, the controller sends a newline barrier before new output;
-the barrier never advances cursor, record count or digest. Thus an early retry
-after a desktop metadata error starts without waiting for the old dump to end.
-An explicit STATUS request can also obtain a fresh handshake while an old
-export is active, allowing a reopened client to verify the board.
-
-The desktop treats its own nonce-matching begin as the transaction boundary in
-nonce mode. Prior framing residue is ignored before it. Other operation nonces
-are ignored both before and after it. Numeric-only compatibility correlates by
-its random request/session as described above. Malformed or inconsistent frames
-of the current transaction still prevent complete. An initial begin with wrong
-metadata for the current operation is an error, so the user can immediately retry
-**Считать с платы**.
-
-Archive deadlines remain 60 seconds plus a 2-second drain limit, including time
-spent sending STATUS. Ordinary output allows at most 4 seconds without write
-progress and 8 seconds per line; a stalled framing barrier also has a 4-second
-limit. On such a failure the controller releases the archive and pauses output,
-retaining any required delimiter. A new explicit STATUS or archive-read command
-rearms it; periodic heartbeats do not restart an endless retry. A completely
-blocked channel can therefore still cause the desktop's bounded timeout/error.
-
-Diagnostics distinguishes `usb_history_result` values `reading`, `complete`,
-`partial` and `error`; `usb_history_complete` is true only for verified completion.
-Accepted valid points may be saved even when a later row is damaged or missing.
-The received-record count includes records skipped because their dates are unknown;
-wire completeness and the number of usable plotted points are separate measures.
-A disconnected board, new boot, unavailable storage, lost/corrupt row, premature
-done or deadline cannot be reported as complete. Repeat **Считать с платы** after
-a partial/error result.
-
-Old v2 cursor exports have no verifiable complete footer; the new desktop labels
-them partial. With original firmware, it freezes the advertised session/count/latest,
-reads backwards in up to three legacy pages, deduplicates sequences, and rechecks
-the advertised inventory before confirming completion. The search bound is 5888
-nonzero sequence positions: legacy boot recovery inspected at most 2880 positions,
-the first append could skip at most a 128-slot erase sector, and an initial RAM
-record could survive fewer than 2880 more appends. RAM can thus retain a record
-whose physical slot has already been erased; a 4096-slot search is insufficient.
-An append/retention or boot change during these live legacy reads, an unconfirmed
-count, or exhaustion of that bound produces an explicit partial result.
-
-With optional integration installed, Bluetooth mode uses the service. Selecting
-USB detaches this viewer without stopping the service or changing its Bluetooth
-source. USB mode does not publish another virtual battery: the physical board
-already provides HID UPS reporting where supported.
-
-## Desktop widget
-
-The widget automatically reads the archive when USB connects or reconnects. Its
-own history worker also restores previously saved records for the selected board
-before that read finishes. It uses the monitor's merger, with application samples
-taking priority and one line per power metric. Real stale/boot gaps remain.
-Board records retain their original unidentified provenance and remain separate
-from station history in storage. Switching boards clears the previous archive;
-Bluetooth/service mode does not include a USB board overlay. The one-hour graph
-refreshes every second, with disk work on the history worker. Repeated reads do
-not duplicate records. New AHP2 records retain CRC-protected model and field
-validity; old AHP1 records keep output states unknown because their validity was
-never stored. The monitor and widget still use a direct connection in
-turn, so disconnect the monitor before connecting the widget to the same port.
-The widget uses logarithmic time over that hour to keep live-second changes
-visible on its compact plot, instead of compressing each second into 0.075 pixels.
-It draws lines between consecutive valid samples; an isolated sample has no endpoint dot.
-
-## Tests
-
-CTest uses fake serial channels only: both profiles, fragmented/malformed/oversize
-JSON, known fields, source/freshness, stale counters, CRC, missing dates, separate
-archive retention, deduplication, live UI/history and transport/control placement.
-
-Manual commands, never invoked by build/test:
-
-```text
-AllpowersMonitor.exe --scan-usb --report <private-json>
-AllpowersMonitor.exe --verify-usb 25 --usb-device <exact-serial> --usb-board <profile> --report <private-json>
-```
-
-Manual verification closes its port afterwards. Reports contain real identities;
-keep them private and out of Git.
+Hardware acceptance is separate: verify both viewers and two full exports while
+Windows continues receiving UPS reports; test reconnect and sleep/resume. For
+each explicitly selected board, verify physical ROM entry and a compatible
+rollback before writing. After first activation, prove an actual second write
+through maintenance HID → ROM before further experiments. Successful compilation
+alone is not evidence for Windows HID fan-out, functioning UPS or recovery.

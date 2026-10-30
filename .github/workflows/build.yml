@@ -356,7 +356,7 @@ jobs:
       id: build-fuzzers-and-seed-corpora
     - name: Fuzz BLE and CDC under ASan and UBSan
       run: ctest --preset fuzz-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/fuzz-linux/ci-tests.xml"
-      id: fuzz-ble-and-cdc-under-asan-and-ubsan
+      id: fuzz-ble-hid-under-asan-and-ubsan
     - name: Record analysis tool versions
       if: always()
       run: cmake -P cmake/scripts/ci/CiEnvironment.cmake

@@ -14,6 +14,7 @@ file(MAKE_DIRECTORY "${source}/core" "${source}/firmware" "${source}/tests/fixtu
 file(COPY "${ROOT}/core/src" "${ROOT}/core/native" "${ROOT}/core/library.properties.in" DESTINATION "${source}/core")
 file(COPY "${ROOT}/firmware/R2500Adapter" DESTINATION "${source}/firmware")
 file(COPY "${ROOT}/tests/fixtures/usb-contract.json" DESTINATION "${source}/tests/fixtures")
+file(COPY "${ROOT}/tests/fixtures/hid-telemetry-contract.json" DESTINATION "${source}/tests/fixtures")
 file(WRITE "${source}/firmware/R2500Adapter/removed.cpp" "// stale sketch input\n")
 file(WRITE "${source}/core/src/removed.h" "// stale library input\n")
 if(CMAKE_HOST_WIN32)

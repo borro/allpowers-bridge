@@ -32,7 +32,7 @@ the station determines electrical backup and transfer behavior.
 ALLPOWERS BLE GATT
     ├── ESP32 BLE transport ── portable C++ core ── USB HID UPS + display/history
     └── Qt Bluetooth/WinRT ─── same C++ core ────── native Qt desktop/history
-USB board CDC ── native serial worker ── TelemetryTransport ── same desktop/history
+USB board HID ── independent shared HID workers ── TelemetryTransport ── Monitor / Widget
 ```
 
 All product code and ABI tests are C++23. CMake/Ninja, CTest and CPack own the

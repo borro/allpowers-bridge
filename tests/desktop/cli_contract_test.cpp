@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include "../../apps/windows/window.h"
 #include "../../apps/windows/usb_transport.h"
+#include "../../apps/windows/usb_hid.h"
 #include "../../apps/windows/battery_probe.h"
 #include "../../apps/windows/notices.h"
 #include "../../apps/windows/monitor_application.h"
@@ -79,13 +80,13 @@ public:
 // production code; external I/O and history-result timing are controlled here.
 #define BleTransport Fake::Transport
 #define UsbTransport Fake::Transport
-#define allpowersUsbPorts Fake::ports
+#define allpowersHidPorts Fake::ports
 #define runBatteryProbe Fake::battery
 #define MonitorWindow Fake::Window
 #include "../../apps/windows/monitor_application.cpp"
 #undef BleTransport
 #undef UsbTransport
-#undef allpowersUsbPorts
+#undef allpowersHidPorts
 #undef runBatteryProbe
 #undef MonitorWindow
 

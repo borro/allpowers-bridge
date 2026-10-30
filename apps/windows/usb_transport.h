@@ -27,6 +27,9 @@ public:
   bool usb() const override {
     return true;
   }
+  bool shared() const override {
+    return true;
+  }
   QString address() const override {
     return station_;
   }
@@ -71,11 +74,8 @@ private:
   QSet<quint32> importSequences;
   quint32 importRequest = 0, requestCounter = 0, importSession = 0, importGeneration = 0,
           importExpected = 0, importOldest = 0, importLatest = 0, importCursor = 0,
-          importDigest = 2166136261u, legacyFirst = 0, legacyPages = 0, legacySpan = 0,
-          legacyScanned = 0, legacyReceivedPage = 0;
-  int importVersion = 0;
-  bool importBegun = false, importCompromised = false, legacyVerification = false;
-  bool importNonceRequired = false;
+          importDigest = 2166136261u;
+  bool importBegun = false, importCompromised = false;
   QByteArray importNonce;
   void connectPort();
   void receive(const QByteArray &);
@@ -85,5 +85,4 @@ private:
   void fail(QString);
   void command(const QByteArray &);
   void finishImport(const QString &result, const QString &reason = {});
-  void nextLegacyPage();
 };

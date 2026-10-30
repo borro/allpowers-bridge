@@ -20,6 +20,9 @@ public:
   virtual bool remote() const {
     return false;
   }
+  virtual bool shared() const {
+    return remote();
+  }
   virtual bool usb() const {
     return false;
   }

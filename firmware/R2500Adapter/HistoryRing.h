@@ -5,14 +5,12 @@
 #include <initializer_list>
 
 namespace HistoryFormat {
-constexpr uint32_t kMagic=0x31504841; // AHP1, little endian
-// AHP2 keeps the same slots and CRC span. Its header carries provenance; AHP1
-// remains readable, but cannot prove that an archived output was known.
-constexpr uint32_t kMagicV2=0xa2000000;
-inline uint32_t header(uint32_t known,uint8_t model){return kMagicV2|(known&0xfff)|(uint32_t(model&15)<<12);}
-inline bool version2(uint32_t magic){return (magic&0xffff0000)==kMagicV2;}
-inline uint32_t known(uint32_t magic){return version2(magic)?magic&0xfff:0;}
-inline uint8_t model(uint32_t magic){return version2(magic)?uint8_t((magic>>12)&15):0;}
+// AHP3 only: session is the durable boot ordinal, uptime is local to that boot.
+constexpr uint32_t kMagic=0xa3000000;
+inline uint32_t header(uint32_t known,uint8_t model){return kMagic|(known&0xfff)|(uint32_t(model&15)<<12);}
+inline bool version3(uint32_t magic){return (magic&0xffff0000)==kMagic;}
+inline uint32_t known(uint32_t magic){return version3(magic)?magic&0xfff:0;}
+inline uint8_t model(uint32_t magic){return version3(magic)?uint8_t((magic>>12)&15):0;}
 constexpr uint32_t kBytes=0x20000,kSector=4096,kSlots=kBytes/32,kKeep=2880;
 enum : uint8_t {Fresh=1,Mains=2,Battery=4,AcOutput=8,UsbOutput=16,DcOutput=32,Clock=64,Gap=128};
 #pragma pack(push,1)
@@ -33,7 +31,7 @@ inline bool newer(uint32_t a,uint32_t b){return int32_t(a-b)>0;}
 inline uint32_t next(uint32_t n){return ++n?n:1;}
 inline uint32_t slot(uint32_t sequence){return (sequence-1)%kSlots;}
 inline bool valid(const Record &r,uint32_t physicalSlot){
-  return (r.magic==kMagic || version2(r.magic)) && r.sequence && slot(r.sequence)==physicalSlot &&
+  return version3(r.magic) && r.sequence && slot(r.sequence)==physicalSlot &&
     (!(r.flags&Fresh)||r.soc<=100) && r.crc==crc32(&r,offsetof(Record,crc));
 }
 struct Flash {
@@ -62,7 +60,7 @@ public:
   uint32_t latestSequence()const{return latest;}
   bool ok()const{return healthy;}
   bool append(Record &r){
-    if(!healthy)return false;
+    if(!healthy||!version3(r.magic))return false;
     for(uint32_t skipped=0;skipped<kSlots;++skipped){
       uint32_t candidate=next(allocated),index=slot(candidate),offset=index*sizeof(r);
       // Only the next sector is erased, never a partly programmed current sector.
@@ -73,7 +71,6 @@ public:
       for(size_t i=0;i<sizeof(existing);++i)if(raw[i]!=0xff){blank=false;break;}
       allocated=candidate;
       if(!blank)continue; // Includes torn writes recovered after power loss.
-      if(!version2(r.magic))r.magic=kMagic;
       r.sequence=candidate;r.crc=crc32(&r,offsetof(Record,crc));
       if(!flash.write(offset,&r,sizeof(r)))return false;
       Record check;if(!flash.read(offset,&check,sizeof(check))){healthy=false;return false;}
@@ -102,7 +99,7 @@ public:
     memset(bytes+off,0xff,kSector);erases++;return true;
   }
 };
-inline Record example(){Record r={};r.session=1;r.soc=100;r.flags=Fresh|Mains;r.outputWatts=230;r.runtimeMinutes=38400;return r;}
+inline Record example(){Record r={};r.magic=header(0x37f,3);r.session=1;r.soc=100;r.flags=Fresh|Mains;r.outputWatts=230;r.runtimeMinutes=38400;return r;}
 inline bool selfTest(uint8_t *memory){
   if(crc32("123456789",9)!=0xcbf43926)return false;
   for(int torn=0;torn<=32;++torn){

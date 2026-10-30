@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
   fs::create_directories(output);
   fs::copy_file(PARTITION_FIXTURE,output/"R2500Adapter.ino.partitions.bin",fs::copy_options::overwrite_existing);
   for (const auto *name:{"R2500Adapter.ino.bin","R2500Adapter.ino.bootloader.bin"})
-    std::ofstream(output/name,std::ios::binary)<<"offline graph fixture ALLPOWERS_HISTORY_R12_W2_S32"<<'\0';
+    std::ofstream(output/name,std::ios::binary)<<"offline graph fixture ALLPOWERS_HISTORY_R3_W3_S32"<<'\0';
   std::ofstream inputs(output/"compile-inputs.txt");
   for (const auto &root:{sketch,library})
     for (const auto &entry:fs::recursive_directory_iterator(root))

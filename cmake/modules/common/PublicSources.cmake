@@ -72,8 +72,8 @@ set(AP_PUBLIC_SPECIAL_FILES
   docs/images/pocket-display.png
   tests/fixtures/notifications.json
   tests/mutation/accepted.json
-  tests/desktop/frozen_b989/provenance.json
-  tests/fixtures/usb-contract.json)
+  tests/fixtures/usb-contract.json
+  tests/fixtures/hid-telemetry-contract.json)
 
 function(ap_public_sources)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "OUTPUT;ROOT" "")

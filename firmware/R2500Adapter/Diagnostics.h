@@ -40,7 +40,7 @@ inline DiagnosticView diagnosticView(const DiagnosticData &d){
   };
   auto &s=d.telemetry;bool fresh=telemetryFresh(s,d.nowMs);
   snprintf(v.heading,sizeof(v.heading),"DIAG %c",d.version);
-  snprintf(v.footer,sizeof(v.footer),"LOG %08lX CLK %s",(unsigned long)d.log.session,d.log.clockSynced?"YES":"NO");
+  snprintf(v.footer,sizeof(v.footer),"BOOT %lu CLK %s",(unsigned long)d.log.session,d.log.clockSynced?"YES":"NO");
   row("NAME",d.bleConnected?DiagnosticTone::Plain:DiagnosticTone::Dim,"%s",d.station.name[0]?d.station.name:"--");
   row("MAC",d.bleConnected?DiagnosticTone::Plain:DiagnosticTone::Dim,"%s",d.station.address[0]?d.station.address:"--");
   const char *profile=s.protocol==3?"R2500 V2":s.protocol==2?"LEGACY16":s.protocol==1?"OLD10":"UNKNOWN";
@@ -59,7 +59,7 @@ inline DiagnosticView diagnosticView(const DiagnosticData &d){
   row("UPTIME",DiagnosticTone::Plain,"%luD %02u:%02u:%02u",(unsigned long)(sec/86400),unsigned(sec/3600%24),unsigned(sec/60%60),unsigned(sec%60));
   row("RESET",DiagnosticTone::Plain,"%s %lu",d.reset,(unsigned long)d.resetCode);
   row("USB",d.usbMounted?DiagnosticTone::Good:DiagnosticTone::Dim,"%s",d.usbMounted?"HOST":"NO HOST");
-  row("CDC",d.cdcOpen?DiagnosticTone::Good:DiagnosticTone::Dim,"%s",d.cdcOpen?"OPEN":"CLOSED");
+  row("USB DATA",d.usbMounted?DiagnosticTone::Good:DiagnosticTone::Dim,"%s",d.usbMounted?"HID":"OFFLINE");
   row("HID",d.upsEnabled?(fresh?DiagnosticTone::Good:DiagnosticTone::Warning):DiagnosticTone::Dim,"%s",d.upsEnabled?(fresh?"UPS LIVE":"UPS STALE"):"MAINT");
   number("HID GET",d.upsGets);number("HID TX",d.upsSent);
   number("TX ERR",d.upsFailed,d.upsFailed?DiagnosticTone::Bad:DiagnosticTone::Good);

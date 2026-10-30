@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <atomic>
 #include <new>
+#include <Preferences.h>
 #include "esp_partition.h"
 #include "esp_timer.h"
 #include "esp_random.h"
@@ -9,6 +10,8 @@
 #include "HistoryRing.h"
 #include "HistoryWire.h"
 #include "HistorySample.h"
+#include "HistoryClock.h"
+#include "BootEpoch.h"
 #include "HistoryExport.h"
 #include "GraphHistory.h"
 
@@ -35,7 +38,7 @@ class HistoryStore {
   SemaphoreHandle_t operation=nullptr,dataMutex=nullptr;
   std::atomic<bool> stopRequested{false};
   HistoryStats stats;uint32_t head=0;
-  uint32_t epochBase=0;uint64_t epochUptime=0;
+  HistoryFormat::ClockAnchor clock;
   void error(const char *message){
     if(dataMutex)xSemaphoreTake(dataMutex,portMAX_DELAY);
     stats.error=message;stats.errors++;stats.ready=false;
@@ -51,7 +54,7 @@ class HistoryStore {
     uint64_t uptime=uint64_t(esp_timer_get_time())/1000000;
     HistoryFormat::Record r=HistoryFormat::sample(s,millis());r.uptimeSeconds=uint32_t(uptime);
     xSemaphoreTake(dataMutex,portMAX_DELAY);r.session=stats.session;
-    if(epochBase){r.epochSeconds=epochBase+uint32_t(uptime-epochUptime);r.flags|=HistoryFormat::Clock;}
+    if((r.epochSeconds=clock.at(uptime)))r.flags|=HistoryFormat::Clock;
     xSemaphoreGive(dataMutex);
     if(gap)r.flags|=HistoryFormat::Gap;
     return r;
@@ -67,7 +70,19 @@ public:
     uint8_t *test=static_cast<uint8_t*>(ps_malloc(HistoryFormat::kBytes));
     bool tested=test&&HistoryFormat::selfTest(test);
     bool graphTest=test&&GraphHistory::selfTest(reinterpret_cast<HistoryFormat::Record*>(test));free(test);
-    xSemaphoreTake(dataMutex,portMAX_DELAY);stats.selfTest=tested;stats.session=esp_random();if(!stats.session)stats.session=1;xSemaphoreGive(dataMutex);
+    struct BootStorage:HistoryFormat::EpochStorage {
+      Preferences prefs;
+      bool read(uint32_t &value)override{
+        value=prefs.isKey("boots")?prefs.getUInt("boots",UINT32_MAX):0;
+        return value!=UINT32_MAX;
+      }
+      bool write(uint32_t value)override{return prefs.putUInt("boots",value)==sizeof(value);}
+    } bootStorage;
+    if(!bootStorage.prefs.begin("ap-history",false)){error("boot_counter");xSemaphoreGive(operation);return;}
+    uint32_t boot=0;const bool saved=HistoryFormat::reserveEpoch(bootStorage,boot);
+    bootStorage.prefs.end();
+    if(!saved){error("boot_counter");xSemaphoreGive(operation);return;}
+    xSemaphoreTake(dataMutex,portMAX_DELAY);stats.selfTest=tested;stats.session=boot;xSemaphoreGive(dataMutex);
     xSemaphoreTake(dataMutex,portMAX_DELAY);stats.graphTest=graphTest;xSemaphoreGive(dataMutex);
     if(!tested||!graphTest){error("self_test");xSemaphoreGive(operation);return;}
     if(stopRequested.load()){xSemaphoreGive(operation);return;}
@@ -163,9 +178,26 @@ public:
       archive.freeze(records,head,stats.count,HistoryFormat::kKeep,stats.session,stats.generation,metadata);
     xSemaphoreGive(dataMutex);return result;
   }
-  void setTime(uint32_t epoch){
-    if(!dataMutex)return;
-    xSemaphoreTake(dataMutex,portMAX_DELAY);epochBase=epoch;epochUptime=uint64_t(esp_timer_get_time())/1000000;stats.clockSynced=true;xSemaphoreGive(dataMutex);
+  bool setTime(uint32_t epoch,uint32_t observedUptime,const Telemetry &telemetry){
+    if(!operation||stopRequested.load()||xSemaphoreTake(operation,pdMS_TO_TICKS(10))!=pdTRUE)return false;
+    if(!status().ready||stopRequested.load()){xSemaphoreGive(operation);return false;}
+    // Retries and concurrent clients cannot move an established clock or add
+    // repeated flash writes. A real dated sample durably anchors this boot.
+    if(clock.synced()){xSemaphoreGive(operation);return true;}
+    uint32_t base=0;
+    if(!clock.candidate(epoch,observedUptime,uint64_t(esp_timer_get_time())/1000000,base)){
+      xSemaphoreGive(operation);return false;
+    }
+    auto r=makeRecord(telemetry,false);
+    if(uint64_t(base)+r.uptimeSeconds>UINT32_MAX){xSemaphoreGive(operation);return false;}
+    r.epochSeconds=base+r.uptimeSeconds;r.flags|=HistoryFormat::Clock;
+    uint32_t start=millis();bool ok=ring.append(r);uint32_t elapsed=millis()-start;
+    if(ok)push(r);
+    xSemaphoreTake(dataMutex,portMAX_DELAY);
+    if(ok){clock.commit(base);stats.clockSynced=true;stats.writes++;}
+    else {stats.errors++;stats.error="write";stats.ready=false;}
+    stats.lastWriteMs=elapsed;if(elapsed>stats.maxWriteMs)stats.maxWriteMs=elapsed;
+    xSemaphoreGive(dataMutex);xSemaphoreGive(operation);return ok;
   }
   void requestPause(){stopRequested.store(true);}
   bool pausedAndIdle(){

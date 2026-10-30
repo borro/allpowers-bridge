@@ -4,6 +4,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QSet>
 #include <QTimeZone>
 #include <QToolTip>
 #include <QWheelEvent>
@@ -23,6 +24,9 @@ HistoryChart::HistoryChart(QWidget *p) : QWidget(p) {
 QRectF HistoryChart::plot() const {
   return QRectF(54, 30, qMax(1, width() - 116), qMax(1, height() - 78));
 }
+bool HistoryChart::visible(const HistoryPoint &p) const {
+  return p.wall >= end_ - span_ && p.wall <= end_;
+}
 double HistoryChart::xAt(qint64 time) const {
   auto r = plot();
   double age = double(end_ - time);
@@ -35,11 +39,52 @@ qint64 HistoryChart::timeAt(double x) const {
                                     : (1 - fraction) * span_);
 }
 void HistoryChart::clamp() {
-  span_ = qBound(30., span_, 172800.);
-  end_ = qBound(now_ - qint64(172800 - span_), end_, now_);
+  span_ = qBound(30., span_, epochMode_ ? qMax(60., double(now_)) : 172800.);
+  if (epochMode_) {
+    end_ = qBound(qMin(now_, qint64(span_)), end_, now_);
+    return;
+  }
+  const qint64 earliest =
+      points_.isEmpty() ? now_ - 172800 : qMin(now_ - 172800, points_.first().wall);
+  end_ = qBound(qMin(now_, earliest + qint64(span_)), end_, now_);
+}
+void HistoryChart::setEpochMode(bool enabled) {
+  if (epochMode_ == enabled)
+    return;
+  epochMode_ = enabled;
+  following_ = true;
+  end_ = 0;
 }
 void HistoryChart::setPoints(const HistoryPoints &p, qint64 now) {
-  points_ = p;
+  source_ = epochMode_ ? historyByEpoch(p, {}) : p;
+  if (!epochMode_)
+    std::stable_sort(source_.begin(), source_.end(),
+                     [](const auto &a, const auto &b) { return a.wall < b.wall; });
+  points_ = source_;
+  epochs_.clear();
+  if (epochMode_) {
+    constexpr qint64 width = 60000;
+    for (qsizetype first = 0; first < points_.size();) {
+      qsizetype last = first + 1;
+      const auto epoch = historyEpoch(points_[first]);
+      const auto board = historyBoard(points_[first]);
+      while (last < points_.size() && historyEpoch(points_[last]) == epoch &&
+             historyBoard(points_[last]) == board)
+        ++last;
+      const qint64 from = epochs_.size() * width;
+      epochs_.append({epoch, board, from, from + width});
+      for (auto i = first; i < last; ++i)
+        points_[i].wall = from + (last - first == 1 ? width / 2
+                                                    : width / 10 + (i - first) * (width * 8 / 10) /
+                                                                       (last - first - 1));
+      first = last;
+    }
+    now = qMax<qint64>(width, epochs_.size() * width);
+    if (following_ || !end_)
+      span_ = now;
+  }
+  if (!epochMode_)
+    points_.removeIf([](const auto &point) { return point.wall <= 0; });
   now_ = now;
   if (following_ || !end_)
     end_ = now;
@@ -66,19 +111,77 @@ void HistoryChart::setSeries(int index, bool enabled) {
 void HistoryChart::followLive() {
   following_ = true;
   end_ = now_;
+  if (epochMode_)
+    span_ = now_;
   clamp();
   dirty_ = true;
   update();
   emit viewChanged();
+}
+QList<QPair<qint64, QString>> HistoryChart::axisTicks() const {
+  QList<QPair<qint64, QString>> ticks;
+  const auto r = plot();
+  if (epochMode_) {
+    QSet<QString> boards;
+    for (const auto &band : epochs_)
+      if (!band.board.isEmpty())
+        boards.insert(band.board);
+    double previousX = -1e9;
+    for (const auto &band : epochs_) {
+      const auto from = qMax(band.from, end_ - qint64(span_));
+      const auto to = qMin(band.to, end_);
+      if (from >= to)
+        continue;
+      const auto middle = from + (to - from) / 2;
+      const auto x = xAt(middle);
+      if (x - previousX < 90)
+        continue;
+      auto label = band.epoch ? QCoreApplication::translate("Allpowers", "Epoch %1").arg(band.epoch)
+                              : QCoreApplication::translate("Allpowers", "Unknown epoch");
+      if (boards.size() > 1 && !band.board.isEmpty())
+        label += "\n#" + band.board.right(6);
+      ticks.append({middle, label});
+      previousX = x;
+    }
+  } else {
+    const auto endDate = QDateTime::fromSecsSinceEpoch(end_, displayTimeZone()).date();
+    for (int i = 0; i <= 5; ++i) {
+      const auto time = timeAt(r.left() + r.width() * i / 5.);
+      if (!ticks.isEmpty() && ticks.last().first == time)
+        continue;
+      const auto when = QDateTime::fromSecsSinceEpoch(time, displayTimeZone());
+      ticks.append({time, when.toString(span_ >= 86400 || when.date() != endDate ? "dd.MM\nHH:mm:ss"
+                                                                                 : "HH:mm:ss")});
+    }
+  }
+  return ticks;
+}
+bool HistoryChart::linked(const HistoryPoint &a, const HistoryPoint &b) const {
+  return epochMode_ ? joinEpochPoints(a, b) : joinPoints(a, b);
 }
 void HistoryChart::renderBase(QPainter &painter) {
   vertices_ = 0;
   painter.setRenderHint(QPainter::Antialiasing);
   painter.fillRect(rect(), QColor("#172235"));
   auto r = plot();
+  if (epochMode_) {
+    painter.save();
+    painter.setClipRect(r);
+    for (qsizetype i = 0; i < epochs_.size(); ++i) {
+      const auto &band = epochs_[i];
+      const double left = xAt(band.from), right = xAt(band.to);
+      painter.fillRect(QRectF(left, r.top(), right - left, r.height()),
+                       i % 2 ? QColor("#1d2d43") : QColor("#172235"));
+      if (i) {
+        painter.setPen(QPen(QColor("#62738c"), 1, Qt::DashLine));
+        painter.drawLine(QPointF(left, r.top()), QPointF(left, r.bottom()));
+      }
+    }
+    painter.restore();
+  }
   double peak = 0;
   for (const auto &p : points_)
-    if (p.wall >= end_ - span_ && p.wall <= end_ && p.data.fresh) {
+    if (visible(p) && p.data.fresh) {
       if (p.data.known & 2)
         peak = qMax(peak, double(p.data.input_w));
       if (p.data.known & 4)
@@ -104,19 +207,23 @@ void HistoryChart::renderBase(QPainter &painter) {
     painter.drawText(QRectF(r.right() + 8, y - 10, 50, 20), Qt::AlignLeft | Qt::AlignVCenter,
                      QString::number(ceiling * step / 4., 'g', 4));
   }
-  for (int i = 0; i <= 5; ++i) {
-    double x = r.left() + r.width() * i / 5.;
-    auto when = QDateTime::fromSecsSinceEpoch(timeAt(x), displayTimeZone());
-    painter.drawText(QRectF(x - 45, r.bottom() + 13, 90, 28), Qt::AlignCenter,
-                     when.toString(span_ > 86400 ? "dd.MM HH:mm" : "HH:mm:ss"));
+  for (const auto &tick : axisTicks()) {
+    const double x = xAt(tick.first);
+    painter.drawText(QRectF(x - 45, r.bottom() + 9, 90, 32), Qt::AlignCenter | Qt::TextWordWrap,
+                     tick.second);
   }
   painter.save();
-  painter.setClipRect(r.adjusted(-1, -1, 1, 1));
+  painter.setClipRect(r.adjusted(-4, -4, 4, 4));
   for (int i = 1; i < points_.size(); ++i) {
     auto p = points_.at(i);
-    if (p.wall < end_ - span_ || p.wall > end_)
+    if (!visible(p))
       continue;
-    int change = sourceChange(points_.at(i - 1), p);
+    const auto &previous = points_.at(i - 1);
+    int change = linked(previous, p) && (previous.data.source == 1 || previous.data.source == 2) &&
+                         (p.data.source == 1 || p.data.source == 2) &&
+                         previous.data.source != p.data.source
+                     ? int(p.data.source)
+                     : 0;
     if (change) {
       painter.setPen(QPen(change == 1 ? QColor("#ff6f7c") : QColor("#54e0aa"), 1, Qt::DashLine));
       painter.drawLine(QPointF(xAt(p.wall), r.top()), QPointF(xAt(p.wall), r.bottom()));
@@ -135,7 +242,7 @@ void HistoryChart::renderBase(QPainter &painter) {
       if (path.size() > 1)
         painter.drawPolyline(path);
       else if (path.size() == 1)
-        painter.drawPoint(path[0]);
+        painter.drawEllipse(path[0], 2.5, 2.5);
       path.clear();
     };
     auto flush = [&] {
@@ -159,7 +266,7 @@ void HistoryChart::renderBase(QPainter &painter) {
     };
     const HistoryPoint *previous = nullptr;
     for (const auto &p : points_) {
-      if (p.wall < end_ - span_ || p.wall > end_)
+      if (!visible(p))
         continue;
       const auto &s = p.data;
       quint32 mask = series == 0 ? 1 : series == 1 ? 2 : 4;
@@ -169,7 +276,7 @@ void HistoryChart::renderBase(QPainter &painter) {
         previous = nullptr;
         continue;
       }
-      if (previous && !joinPoints(*previous, p)) {
+      if (previous && !linked(*previous, p)) {
         flush();
         started = false;
       }
@@ -203,8 +310,10 @@ void HistoryChart::renderBase(QPainter &painter) {
   if (points_.isEmpty()) {
     painter.setPen(QColor("#a5b5cf"));
     painter.drawText(r, Qt::AlignCenter,
-                     QCoreApplication::translate(
-                         "Allpowers", "History will appear after connecting to a station"));
+                     epochMode_
+                         ? QCoreApplication::translate("Allpowers", "No archive records")
+                         : QCoreApplication::translate(
+                               "Allpowers", "History will appear after connecting to a station"));
   }
 }
 void HistoryChart::paintEvent(QPaintEvent *) {
@@ -232,16 +341,38 @@ void HistoryChart::paintEvent(QPaintEvent *) {
       --it;
     else if (it != points_.cbegin() && qAbs((it - 1)->wall - time) < qAbs(it->wall - time))
       --it;
-    if (it->wall >= end_ - span_ && it->wall <= end_) {
+    if (visible(*it)) {
       painter.setPen(QPen(QColor("#657a98"), 1, Qt::DashLine));
       painter.drawLine(QPointF(xAt(it->wall), r.top()), QPointF(xAt(it->wall), r.bottom()));
       auto value = [](const ap_snapshot &s, quint32 mask, quint32 n) {
         return s.known & mask ? QString::number(n) : QString("—");
       };
+      const auto epoch = historyEpoch(*it);
+      const auto originalWall = epochMode_ ? source_[it - points_.cbegin()].wall : it->wall;
+      QString heading;
+      if (epochMode_ || !originalWall) {
+        if (!epoch) {
+          heading = QCoreApplication::translate("Allpowers", "Unknown epoch");
+          if (originalWall)
+            heading += " · " + QDateTime::fromSecsSinceEpoch(originalWall, displayTimeZone())
+                                   .toString("dd.MM.yyyy HH:mm:ss");
+        } else if (!it->sequence) {
+          heading =
+              QCoreApplication::translate("Allpowers", "Epoch %1 · live reading · uptime %2 s")
+                  .arg(epoch)
+                  .arg(it->tick);
+        } else {
+          heading = QCoreApplication::translate("Allpowers", "Epoch %1 · record %2 · uptime %3 s")
+                        .arg(epoch)
+                        .arg(it->sequence)
+                        .arg(it->tick);
+        }
+      } else {
+        heading = QDateTime::fromSecsSinceEpoch(originalWall, displayTimeZone())
+                      .toString("dd.MM.yyyy HH:mm:ss");
+      }
       QString text =
-          QDateTime::fromSecsSinceEpoch(it->wall, displayTimeZone())
-              .toString("dd.MM.yyyy HH:mm:ss") +
-          "\n" +
+          heading + "\n" +
           QCoreApplication::translate("Allpowers", "Charge %1%   Input %2 W   Output %3 W\n%4 · %5")
               .arg(value(it->data, 1, it->data.soc), value(it->data, 2, it->data.input_w),
                    value(it->data, 4, it->data.output_w),
@@ -252,10 +383,12 @@ void HistoryChart::paintEvent(QPaintEvent *) {
                    it->data.fresh ? QCoreApplication::translate("Allpowers", "Fresh data")
                                   : QCoreApplication::translate("Allpowers", "Data gap"));
       const bool archive = it->address.startsWith("usb-board:");
-      if (archive)
-        text +=
-            QCoreApplication::translate("Allpowers", "\nUSB board archive · station unspecified");
-      QRectF box(r.left() + 12, r.top() + 12, qMin(420., r.width() - 24), archive ? 90 : 70);
+      if (archive && !epochMode_)
+        text += QCoreApplication::translate("Allpowers", "\nUSB archive · epoch %1 · record %2")
+                    .arg(epoch)
+                    .arg(it->sequence);
+      QRectF box(r.left() + 12, r.top() + 12, qMin(420., r.width() - 24),
+                 archive && !epochMode_ ? 90 : 70);
       painter.fillRect(box, QColor("#23344c"));
       painter.setPen(QColor("#eff5ff"));
       painter.drawText(box.adjusted(10, 6, -10, -6), text);
@@ -298,7 +431,8 @@ void HistoryChart::wheelEvent(QWheelEvent *event) {
   }
   auto anchor = timeAt(event->position().x());
   double fraction = qBound(0., (event->position().x() - plot().left()) / plot().width(), 1.);
-  span_ = qBound(30., span_ * std::pow(.8, event->angleDelta().y() / 120.), 172800.);
+  span_ = qBound(30., span_ * std::pow(.8, event->angleDelta().y() / 120.),
+                 epochMode_ ? qMax(60., double(now_)) : 172800.);
   end_ = anchor + qint64(logarithmic_ ? std::expm1((1 - fraction) * std::log1p(span_))
                                       : (1 - fraction) * span_);
   following_ = false;

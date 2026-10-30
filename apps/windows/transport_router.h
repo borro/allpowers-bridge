@@ -80,7 +80,7 @@ private:
   ConnectionLease lease;
   bool blocked_ = false;
   bool claim() {
-    blocked_ = !current->remote() && !lease.acquire();
+    blocked_ = !current->shared() && !lease.acquire();
     if (blocked_)
       emit stateChanged();
     return !blocked_;

@@ -9,7 +9,7 @@ add_custom_target(fuzz-corpus
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/seed_corpus.py" "${fuzz_output}"
   VERBATIM)
 add_custom_target(fuzz-tests)
-foreach(subject ble cdc control)
+foreach(subject ble hid_wire hid_server control)
   add_executable(fuzz_${subject} ${subject}.cpp)
   set_target_properties(fuzz_${subject} PROPERTIES CXX_SCAN_FOR_MODULES OFF INTERPROCEDURAL_OPTIMIZATION OFF)
   target_compile_features(fuzz_${subject} PRIVATE cxx_std_23)

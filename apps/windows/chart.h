@@ -7,7 +7,7 @@ class QPainter;
 
 class HistoryChart : public QWidget {
   Q_OBJECT
-  HistoryPoints points_;
+  HistoryPoints points_, source_;
   qint64 now_ = 0, end_ = 0;
   double span_ = 86400;
   bool logarithmic_ = false, following_ = true, series_[3] = {true, true, true};
@@ -18,8 +18,17 @@ class HistoryChart : public QWidget {
   int vertices_ = 0;
   QPixmap cache_;
   bool dirty_ = true;
+  bool epochMode_ = false;
+  struct EpochBand {
+    quint32 epoch;
+    QString board;
+    qint64 from, to;
+  };
+  QList<EpochBand> epochs_;
+  bool linked(const HistoryPoint &, const HistoryPoint &) const;
   void renderBase(QPainter &);
   QRectF plot() const;
+  bool visible(const HistoryPoint &) const;
   double xAt(qint64 time) const;
   qint64 timeAt(double x) const;
   void clamp();
@@ -35,9 +44,14 @@ protected:
 public:
   explicit HistoryChart(QWidget *parent = nullptr);
   void setPoints(const HistoryPoints &, qint64 now);
+  void setEpochMode(bool enabled);
   const HistoryPoints &points() const {
     return points_;
   }
+  const HistoryPoints &sourcePoints() const {
+    return source_;
+  }
+  QList<QPair<qint64, QString>> axisTicks() const;
   double renderMs() const {
     return lastRenderMs_;
   }

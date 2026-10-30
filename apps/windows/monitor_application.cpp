@@ -6,6 +6,7 @@
 #include "notices.h"
 #include "product-version.h"
 #include "runtime_log.h"
+#include "usb_hid.h"
 #include "usb_transport.h"
 #include "window.h"
 #include <QApplication>
@@ -41,7 +42,7 @@ int runMonitorApplication(QApplication &app, const QStringList &arguments,
        {"verify-station", "Verify saved station telemetry, then disconnect", "seconds"},
        {"test-seconds", "Close automatically", "seconds"},
        {"scan-seconds", "Scan BLE without making a connection", "seconds"},
-       {"scan-usb", "List supported USB boards without opening ports"},
+       {"scan-usb", "List supported USB HID collections without telemetry requests"},
        {"verify-usb", "Read telemetry from an explicitly selected USB board", "seconds"},
        {"usb-device", "Exact USB serial for the manual USB verification", "serial"},
        {"usb-board", "Expected board profile for manual verification", "board"},
@@ -54,7 +55,7 @@ int runMonitorApplication(QApplication &app, const QStringList &arguments,
     if (!parser.isSet("report"))
       return 2;
     QJsonArray rows;
-    for (const auto &p : allpowersUsbPorts())
+    for (const auto &p : allpowersHidPorts())
       rows.append(
           QJsonObject{{"serial", p.serial}, {"port", p.port}, {"description", p.description}});
     QFile out(parser.value("report"));

@@ -47,6 +47,7 @@ function(ap_add_firmware_targets)
         "-DOUTPUT=${output}" "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"
         -P "${PROJECT_SOURCE_DIR}/cmake/scripts/project/BuildFirmware.cmake"
       DEPENDS arduino-setup ${firmware_sources} "${firmware_inventory_file}" "${PROJECT_SOURCE_DIR}/tests/fixtures/usb-contract.json"
+        "${PROJECT_SOURCE_DIR}/tests/fixtures/hid-telemetry-contract.json"
         "${arduino_config}" "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
         "${PROJECT_SOURCE_DIR}/cmake/scripts/project/BuildFirmware.cmake" "${PROJECT_SOURCE_DIR}/cmake/modules/release/Partitions.cmake"
         "${PROJECT_SOURCE_DIR}/cmake/scripts/quality/CheckContracts.cmake" "${PROJECT_SOURCE_DIR}/cmake/modules/common/Json.cmake"

@@ -150,7 +150,7 @@ class ImageContractTests(unittest.TestCase):
         rollback={'path':str(self.app),'sha256':contract.sha(self.app),
                   'manifest':str(self.folder/'manifest.json')}
         checked=contract.rollback_check(rollback,'waveshare-147',manage_board.validate_image)
-        self.assertEqual(checked['history_storage']['read_versions'],[1,2])
+        self.assertEqual(checked['history_storage']['read_versions'],[3])
         # A separately pinned application must match the app in that manifest.
         other=self.folder/'other.application'
         other.write_bytes(self.app.read_bytes()+b'other')

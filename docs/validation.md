@@ -2,6 +2,136 @@
 
 [Documentation](README.md)
 
+## Epoch chart follow-up — 2026-10-30
+
+Monitor's epoch view replaces the undated-only graph. It combines dated and
+undated archive rows, sorts numerically by boot epoch and uptime, and renders
+separate equally sized sections. Within each section samples follow record
+order; their original UTC values remain intact for CSV export. Tests cover mixed
+records, numeric epoch ordering, gap/boot boundaries, empty/single/2880-record
+views, many epochs, zoom persistence and restoring the selected view on restart.
+Archive, desktop, Widget, languages and translation checks passed; CPack and
+formatting checks passed. A real Waveshare import displayed 30 records in four
+epochs with zero USB failures; Monitor was left running in that view. No firmware
+was changed for this presentation update.
+
+## Boot epochs and AHP3 — 2026-10-30
+
+The new history revision uses AHP3 only and HID protocol 2. Previous validation
+sections below are historical results for their stated implementations; the old
+CDC harness, frozen transports and AHP1/AHP2 readers are no longer shipped.
+Earlier coverage/mutation totals do not establish coverage of the new epoch code.
+
+New regression tests exercise durable epoch reservation, persistence failures,
+overflow refusal, one clock anchor per boot, invalid/stale time, reboot recovery,
+late anchors after reopening SQLite, same-second distinct records, duplicate
+imports, conflicting dates and the separate undated chart. The production HID
+server/session/import path is tested together. HID wire fuzzing now includes
+clock-anchor arithmetic. Both HID fuzz harnesses and their failure control passed
+another 300-second campaign with fatal ASan/UBSan enabled.
+
+Windows passed all 31 project checks, all 22 desktop tests and 74 maintenance
+tests; Linux passed all six portable runtime tests. Both firmware profiles built,
+formatting controls passed and CPack produced the checked Windows ZIP. Targeted
+archive/chart/Widget tests passed again after the final display-only corrections.
+
+The explicitly selected Waveshare was then transitioned to a compatible AHP3
+recovery image and the main image. A real second write of the main image entered
+ROM through that image's maintenance HID and verified every segment. ROM NVS
+readbacks proved persistent epochs 1, 2 and 3 and unchanged station settings;
+the final inspection reset started epoch 4. The first main-boot archive's three
+records survived the next write byte-for-byte, including its dated anchor and
+undated records. Incompatible AHP1/AHP2 statistics were intentionally discarded;
+pre-transition NVS/history, desktop databases and recovery images remain private.
+
+Monitor and Widget then ran together against the real board, imported complete
+independent archives with zero corrupt records or USB failures, and synchronized
+epoch 4 automatically. Both SQLite databases retained epoch 1 without invented
+dates and reconstructed dates for epochs 2/3/4 from their own anchors. Monitor's
+separate record-order view displayed the remaining undated point. Widget stayed
+fresh after Monitor exited. Windows reported the UPS healthy, 100% and on mains;
+firmware UPS sends advanced with zero failures. The compatible tested rollback is
+pinned in the private maintenance profile.
+
+Pocket was built but not flashed. Battery transitions, Windows shutdown policy,
+USB unplug and sleep/resume are not established by this run.
+
+## HID hardware maintenance — 2026-10-30
+
+The explicitly selected Waveshare was updated with the HID image after identity,
+physical recovery, compatible rollback and USB/partition contract checks. Private
+pre-write application, NVS/history and desktop backups are stored outside Git.
+Both actual writes verified all four segment digests; the second write entered
+ROM through the first new image's preserved maintenance HID. ROM readbacks after
+each write retained all 2880 previous archive records byte-for-byte and the
+station target. Only the SDK's `phy:cal_data` logical NVS value changed.
+
+Windows enumerated maintenance, UPS and telemetry HID collections, with no
+application CDC port. Maintenance Feature access and CRC-checked live telemetry
+remained available during concurrent native Widget and Monitor operation.
+Both clients received complete independent 2880-record snapshots with zero bad
+records or USB failures. Of these, 2877 records lacked a usable wall-clock date;
+three were imported as dated points, and existing local history was retained.
+Monitor collected 268 fresh snapshots in 90 seconds; Widget remained fresh after
+Monitor closed and passed its 100-second desktop visibility/report check.
+The rebuilt Widget was then restarted normally with its existing settings.
+
+Windows reported the HID UPS battery present and healthy, at 100% on mains.
+Firmware UPS report counters advanced with zero send failures during the load.
+This does not verify battery transitions, Windows shutdown policy, USB unplug,
+sleep/resume or absent-station recovery. Pocket hardware remains untested for
+this migration. Identifying reports and recovery images are private.
+
+## HID host verification — 2026-10-30
+
+Local results for the uncommitted HID implementation based on `e1f81da`:
+
+| Check | Result |
+| --- | --- |
+| libFuzzer + fatal ASan/UBSan, 300-second budget per harness | BLE 233,720,430 inputs; legacy CDC 1,413,715; HID wire 49,668; HID archive server 6,052,713. No failures; deliberate-error control passed. |
+| Mull | 921 mutations: 859 killed, 3 timeouts, 59 reviewed survivors, zero uncovered or unreviewed. HID specifically: 115 killed, 3 equivalent minimum-boundary mutations. |
+| Linux line coverage | Core 307/307; host firmware 996/996. |
+| Windows line coverage | Core 320/320; host firmware 1041/1052 (98.95%); applications 5769/6305 (91.50%). All existing thresholds passed. |
+| ASan/UBSan and Valgrind | Seven sanitizer tests including the deliberate-error control; six Memcheck tests; no unexpected errors or leaks. |
+| Static analysis | MSVC 29/29 units, Clang-Tidy 7/7, Cppcheck 7/7; no findings. Analyzer failure controls and actionlint/ShellCheck passed. |
+| Maintenance tooling | 74 tests passed. Public-source, formatting and secret audits passed. |
+
+Added two HID fuzz harnesses and synthetic seeds for valid requests, malformed
+reports, fragment damage, two snapshots, a busy third reader, retries and expiry.
+The accumulated HID corpora and additional seeds were replayed successfully.
+The previously missing HID target is now included in the Mull run manifest and
+portable static analysis. Expanded tests cover both halves of boot identities,
+boundary values, exact expiry, final pages, metadata errors, Windows discovery,
+shared handles, cancellation, I/O failures and reopening. Native Windows tests
+replace device APIs with a closed fake boundary and do not enumerate real boards.
+
+Generated evidence is in `build/verify/wsl/{fuzz-linux,mutation-linux,coverage-linux,
+sanitizers-linux,valgrind-linux,static-analysis-linux}` and
+`build/verify/{coverage-windows,analysis}`. Coverage measures only product lines
+present in host binaries; it does not measure device-only firmware. No board was
+flashed or station connection changed. Real Windows HID fan-out, UPS reporting,
+sleep/resume and a second write through maintenance HID remain separate hardware
+acceptance steps; the earlier CDC-era hardware results below do not verify HID.
+
+Review follow-up: periodic Metadata originally republished legacy STATUS telemetry
+after Live, temporarily losing generic-model runtime and firmware ages. The HID
+session now filters those legacy live rows after the first Feature snapshot while
+preserving metadata updates and initial verification. An integration regression
+uses the production `serializeStatus` through `HidSession` and `UsbTransport` for
+Old10, Legacy16 and R2500: all three failed before the fix and pass afterwards.
+It checks runtime, known fields, independent ages/seen flags, metadata refresh and
+station changes. The Windows coverage suite passed again, and independent Sol
+review found no new regression in the fix. No device interaction was performed.
+
+Station-name follow-up: Live formatted station addresses in uppercase, while
+Metadata could contain lowercase hex digits. The case-sensitive comparison
+incorrectly cleared the name and made Widget fall back to its saved USB serial
+label. Address comparison is now case-insensitive. The production integration
+regression uses mixed-case addresses for all three models, verifies name retention
+across Live/Metadata updates and name clearing on a real station change. All three
+cases failed before the fix; the HID session/native, USB transport, Widget and
+desktop suites passed afterwards.
+
 ## BLE disconnect diagnostics — 2026-10-28
 
 The firmware retains eight established-link disconnections in RAM across

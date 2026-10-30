@@ -43,30 +43,26 @@ file(WRITE "${WORK}/imports.txt" "${imports}")
 function(ap_run_smoke)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "LANGUAGE;REPORT_PATH;WORK;EXE_NAME" "")
   ap_require_arguments(PREFIX AP REQUIRED LANGUAGE REPORT_PATH WORK EXE_NAME)
-  set(WORK "${AP_WORK}")
-  set(exe_name "${AP_EXE_NAME}")
-  set(language "${AP_LANGUAGE}")
-  set(report_path "${AP_REPORT_PATH}")
   set(language_args)
-  if(NOT language STREQUAL "system")
-    set(language_args --language "${language}")
+  if(NOT AP_LANGUAGE STREQUAL "system")
+    set(language_args --language "${AP_LANGUAGE}")
   endif()
   # Never mistake a report from an earlier run for this process's result.
-  file(REMOVE "${report_path}")
+  file(REMOVE "${AP_REPORT_PATH}")
   execute_process(COMMAND "${CMAKE_COMMAND}" -E env
     --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
-    "PATH=$ENV{SystemRoot}/System32" -- "${WORK}/${exe_name}"
-    --self-test ${language_args} --report "${report_path}" -platform offscreen
-    WORKING_DIRECTORY "${WORK}" TIMEOUT 20 RESULT_VARIABLE result
+    "PATH=$ENV{SystemRoot}/System32" -- "${AP_WORK}/${AP_EXE_NAME}"
+    --self-test ${language_args} --report "${AP_REPORT_PATH}" -platform offscreen
+    WORKING_DIRECTORY "${AP_WORK}" TIMEOUT 20 RESULT_VARIABLE result
     OUTPUT_VARIABLE stdout ERROR_VARIABLE stderr)
-  file(WRITE "${WORK}/self-test-${language}-out.log" "${stdout}")
-  file(WRITE "${WORK}/self-test-${language}-err.log" "${stderr}")
+  file(WRITE "${AP_WORK}/self-test-${AP_LANGUAGE}-out.log" "${stdout}")
+  file(WRITE "${AP_WORK}/self-test-${AP_LANGUAGE}-err.log" "${stderr}")
   if(NOT result STREQUAL "0")
     set(diagnostics "No JSON report was produced.")
-    if(EXISTS "${report_path}")
-      file(READ "${report_path}" diagnostics LIMIT 12000)
+    if(EXISTS "${AP_REPORT_PATH}")
+      file(READ "${AP_REPORT_PATH}" diagnostics LIMIT 12000)
     endif()
-    message(FATAL_ERROR "${exe_name} standalone self-test failed: language=${language}, result=${result}\n"
+    message(FATAL_ERROR "${AP_EXE_NAME} standalone self-test failed: language=${AP_LANGUAGE}, result=${result}\n"
       "${stdout}\n${stderr}\n${diagnostics}")
   endif()
 endfunction()

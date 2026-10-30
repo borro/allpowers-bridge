@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 4.4)
 find_package(Git REQUIRED)
 include("${ROOT}/cmake/modules/hooks/GitHookSupport.cmake")
+include("${ROOT}/.githooks/Host.cmake")
 unset(ENV{GIT_INDEX_FILE})
 if(CASE STREQUAL "snapshot")
   ap_hook_snapshot(ROOT "${FIXTURE}" TREE "${TREE}" SOURCE "${FIXTURE}/build/snapshot" VERSION "1.2.3")
   return()
 elseif(CASE STREQUAL "traversal")
-  ap_hook_path(ROOT "${WORK}" PATH "${WORK}/../escape")
+  ap_assert_child_path(ROOT "${WORK}" PATH "${WORK}/../escape")
   return()
 elseif(CASE STREQUAL "scheduler")
   ap_hook_ctest(BINARY "${WORK}/build" LOGS "${WORK}/fail-logs")
@@ -22,6 +23,31 @@ endfunction()
 string(RANDOM LENGTH 16 ALPHABET 0123456789abcdef nonce)
 set(fixture "${WORK}/${nonce} repository with spaces")
 file(MAKE_DIRECTORY "${fixture}")
+
+# Two checkouts/configurations may be handled in one process. Explicit inputs
+# must win even when a caller has unrelated variables with the old global names.
+function(check_explicit_hook_inputs)
+  set(ROOT wrong-root)
+  set(SOURCE wrong-source)
+  set(CONFIG wrong-config)
+  set(AP_HOOK_CONFIG "{}")
+  set(first_settings "{\"windowsNinja\":\"first\",\"linuxNinja\":\"first\"}")
+  file(WRITE "${fixture}/first.json" "${first_settings}")
+  ap_hook_host_tools(CONFIG "${fixture}/first.json" OUTPUT first_ninja JSON_OUTPUT loaded)
+  ap_hook_config_set(JSON "${loaded}" KEY linuxDeps VALUE "${fixture}/deps" OUTPUT second_settings)
+  ap_hook_config_set(JSON "${second_settings}" KEY windowsDeps VALUE "${fixture}/deps" OUTPUT second_settings)
+  ap_hook_setting(JSON "${first_settings}" NAME linuxNinja OUTPUT original)
+  ap_hook_command(ROOT "${fixture}" SOURCE "${fixture}/snapshot" CONFIG "${fixture}/first.json"
+    JSON "${second_settings}" TASK audit OUTPUT command)
+  if(NOT loaded STREQUAL first_settings OR NOT first_ninja STREQUAL "first" OR
+      NOT original STREQUAL "first" OR NOT AP_HOOK_CONFIG STREQUAL "{}" OR
+      NOT "-DROOT=${fixture}" IN_LIST command OR NOT "-DSOURCE=${fixture}/snapshot" IN_LIST command OR
+      command MATCHES "wrong-(root|source|config)")
+    message(FATAL_ERROR "Hook configuration leaked through caller variables")
+  endif()
+endfunction()
+check_explicit_hook_inputs()
+
 ap_hook_git(OUTPUT unused ROOT "${fixture}" ARGS init -q)
 ap_hook_git(OUTPUT unused ROOT "${fixture}" ARGS config user.name "Hook regression")
 ap_hook_git(OUTPUT unused ROOT "${fixture}" ARGS config user.email hooks@example.invalid)

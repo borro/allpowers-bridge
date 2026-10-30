@@ -32,17 +32,16 @@ endfunction()
 function(ap_enable_mutation)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "TARGET" "")
   ap_require_arguments(PREFIX AP REQUIRED TARGET)
-  set(target "${AP_TARGET}")
   if(NOT ALLPOWERS_MUTATION)
     return()
   endif()
-  set_target_properties(${target} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF
+  set_target_properties(${AP_TARGET} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF
     CXX_SCAN_FOR_MODULES OFF
     INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF
     CXX_COMPILER_LAUNCHER "${CMAKE_COMMAND};-E;env;MULL_CONFIG=${ALLPOWERS_MULL_CONFIG}")
-  target_compile_options(${target} PRIVATE -O0 -g -grecord-command-line
+  target_compile_options(${AP_TARGET} PRIVATE -O0 -g -grecord-command-line
     "-fpass-plugin=${ALLPOWERS_MULL_PLUGIN}")
-  get_target_property(sources ${target} SOURCES)
+  get_target_property(sources ${AP_TARGET} SOURCES)
   foreach(source IN LISTS sources)
     set_property(SOURCE "${source}" APPEND PROPERTY OBJECT_DEPENDS "${ALLPOWERS_MULL_CONFIG}")
   endforeach()

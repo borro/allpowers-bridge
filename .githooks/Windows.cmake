@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 4.4)
 # The only platform adapter needed by native Windows hook tasks.
 include("${CMAKE_CURRENT_LIST_DIR}/Host.cmake")
-ap_hook_host_tools(CONFIG "${CONFIG}" OUTPUT ninja)
+ap_hook_host_tools(CONFIG "${CONFIG}" OUTPUT ninja JSON_OUTPUT settings)
 foreach(key vcvars windowsCMake windowsNinja windowsDeps windowsPython qt windowsCoverage)
-  ap_hook_setting(NAME "${key}" OUTPUT "${key}")
+  ap_hook_setting(JSON "${settings}" NAME "${key}" OUTPUT "${key}")
 endforeach()
 set(temporary "${ROOT}/build/git-hooks/temp/${TASK}")
 file(MAKE_DIRECTORY "${temporary}")

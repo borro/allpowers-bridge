@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 4.4)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake --preset native (or windows)")
 endif()
+
+# Git/archive version must be resolved before project(); identity follows at build time.
 if(NOT ALLPOWERS_ROOT)
   set(ALLPOWERS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
@@ -13,6 +15,8 @@ include(cmake/modules/project/WindowsCompiler.cmake)
 ap_configure_windows_compiler()
 ap_add_build_identity(ROOT "${ALLPOWERS_ROOT}" BUILD_ROOT "${PROJECT_BINARY_DIR}"
   RESOURCE_SOURCE "${PROJECT_SOURCE_DIR}")
+
+# Shared compiler policy, cache locations and mutually exclusive quality modes.
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 include(cmake/Dependencies.cmake)
@@ -23,6 +27,8 @@ set(ALLPOWERS_DEPS_DIR "${PROJECT_BINARY_DIR}/deps" CACHE PATH "Dependency cache
 option(ALLPOWERS_BUILD_WINDOWS "Build the static Windows BLE monitor" OFF)
 include(cmake/modules/quality/Options.cmake)
 ap_configure_quality(ROOT "${PROJECT_SOURCE_DIR}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
+
+# Portable library and tests are available independently of device SDKs.
 add_subdirectory(core)
 add_dependencies(core product-identity)
 if(BUILD_TESTING)
@@ -31,6 +37,8 @@ if(BUILD_TESTING)
     add_subdirectory(tests/fuzz)
   endif()
 endif()
+
+# Product graphs: firmware on both boards, plus optional native Windows products.
 include(cmake/modules/products/Arduino.cmake)
 ap_add_firmware_targets(ROOT "${PROJECT_SOURCE_DIR}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
 add_custom_target(products)
@@ -48,6 +56,8 @@ if(ALLPOWERS_BUILD_WINDOWS)
   ap_add_windows_packaging(ROOT "${PROJECT_SOURCE_DIR}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
   add_dependencies(products windows)
 endif()
+
+# Entry points for local checks; test registration lives with the tests.
 ap_add_mutation_target(ROOT "${PROJECT_SOURCE_DIR}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
 ap_add_analysis_targets(ROOT "${PROJECT_SOURCE_DIR}" BUILD_ROOT "${PROJECT_BINARY_DIR}")
 include(cmake/modules/quality/Targets.cmake)

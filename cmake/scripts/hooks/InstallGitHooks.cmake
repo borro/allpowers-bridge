@@ -8,7 +8,7 @@ include("${ROOT}/.githooks/Host.cmake")
 if(NOT CONFIG)
   set(CONFIG "${ROOT}/.local/hooks.json")
 endif()
-ap_hook_install_host(CONFIG "${CONFIG}" OUTPUT config KEY_OUTPUT key)
+ap_hook_install_host(ROOT "${ROOT}" CONFIG "${CONFIG}" OUTPUT config KEY_OUTPUT key)
 file(MAKE_DIRECTORY "${ROOT}/.local")
 file(WRITE "${ROOT}/.local/hooks.json" "${config}\n")
 execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${ROOT}" config --get core.hooksPath

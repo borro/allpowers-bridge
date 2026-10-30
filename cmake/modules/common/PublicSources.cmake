@@ -4,22 +4,21 @@ include("${CMAKE_CURRENT_LIST_DIR}/Arguments.cmake")
 function(ap_check_public_path)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "NAME" "")
   ap_require_arguments(PREFIX AP REQUIRED NAME)
-  set(name "${AP_NAME}")
-  if(name MATCHES "(^|/)(\\.\\.?|\\.local|\\.venv|__pycache__|build|dist|recovery|captures|reports|node_modules)(/|$)" OR
-      name MATCHES "[;\n\r\\\\]" OR IS_ABSOLUTE "${name}")
-    message(FATAL_ERROR "Non-public source path: ${name}")
+  if(AP_NAME MATCHES "(^|/)(\\.\\.?|\\.local|\\.venv|__pycache__|build|dist|recovery|captures|reports|node_modules)(/|$)" OR
+      AP_NAME MATCHES "[;\n\r\\\\]" OR IS_ABSOLUTE "${AP_NAME}")
+    message(FATAL_ERROR "Non-public source path: ${AP_NAME}")
   endif()
-  if(name MATCHES "^(LICENSE|AGENTS\\.md|CONTRIBUTING\\.md|THIRD_PARTY_NOTICES\\.md|README(\\.(ru|zh-CN|zh-TW))?\\.md|CMakeLists\\.txt|CMakePresets\\.json|\\.gitignore|\\.gitattributes|\\.editorconfig|\\.clang-format)$" OR
-      name MATCHES "^\\.github/(workflows/[a-z-]+\\.yml|dependabot\\.yml)$" OR
-      name MATCHES "^config/(arduino|devices)\\.example\\.json$" OR
-      name MATCHES "^(core|firmware|apps|drivers|tests|docs|cmake)/[A-Za-z0-9_./-]+\\.(cpp|h|ino|cmake|md|ps1|py|in)$" OR
-      name MATCHES "^(core|apps/windows|drivers/windows|tests/native|tests/fuzz)/CMakeLists\\.txt$")
+  if(AP_NAME MATCHES "^(LICENSE|AGENTS\\.md|CONTRIBUTING\\.md|THIRD_PARTY_NOTICES\\.md|README(\\.(ru|zh-CN|zh-TW))?\\.md|CMakeLists\\.txt|CMakePresets\\.json|\\.gitignore|\\.gitattributes|\\.editorconfig|\\.clang-format)$" OR
+      AP_NAME MATCHES "^\\.github/(workflows/[a-z-]+\\.yml|dependabot\\.yml)$" OR
+      AP_NAME MATCHES "^config/(arduino|devices)\\.example\\.json$" OR
+      AP_NAME MATCHES "^(core|firmware|apps|drivers|tests|docs|cmake)/[A-Za-z0-9_./-]+\\.(cpp|h|ino|cmake|md|ps1|py|in)$" OR
+      AP_NAME MATCHES "^(core|apps/windows|drivers/windows|tests/native|tests/fuzz)/CMakeLists\\.txt$")
     return()
   endif()
-  if(name IN_LIST AP_PUBLIC_SPECIAL_FILES)
+  if(AP_NAME IN_LIST AP_PUBLIC_SPECIAL_FILES)
     return()
   endif()
-  message(FATAL_ERROR "File needs explicit publication review: ${name}")
+  message(FATAL_ERROR "File needs explicit publication review: ${AP_NAME}")
 endfunction()
 
 set(AP_PUBLIC_SPECIAL_FILES
@@ -79,17 +78,15 @@ set(AP_PUBLIC_SPECIAL_FILES
 function(ap_public_sources)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "OUTPUT;ROOT" "")
   ap_require_arguments(PREFIX AP REQUIRED OUTPUT ROOT)
-  set(output "${AP_OUTPUT}")
-  set(root "${AP_ROOT}")
-  if(EXISTS "${root}/.git")
+  if(EXISTS "${AP_ROOT}/.git")
     find_package(Git REQUIRED)
     execute_process(COMMAND "${GIT_EXECUTABLE}" -c core.quotepath=false ls-files
-      --cached --others --exclude-standard WORKING_DIRECTORY "${root}"
+      --cached --others --exclude-standard WORKING_DIRECTORY "${AP_ROOT}"
       OUTPUT_VARIABLE inventory COMMAND_ERROR_IS_FATAL ANY)
     execute_process(COMMAND "${GIT_EXECUTABLE}" -c core.quotepath=false ls-files --deleted
-      WORKING_DIRECTORY "${root}" OUTPUT_VARIABLE deleted COMMAND_ERROR_IS_FATAL ANY)
-  elseif(EXISTS "${root}/SOURCE_FILES")
-    file(READ "${root}/SOURCE_FILES" inventory)
+      WORKING_DIRECTORY "${AP_ROOT}" OUTPUT_VARIABLE deleted COMMAND_ERROR_IS_FATAL ANY)
+  elseif(EXISTS "${AP_ROOT}/SOURCE_FILES")
+    file(READ "${AP_ROOT}/SOURCE_FILES" inventory)
   else()
     message(FATAL_ERROR "Source packaging requires Git or the source kit's SOURCE_FILES inventory")
   endif()
@@ -103,9 +100,9 @@ function(ap_public_sources)
   endif()
   foreach(name IN LISTS files)
     ap_check_public_path(NAME "${name}")
-    if(NOT EXISTS "${root}/${name}" OR IS_DIRECTORY "${root}/${name}" OR IS_SYMLINK "${root}/${name}")
+    if(NOT EXISTS "${AP_ROOT}/${name}" OR IS_DIRECTORY "${AP_ROOT}/${name}" OR IS_SYMLINK "${AP_ROOT}/${name}")
       message(FATAL_ERROR "Public source must be a regular file: ${name}")
     endif()
   endforeach()
-  set(${output} "${files}" PARENT_SCOPE)
+  set(${AP_OUTPUT} "${files}" PARENT_SCOPE)
 endfunction()

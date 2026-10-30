@@ -35,7 +35,8 @@ function(ap_add_windows_packaging)
   add_custom_target(release
     COMMAND "${CMAKE_CPACK_COMMAND}" --config "${PROJECT_BINARY_DIR}/CPackConfig.cmake"
     DEPENDS windows source-package-check USES_TERMINAL VERBATIM)
-  if(BUILD_TESTING)
+  if(BUILD_TESTING AND NOT ALLPOWERS_VERIFY)
+    # verify already runs the full Qt suite through check-all before packaging.
     add_dependencies(release windows-monitor-test)
   endif()
   add_custom_target(source-package-check

@@ -83,6 +83,16 @@ The Cppcheck cache key includes its setup module and all common helpers it uses.
 
 ## Quality modes and hooks
 
+`cmake --workflow --preset verify` configures the root verification build and
+builds its `verify` target. `modules/quality/Verification.cmake` connects existing
+product/check targets and isolated preset configurations; it does not duplicate
+the check implementations. Tool preparation precedes child configuration, tests
+depend on their binaries, and Windows packaging depends on the complete check
+graph. `.githooks/Host.cmake` owns the optional Windows-to-WSL bridge. This workflow
+checks working-tree sources; Git hooks retain their separate snapshot semantics.
+See [complete local verification](building.md#complete-local-verification) for
+prerequisites and unavailable-platform reporting.
+
 `ap_configure_quality(ROOT ... BUILD_ROOT ...)` validates coverage, sanitizers,
 mutation, fuzzing and static analysis centrally. These modes use separate build
 directories. Instrumentation is enabled on selected targets; ordinary targets
@@ -91,7 +101,8 @@ retain their special instrumentation settings.
 
 Hook tasks configure through the existing presets, overriding only their build
 and result directories, local tool locations, parallelism and the 30-second fuzz
-budget. Platform adapters live in `.githooks`; the scheduler and check runners
+budget. They reuse `check` / `check-memcheck`; the unit-only hook tasks keep their
+portable test filter. Platform adapters live in `.githooks`; the scheduler and check runners
 are CMake. On Linux, Windows checks remain the responsibility of CI.
 
 Examples from the source root:

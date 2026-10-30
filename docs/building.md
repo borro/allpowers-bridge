@@ -9,6 +9,51 @@ cache contracts and regression checks.
 
 Optional parallel commit/push checks are described in [local Git hooks](ci.md#local-git-hooks).
 
+## Complete local verification
+
+From the repository root, including when `build/verify` does not exist:
+
+```sh
+cmake --workflow --preset verify
+```
+
+Use an x64 Developer PowerShell on Windows, or a Linux compiler environment.
+CMake 4.4+, Git, Python 3.10+ and the host compiler must be installed. The workflow
+prepares pinned Ninja and build dependencies itself; uncached downloads need
+network access on the host performing them, including WSL. It uses `build/verify`, the
+shared `build/deps` downloads, and separate result directories for each mode;
+existing normal builds are not cleaned. `ALLPOWERS_QT_ROOT` may select an existing
+static Qt SDK through a user preset or an initial configure.
+
+The `verify` target builds the portable library/tests, both board firmwares and,
+on Windows, the monitor, widget and UPS driver. `check-all` runs the current
+configuration's CTest suite (including Qt and build contracts), Python maintenance
+tests, formatting controls, working-tree/history/secret audits and whitespace
+checks. Separate preset builds run coverage with the existing thresholds,
+sanitizers, Valgrind and its failure control, static analysis, mutation controls
+and a 30-second fuzz budget per harness. Test binaries are dependencies of
+`check`; successful checks are never cached as stamps. Child builds use at most
+two concurrent configurations per host with two compiler jobs each.
+
+On Linux install GCC 13, Clang 18, clang-tidy-18, Valgrind, Python's venv support
+and dpkg-deb for the complete matrix. The existing setup routines supply gcovr,
+Cppcheck, Mull, actionlint and ShellCheck. Missing host tools are listed as
+`Unavailable` during configuration; a selected check that fails is a failure,
+not a skip. Windows-only checks remain in CI on Linux.
+
+Windows also runs the Linux workflow in WSL Ubuntu when CMake 4.4+ is available
+there. The existing optional `.local/hooks.json` supplies the distribution,
+Linux CMake and existing analysis/coverage tool paths; hook installation is not required. Without WSL,
+Linux coverage, sanitizers, Valgrind, mutation, fuzz and workflow lint remain
+unavailable locally. No machine-wide packages are installed automatically.
+
+Windows source archives, their rebuild tests and CPack run only after all selected
+checks and products succeed. Firmware builds prepare their existing firmware/source
+packages. The workflow never publishes, flashes hardware or installs drivers.
+For a single already-configured mode use `cmake --build <binary> --target check`.
+
+## Individual builds
+
 Git, CMake 4.4+, Ninja and a C++23 compiler are required. The pinned build tools
 are CMake 4.4.4 and Ninja 1.13.2. No Python or uv wrapper drives the build, tests or
 packaging. The optional USB maintenance tools are separate; upstream Arduino

@@ -2,6 +2,9 @@
   "version": 6,
   "cmakeMinimumRequired": {"major": 4, "minor": 4, "patch": 0},
   "configurePresets": [
+    {"name": "verify", "inherits": "base", "displayName": "Build products and run every available local check",
+     "cacheVariables": {"ALLPOWERS_VERIFY": "ON",
+       "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/verify/dist"}},
     {"name": "base", "hidden": true, "generator": "Ninja",
      "binaryDir": "${sourceDir}/build/${presetName}",
      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON",
@@ -51,6 +54,8 @@
        "ALLPOWERS_RELEASE_DIR": "${sourceDir}/build/${presetName}/dist"}}
   ],
   "buildPresets": [
+    {"name": "verify", "configurePreset": "verify", "targets": ["verify"], "jobs": 2,
+     "environment": {"PATH": "${sourceDir}/build/verify/tools/ninja${pathListSep}$penv{PATH}"}},
     {"name": "native", "configurePreset": "native", "targets": ["core", "native-tests"]},
     {"name": "static-analysis-linux", "configurePreset": "static-analysis-linux", "targets": ["static-analysis"]},
     {"name": "fuzz-linux", "configurePreset": "fuzz-linux", "targets": ["fuzz-tests"]},
@@ -63,6 +68,9 @@
     {"name": "coverage-windows", "configurePreset": "coverage-windows", "targets": ["core", "native-tests", "windows"]},
     {"name": "sanitizers-linux", "configurePreset": "sanitizers-linux", "targets": ["core", "native-tests"]},
     {"name": "firmware-linux", "configurePreset": "firmware-linux", "targets": ["firmware"]}
+  ],
+  "workflowPresets": [
+    {"name": "verify", "steps": [{"type": "configure", "name": "verify"}, {"type": "build", "name": "verify"}]}
   ],
   "testPresets": [
     {"name": "native", "configurePreset": "native", "execution": {"jobs": 4}, "output": {"outputOnFailure": true}},

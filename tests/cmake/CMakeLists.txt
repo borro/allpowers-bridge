@@ -27,6 +27,7 @@ ap_add_build_contract(NAME dependency-fingerprint SCRIPT tests/cmake/dependency_
 ap_add_build_contract(NAME release-publish SCRIPT tests/cmake/release_publish_test.cmake)
 ap_add_build_contract(NAME infrastructure SCRIPT tests/cmake/infrastructure_test.cmake)
 ap_add_build_contract(NAME module-boundaries SCRIPT tests/cmake/module_boundaries_test.cmake)
+ap_add_build_contract(NAME verification-graph SCRIPT tests/cmake/verification_test.cmake)
 ap_add_build_contract(NAME sdk-tools SCRIPT tests/cmake/sdk_tools_test.cmake)
 
 if(MSVC OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))

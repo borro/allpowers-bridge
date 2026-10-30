@@ -98,6 +98,8 @@ Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/a
 
 After configuration, local checks and CI use CMake targets (`audit`, `format-check`, `workflow-lint`, `static-analysis`); [standalone bootstrap entries](docs/cmake.md) prepare tools before configuration.
 
+`cmake --workflow --preset verify` configures a fresh build, builds all host products and runs every available local check, then packages Windows products. See [prerequisites and platform coverage](docs/building.md#complete-local-verification).
+
 CI also requires Windows application formatting and per-area host coverage minimums. [Formatting](docs/building.md#formatting) · [Coverage policy](docs/building.md#test-coverage).
 
 [Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the toolchains.

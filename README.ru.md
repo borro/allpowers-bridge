@@ -98,6 +98,8 @@ Linux поддерживает ядро и сборку прошивок, при
 
 После конфигурации локальные проверки и CI используют цели CMake (`audit`, `format-check`, `workflow-lint`, `static-analysis`); [отдельные стартовые скрипты](docs/cmake.md) готовят инструменты до конфигурации.
 
+`cmake --workflow --preset verify` настраивает сборку с нуля, собирает все продукты хоста, запускает все доступные локальные проверки и затем упаковывает Windows-продукты. См. [необходимые инструменты и охват платформ](docs/building.md#complete-local-verification).
+
 CI также требует соблюдения форматирования Windows-приложения и минимального покрытия host-кода по отдельным областям. [Форматирование](docs/building.md#formatting) · [Правила покрытия](docs/building.md#test-coverage).
 
 [Локальные Git-хуки](docs/ci.md#local-git-hooks) используют CMake/CTest для параллельных проверок подготовленного к коммиту снимка и отправляемых коммитов, без запуска через PowerShell. Windows использует WSL; на Linux Windows-проверки остаются CI. Установка после подготовки инструментов: `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake`.

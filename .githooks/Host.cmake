@@ -2,6 +2,58 @@ include("${CMAKE_CURRENT_LIST_DIR}/../cmake/modules/common/Arguments.cmake")
 # All host-specific hook integration lives here and in Windows.cmake.
 include_guard(GLOBAL)
 
+# The complete local workflow reuses the host adapter, without requiring hook
+# installation or validating an index snapshot instead of the working tree.
+function(ap_add_wsl_verification)
+  cmake_parse_arguments(PARSE_ARGV 0 AP "" "ROOT;BUILD_ROOT" "")
+  ap_require_arguments(PREFIX AP REQUIRED ROOT BUILD_ROOT)
+  find_program(wsl wsl.exe)
+  set(distribution Ubuntu)
+  set(linuxCMake cmake)
+  set(options)
+  if(EXISTS "${AP_ROOT}/.local/hooks.json")
+    file(READ "${AP_ROOT}/.local/hooks.json" settings)
+    foreach(key distribution linuxCMake)
+      string(JSON value ERROR_VARIABLE missing GET "${settings}" "${key}")
+      if(NOT missing)
+        set(${key} "${value}")
+      endif()
+    endforeach()
+    foreach(pair "tidy|ALLPOWERS_CLANG_TIDY" "linuxCoverage|ALLPOWERS_COVERAGE_TOOL"
+        "mull|ALLPOWERS_MULL_ROOT" "cppcheck|ALLPOWERS_CPPCHECK_ROOT")
+      string(REPLACE "|" ";" fields "${pair}")
+      list(GET fields 0 key)
+      list(GET fields 1 variable)
+      string(JSON value ERROR_VARIABLE missing GET "${settings}" "${key}")
+      if(NOT missing)
+        list(APPEND options "-D${variable}=${value}")
+      endif()
+    endforeach()
+  endif()
+  if(wsl)
+    execute_process(COMMAND "${wsl}" -d "${distribution}" --exec "${linuxCMake}" --version
+      RESULT_VARIABLE code OUTPUT_VARIABLE version ERROR_QUIET TIMEOUT 20)
+  endif()
+  if(NOT wsl OR NOT code STREQUAL "0" OR NOT version MATCHES "cmake version ([0-9.]+)" OR
+      CMAKE_MATCH_1 VERSION_LESS 4.4)
+    message(STATUS "Unavailable: Linux checks in WSL (Ubuntu needs CMake 4.4+; optional tool paths: .local/hooks.json)")
+    return()
+  endif()
+  foreach(key ROOT BUILD_ROOT)
+    execute_process(COMMAND "${wsl}" -d "${distribution}" --exec wslpath -a -u "${AP_${key}}"
+      OUTPUT_VARIABLE linux_${key} OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+  endforeach()
+  add_custom_target(check-linux
+    COMMAND "${wsl}" -d "${distribution}" --exec "${linuxCMake}" --preset verify
+      -S "${linux_ROOT}" -B "${linux_BUILD_ROOT}/wsl" ${options}
+      "-DALLPOWERS_RELEASE_DIR=${linux_BUILD_ROOT}/wsl/dist"
+    COMMAND "${wsl}" -d "${distribution}" --exec "${linuxCMake}" -E env
+      --modify "PATH=path_list_prepend:${linux_BUILD_ROOT}/wsl/tools/ninja" --
+      "${linuxCMake}" --build "${linux_BUILD_ROOT}/wsl" --target check-all --parallel 2
+    JOB_POOL verification VERBATIM)
+  add_dependencies(check-all check-linux)
+endfunction()
+
 function(ap_hook_setting)
   cmake_parse_arguments(PARSE_ARGV 0 AP "" "JSON;NAME;OUTPUT" "")
   ap_require_arguments(PREFIX AP REQUIRED JSON NAME OUTPUT)

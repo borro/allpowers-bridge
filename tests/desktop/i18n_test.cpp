@@ -274,8 +274,10 @@ private slots:
       });
       choice->setCurrentIndex(choice->findData(target));
       QCOMPARE(qApp->property("ui_language").toString(), "ru");
-      QTRY_COMPARE(savedUiLanguage(folder.path()), target);
     }
+    // Window destruction drains queued settings writes. Polling the file while
+    // the worker saves can block QSaveFile's atomic replacement on Windows.
+    QCOMPARE(savedUiLanguage(folder.path()), target);
     UiLanguage language(savedUiLanguage(folder.path()));
     MonitorWindow reopened(true);
     QCOMPARE(reopened.findChild<QStackedWidget *>()->currentIndex(), 1);

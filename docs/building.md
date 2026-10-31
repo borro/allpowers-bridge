@@ -465,10 +465,10 @@ Ninja clean removes compiled outputs; build/ and dist/ are disposable. Neither
 contains user history or private recovery storage. Do not delete .local/ or the
 external preservation folders when cleaning build output.
 
-## Parser fuzzing
+## Protocol and state-machine fuzzing
 
-The `fuzz` job exercises the portable BLE decoder, HID wire codec and archive
-server with Clang 18
+The `fuzz` job exercises the portable BLE decoder, HID wire codec, archive
+server, persistent archive logic and telemetry/UPS state machines with Clang 18
 libFuzzer and fatal ASan/UBSan. It runs on
 full push/PR and manual runs and gates release publication. Each target
 runs for 120 seconds, with a 5-second per-input timeout and a 1024 MiB RSS limit;
@@ -480,14 +480,25 @@ inputs or device behavior are correct.
 A separate `fuzz-policy` control requires a good input to pass and a deliberate
 division by zero to fail with a UBSan diagnostic and an exact saved reproducer.
 
-BLE checks all four model selections, unchanged output on rejection, and decoded
-field invariants. CDC covers direct commands and byte-by-byte collection, blocked
-and short writes, and expiration with an empty in-memory archive. It does not
-exercise BLE/USB hardware or Windows/Qt. HID wire fuzzing exercises raw and
+BLE checks all four model selections and an invalid model value, unchanged output
+on rejection, and decoded field invariants. These targets do not exercise real
+BLE/USB hardware, Windows/Qt or concurrent OS handles. HID wire fuzzing exercises raw and
 CRC-correct malformed reports, round trips, corrupted/foreign/duplicate/missing
 fragments and bounded reassembly. Stateful HID server fuzzing mixes four archive
 identities, page retries, close, slot pressure, expiry and timer wraparound,
-checking repeatable replies, record CRCs and the two-slot limit.
+checking repeatable replies, record CRCs and the two-slot limit. It also covers
+empty and 2880-record archives, metadata size boundaries, clock requests, invalid
+operations, provider failures and stopping with active snapshots.
+
+`fuzz_archive` drives an in-memory flash ring through torn writes/erases, read
+failures, corrupt records and reconstruction. An independent scan checks recovery
+against persisted bytes, including sector, ring and sequence wrap boundaries.
+It also checks frozen snapshot independence and bounds, record serialization,
+archive cursors/digests, operation nonces and boot-epoch storage failures.
+`fuzz_telemetry` drives packet/time/reset sequences through the shared session,
+checking rejection without state changes, unknown source invalidation, freshness,
+UPS eligibility, archive sample flags, reconnect timing, UTC anchors and UPS cache
+ordering/expiry. Loops and allocations are bounded independently of input size.
 
 Install Ubuntu's `clang-18` and `libclang-rt-18-dev`, then run:
 
@@ -501,7 +512,9 @@ Only fuzz targets receive libFuzzer/ASan/UBSan flags. Coverage, mutation and ord
 sanitizer builds must use separate directories. `tests/fuzz/seed_corpus.py` creates
 reviewable protocol seeds (valid packets/commands, overflow and malformed cases)
 and decodes the retained synthetic inputs from `tests/fuzz/corpus/` into
-`build/fuzz-linux/fuzz/{ble,hid_wire,hid_server}/corpus`; it does not delete local discoveries.
+`build/fuzz-linux/fuzz/{ble,hid_wire,hid_server,archive,telemetry}/corpus`;
+it does not delete local discoveries. Archive and telemetry start with generated
+boundary/event sequences; the three protocol targets also load retained corpora.
 CI starts from both sets on each fresh checkout and uses seed `20261027`.
 The retained inputs use SHA-256 names and text hex encoding; the generator checks
 their decoded hashes. See [corpus provenance and refresh procedure](../tests/fuzz/corpus/README.md).
@@ -516,7 +529,8 @@ HID failure after rebuilding the same revision:
 build/fuzz-linux/tests/fuzz/fuzz_hid_wire path/to/crash-input -runs=1
 ```
 
-For BLE or HID failures use `fuzz_ble`, `fuzz_hid_wire` or `fuzz_hid_server`. Replay uses the exact saved bytes rather than
+Use the corresponding `fuzz_ble`, `fuzz_hid_wire`, `fuzz_hid_server`, `fuzz_archive`
+or `fuzz_telemetry` executable. Replay uses the exact saved bytes rather than
 depending on timing or re-running the entire random search.
 
 ## Static analysis

@@ -42,8 +42,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   if (size >= 32) {
     HistoryFormat::Record record;
     decodeRecord(data, record);
+    std::array<uint8_t, 32> row{};
+    memcpy(row.data(), data, row.size());
+    // Reach semantic record checks beyond magic/CRC, including Fresh + bad SOC.
+    put32(row.data(), HistoryFormat::kMagic | (get32(data) & 0xffff));
+    put32(row.data() + 28, crc32(row.data(), 28));
+    const bool accepted = decodeRecord(row.data(), record);
+    assert(accepted == (get32(row.data() + 4) != 0 &&
+                       (!(row[27] & HistoryFormat::Fresh) || row[26] <= 100)));
+    if (accepted) {
+      std::array<uint8_t, 32> copy{};
+      encodeRecord(record, copy.data());
+      assert(copy == row);
+    }
   }
   Request request; request.boot = 1; request.operation.bytes[0] = 1;
+  capabilities(report.data(), request.boot, size && (data[0] & 1));
+  assert(sealed(report.data(), Payload) && get64(report.data() + 6) == request.boot);
+  assert(report[14] == Version && get16(report.data() + 17) == 2880);
+  assert(!fragment(request, Result::Ok, data, 0, 0, report.data()));
+  assert(!fragment(request, Result::Ok, data, MessageLimit + 1, 0, report.data()));
+  assert(!fragment(request, Result::Ok, data, size, size, report.data()));
   Assembly raw; raw.expect(request);
   for (size_t at = 0; at < size;) {
     const size_t n = size - at < Payload ? size - at : Payload;
@@ -76,5 +95,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     at += n;
   }
   assert(complete.size() == length && !memcmp(complete.bytes, message.data(), length));
+  assert(complete.status() == Result::Ok);
   return 0;
 }

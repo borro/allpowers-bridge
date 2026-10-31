@@ -96,6 +96,8 @@ never flash boards or connect to stations.
 
 Fuzzing starts from generated examples and a retained synthetic
 [corpus](tests/fuzz/corpus/README.md), so fresh CI runs reuse paths found by longer runs.
+Five targets cover BLE/HID parsing, HID server state, archive recovery with
+injected storage failures, and telemetry/time/UPS state transitions in memory.
 
 Builds and analyzers run in parallel; release packages are published only for valid `v` tags. Documentation-only changes use short checks. Windows applications use MSVC/WinRT, and both firmware boards build on Linux. See [CI jobs, images and cache ownership](docs/ci.md).
 

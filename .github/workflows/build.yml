@@ -354,9 +354,9 @@ jobs:
         cmake --preset fuzz-linux
         cmake --build --preset fuzz-linux --parallel 4
       id: build-fuzzers-and-seed-corpora
-    - name: Fuzz BLE and CDC under ASan and UBSan
+    - name: Fuzz protocols, archives and telemetry under ASan and UBSan
       run: ctest --preset fuzz-linux --verbose --output-junit "$GITHUB_WORKSPACE/build/fuzz-linux/ci-tests.xml"
-      id: fuzz-ble-hid-under-asan-and-ubsan
+      id: fuzz-under-asan-and-ubsan
     - name: Record analysis tool versions
       if: always()
       run: cmake -P cmake/scripts/ci/CiEnvironment.cmake

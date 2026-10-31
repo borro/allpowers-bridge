@@ -9,7 +9,7 @@ static auto fields(const AllpowersModels::Decoded &d) {
 }
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *bytes, size_t size) {
   using namespace AllpowersModels;
-  for (auto model : {Model::Unknown, Model::Old10, Model::Legacy16, Model::R2500V2}) {
+  for (auto model : {Model::Unknown, Model::Old10, Model::Legacy16, Model::R2500V2, Model(255)}) {
     Decoded d; d.soc=77; d.known=0xabc; d.sourceRaw=123; d.receivedAtMs=456;
     const Decoded before=d;
     auto result=decode(model,bytes,size,123456,d);

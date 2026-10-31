@@ -49,7 +49,7 @@ function(ap_add_wsl_verification)
       "-DALLPOWERS_RELEASE_DIR=${linux_BUILD_ROOT}/wsl/dist"
     COMMAND "${wsl}" -d "${distribution}" --exec "${linuxCMake}" -E env
       --modify "PATH=path_list_prepend:${linux_BUILD_ROOT}/wsl/tools/ninja" --
-      "${linuxCMake}" --build "${linux_BUILD_ROOT}/wsl" --target check-all --parallel 2
+      "${linuxCMake}" --build "${linux_BUILD_ROOT}/wsl" --target check-all firmware --parallel 2
     JOB_POOL verification VERBATIM)
   add_dependencies(check-all check-linux)
 endfunction()

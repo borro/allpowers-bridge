@@ -521,8 +521,10 @@ static size_t diagnosticText(uint8_t *out,size_t capacity){
 static bool captureStatus(HistoryFormat::StatusSnapshot &frame,uint32_t now){
   frame={};frame.nowMs=now;frame.state=connectionSnapshot();auto report=upsSnapshot();
   frame.ups.runtime_seconds=report.runtime_seconds;frame.ups.status=report.status;
-  frame.historyAvailable=history.tryStatus(frame.log);uint32_t revision;frame.target=targetSnapshot(revision);
-  portENTER_CRITICAL(&dataLock);frame.nearby=deviceCatalog.snapshot();portEXIT_CRITICAL(&dataLock);
+  frame.historyAvailable=history.tryStatus(frame.log);uint32_t revision;frame.target.identity=targetSnapshot(revision).identity;
+  portENTER_CRITICAL(&dataLock);const auto nearby=deviceCatalog.snapshot();
+  memcpy(frame.nearby.selectedMAC,nearby.selectedMAC,sizeof(frame.nearby.selectedMAC));
+  frame.nearby.selectedIndex=nearby.selectedIndex;frame.nearby.total=nearby.total;portEXIT_CRITICAL(&dataLock);
   auto d=diagnosticsSnapshot();frame.d={d.usbMounted,d.connects,d.drops,d.heapFree,d.heapMin,d.psramFree,d.resetCode};
   frame.productVersion=AP_PRODUCT_VERSION;frame.productCommit=AP_PRODUCT_COMMIT;frame.productDirty=AP_PRODUCT_DIRTY;
   frame.protocolVersion=ADAPTER_VERSION;frame.boardId=Board::id;frame.panelName=Board::panelName;

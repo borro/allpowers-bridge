@@ -41,52 +41,52 @@
       ]
     },
     "firmware/R2500Adapter/GraphHistory.h": {
-      "sha256": "8bf225e8a0440a6c7323e49d418d0254e3c996f93b2da41561e67810db582c3b",
+      "sha256": "40e504c09f4ecba2aacac8757476a5ad437b863e5bfd8b304460f43991722cd2",
       "mutants": [
         {
-          "id": "cxx_add_to_sub:firmware/R2500Adapter/GraphHistory.h:66:83:66:84",
+          "id": "cxx_add_to_sub:firmware/R2500Adapter/GraphHistory.h:67:83:67:84",
           "replacement": "-",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:10:9:10:11",
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:11:9:11:11",
           "replacement": ">",
           "category": "equivalent",
           "reason": "При age == kHorizon логарифмическая формула также возвращает x=32."
         },
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/GraphHistory.h:61:82:61:83",
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/GraphHistory.h:62:82:62:83",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_gt:firmware/R2500Adapter/GraphHistory.h:61:25:61:27",
+          "id": "cxx_le_to_gt:firmware/R2500Adapter/GraphHistory.h:62:25:62:27",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:60:38:60:40",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:61:38:61:40",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:60:52:60:54",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:61:52:61:54",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:61:25:61:27",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:62:25:62:27",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphHistory.h:66:16:66:17",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphHistory.h:67:16:67:17",
           "replacement": "<=",
           "category": "sanitizer-confirmed",
           "reason": "Цикл selfTest записывает p[3] при массиве p[3]: выход за границу, не эквивалентность. Подтверждено отдельным Clang ASan/UBSan replay; для HistoryExport нужен ASan field-padding=2. Исходная программа прошла тот же контроль."
@@ -94,64 +94,64 @@
       ]
     },
     "firmware/R2500Adapter/StationPicker.h": {
-      "sha256": "3b63355c47e9a2cb6866d16eb0b99dfb0be429812bd7a03ae0e4b5de6c5d97bb",
+      "sha256": "8e2fed1a60684356f57b4391abb9c923f610ae5d8d095f7b3dbb275afbaa2458",
       "mutants": [
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/StationPicker.h:137:34:137:36",
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/StationPicker.h:138:34:138:36",
           "replacement": ">",
           "category": "equivalent",
           "reason": "При полном каталоге из 24 записей защищены максимум две; victim находится до индекса 0."
         },
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/StationPicker.h:171:25:171:26",
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/StationPicker.h:172:25:172:26",
           "replacement": ">=",
           "category": "equivalent",
           "reason": "Ограничение offset: при равенстве оба результата равны count_."
         },
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/StationPicker.h:173:27:173:28",
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/StationPicker.h:174:27:174:28",
           "replacement": ">=",
           "category": "equivalent",
           "reason": "Ограничение размера страницы: при равенстве обе ветки дают kPageSize."
         },
         {
-          "id": "cxx_lt_to_ge:firmware/R2500Adapter/StationPicker.h:297:24:297:25",
+          "id": "cxx_lt_to_ge:firmware/R2500Adapter/StationPicker.h:298:24:298:25",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_ge:firmware/R2500Adapter/StationPicker.h:344:29:344:30",
+          "id": "cxx_lt_to_ge:firmware/R2500Adapter/StationPicker.h:345:29:345:30",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:140:18:140:19",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:141:18:141:19",
           "replacement": "<=",
           "category": "equivalent",
           "reason": "Из тех же инвариантов victim не может быть 0; изменение границы не влияет на выбор."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:344:29:344:30",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:345:29:345:30",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:352:44:352:45",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:353:44:353:45",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:97:27:97:28",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/StationPicker.h:98:27:98:28",
           "replacement": "<=",
           "category": "sanitizer-confirmed",
           "reason": "find читает entries_[count_]; при полном каталоге это выход за границу массива. Подтверждено отдельным Clang ASan/UBSan replay; для HistoryExport нужен ASan field-padding=2. Исходная программа прошла тот же контроль."
         },
         {
-          "id": "cxx_mul_to_div:firmware/R2500Adapter/StationPicker.h:349:40:349:41",
+          "id": "cxx_mul_to_div:firmware/R2500Adapter/StationPicker.h:350:40:350:41",
           "replacement": "/",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
@@ -175,110 +175,110 @@
         }
       ]
     },
-    "firmware/R2500Adapter/HidTelemetryServer.h": {
-      "sha256": "d5e9c813a74b264b6e497e7ea494d4ca4adac4aed24bd48f8456b70821b94866",
+    "core/src/HidTelemetryServer.h": {
+      "sha256": "b31920996a090d6f3f08a6be84fb34001c6af5963b2fe6ea136921a508a8e685",
       "mutants": [
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HidTelemetryServer.h:89:53:89:54",
+          "id": "cxx_lt_to_le:core/src/HidTelemetryServer.h:75:53:75:54",
           "replacement": "<=",
           "category": "equivalent",
           "reason": "При равенстве остатка лимиту обе ветви выбора минимума возвращают одно и то же значение: 28 байт для фрагмента или 8 записей для страницы. Замена < на <= не меняет результат ни для одного входа; проверки полных и неполных фрагментов/страниц сохранены."
         }
       ]
     },
-    "firmware/R2500Adapter/HistoryClock.h": {
+    "core/src/HistoryClock.h": {
       "sha256": "05f4c9c50e6a0b8baa4cb10c3dd12f61e62c516094efa5b1e9dffb42d9a46287",
       "mutants": [
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/HistoryClock.h:12:47:12:48",
+          "id": "cxx_gt_to_ge:core/src/HistoryClock.h:12:47:12:48",
           "replacement": ">=",
           "category": "equivalent",
           "reason": "При observedUptime == epoch база UTC равна нулю: исходная ветвь возвращает false после вычисления, мутант возвращает false раньше. Provider использует выходную базу только при успешном candidate, поэтому оба варианта отвергают запрос без commit и изменения времени. Значение выходного параметра при false не является результатом операции."
         }
       ]
     },
-    "firmware/R2500Adapter/HistoryRing.h": {
-      "sha256": "66afd5902e1b58911bbe425445000f0f61c27fd3d1ce0afc86ae6e88463fa516",
+    "core/src/HistoryRing.h": {
+      "sha256": "d9ec74f54e7f9871a647c88d356d143e9bee5877d427af75bc437cffa86289e9",
       "mutants": [
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/HistoryRing.h:91:83:91:84",
+          "id": "cxx_gt_to_ge:core/src/HistoryRing.h:92:83:92:84",
           "replacement": ">=",
           "category": "equivalent",
           "reason": "При count == n присваивание count=n ничего не меняет."
         },
         {
-          "id": "cxx_gt_to_le:firmware/R2500Adapter/HistoryRing.h:91:83:91:84",
+          "id": "cxx_gt_to_le:core/src/HistoryRing.h:92:83:92:84",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_gt:firmware/R2500Adapter/HistoryRing.h:105:22:105:24",
+          "id": "cxx_le_to_gt:core/src/HistoryRing.h:106:22:106:24",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_gt:firmware/R2500Adapter/HistoryRing.h:114:22:114:24",
+          "id": "cxx_le_to_gt:core/src/HistoryRing.h:115:22:115:24",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryRing.h:105:22:105:24",
+          "id": "cxx_le_to_lt:core/src/HistoryRing.h:106:22:106:24",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryRing.h:114:22:114:24",
+          "id": "cxx_le_to_lt:core/src/HistoryRing.h:115:22:115:24",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_ge:firmware/R2500Adapter/HistoryRing.h:91:54:91:55",
+          "id": "cxx_lt_to_ge:core/src/HistoryRing.h:92:54:92:55",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryRing.h:91:54:91:55",
+          "id": "cxx_lt_to_le:core/src/HistoryRing.h:92:54:92:55",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/HistoryRing.h:94:20:94:21",
+          "id": "cxx_lt_to_le:core/src/HistoryRing.h:95:20:95:21",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_mul_to_div:firmware/R2500Adapter/HistoryRing.h:132:72:132:73",
+          "id": "cxx_mul_to_div:core/src/HistoryRing.h:133:72:133:73",
           "replacement": "/",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_mul_to_div:firmware/R2500Adapter/HistoryRing.h:137:31:137:32",
+          "id": "cxx_mul_to_div:core/src/HistoryRing.h:138:31:138:32",
           "replacement": "/",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         }
       ]
     },
-    "firmware/R2500Adapter/HistoryWire.h": {
-      "sha256": "12978d77e40d3c1f71ca902dcb76481fbd1687123681d697af6d2c3ceb2865ba",
+    "core/src/HistoryWire.h": {
+      "sha256": "15ca4bf37a07b9a2b2f7169e0c76c64b7a63cf3b5262eba0a42e92043f2e2b26",
       "mutants": [
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/HistoryWire.h:43:31:43:33",
+          "id": "cxx_ge_to_gt:core/src/HistoryWire.h:43:31:43:33",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/HistoryWire.h:43:12:43:14",
+          "id": "cxx_le_to_lt:core/src/HistoryWire.h:43:12:43:14",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."

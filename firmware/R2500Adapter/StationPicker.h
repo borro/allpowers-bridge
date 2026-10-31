@@ -73,6 +73,7 @@ inline Target targetOf(const Entry &entry) {
   return target;
 }
 inline bool sameMAC(const char *left, const char *right) {
+  if (!left || !right) return false;
   return validMAC(left) && validMAC(right) && memcmp(left, right, 18) == 0;
 }
 

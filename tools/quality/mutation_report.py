@@ -155,8 +155,8 @@ def main():
         for path in output.glob(pattern):
             path.unlink()
     pairs = json.loads(args.manifest.read_text(encoding="utf-8"))
-    if len(pairs) != 8:
-        raise ValueError("Expected six native test executables and two shared-library runs")
+    if len(pairs) != 9:
+        raise ValueError("Expected seven native test executables and two shared-library runs")
     tests = sorted({test for _, test in pairs})
     for test in tests:
         run([test], output / f"baseline-{Path(test).name}.log", root, timeout=30)

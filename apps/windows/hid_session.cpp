@@ -1,5 +1,5 @@
-#include "../../firmware/R2500Adapter/HidTelemetryServer.h"
 #include "usb_hid.h"
+#include <HidHistoryWire.h>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <array>

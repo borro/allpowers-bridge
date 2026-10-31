@@ -104,6 +104,8 @@ After configuration, local checks and CI use CMake targets (`audit`, `format-che
 
 CI also requires Windows application formatting and per-area host coverage minimums. [Formatting](docs/building.md#formatting) · [Coverage policy](docs/building.md#test-coverage).
 
+Windows applications depend on `core/`, never on firmware headers. Firmware images and device-specific tests build only on Linux; the Windows `verify` workflow delegates these to WSL when available.
+
 [Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the toolchains.
 
 CI submits the pinned C/C++ dependencies from `cmake/Dependencies.cmake` to the [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). Pull requests validate the snapshot; submission runs only from the default branch. CI summaries and artifacts include an inventory with repository, source and notice links. [Scope and local validation](docs/ci.md#cc-dependency-graph).

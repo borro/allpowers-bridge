@@ -10,7 +10,7 @@
      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON",
        "ALLPOWERS_RELEASE_DIR": "${sourceDir}/dist",
        "ALLPOWERS_DEPS_DIR": "${sourceDir}/build/deps"}},
-    {"name": "native", "inherits": "base", "displayName": "Portable core and firmware targets"},
+    {"name": "native", "inherits": "base", "displayName": "Portable core; Linux firmware targets"},
     {"name": "static-analysis-linux", "inherits": "native", "displayName": "Clang-Tidy and Cppcheck",
      "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux"},
      "cacheVariables": {"CMAKE_CXX_COMPILER": "clang++-18", "ALLPOWERS_STATIC_ANALYSIS": "ON",

@@ -50,6 +50,9 @@ if(CMAKE_HOST_WIN32)
   if(NOT QT_ROOT)
     message(FATAL_ERROR "Windows source-kit verification requires the matching static Qt SDK")
   endif()
+  # Prove the desktop product and its tests need only core, not device headers.
+  # This is the disposable, verified extraction under this build directory.
+  ap_remove_tree(ROOT "${work_path}" PATH "${work_path}/allpowers/firmware")
   execute_process(COMMAND "${CMAKE_COMMAND}" -S "${work_path}/allpowers/apps/windows"
     -B "${work_path}/windows" -G Ninja -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_TRY_COMPILE_CONFIGURATION=Release -DBUILD_TESTING=ON
@@ -62,4 +65,4 @@ if(CMAKE_HOST_WIN32)
     -R "^(desktop|widget|languages|archive-transport|history-operation-process|single-exe|widget-single-exe|integration-contract|usb-serial-contract|hid-session|hid-native|runtime-log|battery-contract|service-contract|cli-contract(-.*)?|ipc-contract)$"
     --parallel 4 --output-on-failure COMMAND_ERROR_IS_FATAL ANY)
 endif()
-message(STATUS "Source package rebuilt and passed core and supported desktop checks without .git or Python")
+message(STATUS "Source package rebuilt and passed core and supported desktop checks without .git or Python; desktop built without firmware/")

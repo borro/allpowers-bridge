@@ -6,7 +6,7 @@
 
 | Directory | Responsibility |
 | --- | --- |
-| `core/` | Portable protocol/model state and C ABI v1 |
+| `core/` | Portable protocols, archive records/algorithms, diagnostics and C ABI v1 |
 | `firmware/` | Common firmware and board/display profiles |
 | `apps/windows/` | Native Qt Monitor, Widget and service |
 | `drivers/windows/` | Optional Windows battery miniclass |
@@ -40,10 +40,18 @@ build graph, tests and packaging. Python remains only in optional explicit board
 maintenance tools; it is not part of the build or Windows application.
 
 The portable core owns model hints, packet validation, units, known-field masks,
-freshness, read-only polls and reconnect timing. It has no Arduino, OS, USB or
+freshness, read-only polls and reconnect timing. It also owns HID framing and
+record codecs, the portable request/response state machine, archive algorithms,
+epoch/clock rules and diagnostic serialization. It has no Arduino, OS, USB or
 display dependency. C ABI v1 remains stable for embedding/testing; native tests
 link the real Windows DLL or Linux SO. The Qt app statically links the identical
 implementation, Qt plugins and MSVC runtime into one EXE.
+
+Windows products and their tests must not include headers from `firmware/`,
+directly or through `core/`. A configure/build check and negative controls enforce
+this boundary; the Windows source-package check builds without that directory.
+Firmware targets and device-specific native tests exist only on Linux, including
+WSL when invoked by the complete Windows verification workflow.
 
 Firmware shares BLE/UPS/history/UI code. BoardProfile owns wiring, geometry,
 byte order, optional RGB/backlight and page counts. DisplayPanel adapts controller

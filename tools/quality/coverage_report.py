@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 PREFIXES = ("core/", "firmware/R2500Adapter/", "apps/windows/")
 MINIMUM_COVERAGE = {
     "linux": {"core/": 100, "firmware/R2500Adapter/": 100},
-    "windows": {"core/": 100, "firmware/R2500Adapter/": 98, "apps/windows/": 90},
+    "windows": {"core/": 100, "apps/windows/": 90},
 }
 
 

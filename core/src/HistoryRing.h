@@ -70,12 +70,13 @@ public:
       bool blank=true;const uint8_t *raw=reinterpret_cast<const uint8_t*>(&existing);
       for(size_t i=0;i<sizeof(existing);++i)if(raw[i]!=0xff){blank=false;break;}
       allocated=candidate;
-      if(!blank)continue; // Includes torn writes recovered after power loss.
-      r.sequence=candidate;r.crc=crc32(&r,offsetof(Record,crc));
-      if(!flash.write(offset,&r,sizeof(r)))return false;
-      Record check;if(!flash.read(offset,&check,sizeof(check))){healthy=false;return false;}
-      if(memcmp(&check,&r,sizeof(r)) || !valid(check,index))return false;
-      latest=candidate;return true;
+      if(blank){ // Occupied slots include torn writes recovered after power loss.
+        r.sequence=candidate;r.crc=crc32(&r,offsetof(Record,crc));
+        if(!flash.write(offset,&r,sizeof(r)))return false;
+        Record check;if(!flash.read(offset,&check,sizeof(check))){healthy=false;return false;}
+        if(memcmp(&check,&r,sizeof(r)) || !valid(check,index))return false;
+        latest=candidate;return true;
+      }
     }
     healthy=false;return false;
   }

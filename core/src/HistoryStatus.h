@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+namespace HistoryFormat { constexpr uint32_t kGraphHorizon=48*60*60; }
 struct HistoryStats {
   bool ready=false,selfTest=false,clockSynced=false;
   bool graphTest=false;

@@ -1,5 +1,5 @@
 #pragma once
-#include "../../firmware/R2500Adapter/HistoryWire.h"
+#include "../../core/src/HistoryWire.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVector>

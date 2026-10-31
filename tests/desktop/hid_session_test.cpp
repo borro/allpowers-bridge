@@ -1,8 +1,8 @@
 #include "usb_hid.h"
 #include "usb_transport.h"
 #include "transport_router.h"
-#include "../../firmware/R2500Adapter/HidTelemetryServer.h"
-#include "../../firmware/R2500Adapter/StatusWire.h"
+#include "../../core/src/HidTelemetryServer.h"
+#include "../../core/src/StatusWire.h"
 #include <QJsonDocument>
 #include <QTest>
 #include <QUuid>

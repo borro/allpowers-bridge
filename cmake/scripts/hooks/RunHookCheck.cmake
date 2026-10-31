@@ -29,7 +29,7 @@ if(TASK STREQUAL windows-coverage)
     "-DALLPOWERS_QT_ROOT=${QT}" "-DALLPOWERS_QT_SOURCE_CACHE=${DEPS}/downloads"
     "-DALLPOWERS_COVERAGE_TOOL=${COVERAGE_TOOL}")
 elseif(TASK STREQUAL windows-unit)
-  # Only the five portable tests; no Qt/firmware device builds on commit.
+  # Only portable tests; no Qt/firmware device builds on commit.
 elseif(TASK STREQUAL linux-unit)
   list(APPEND options "-DCMAKE_CXX_COMPILER=g++-${ALLPOWERS_GCC_MAJOR}")
 elseif(TASK STREQUAL analysis)

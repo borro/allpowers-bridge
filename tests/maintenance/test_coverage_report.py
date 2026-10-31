@@ -24,9 +24,9 @@ class CoverageReportTests(unittest.TestCase):
         files["firmware/R2500Adapter/example.h"][99] = 1
         self.assertTrue(all(item['passed'] for item in report.check_thresholds(files, "linux")))
         files["apps/windows/example.cpp"][89] = 0
-        self.assertFalse(report.check_thresholds(files, "windows")[2]['passed'])
+        self.assertFalse(report.check_thresholds(files, "windows")[1]['passed'])
         del files["apps/windows/example.cpp"]
-        self.assertFalse(report.check_thresholds(files, "windows")[2]['passed'])
+        self.assertFalse(report.check_thresholds(files, "windows")[1]['passed'])
 
     def test_display_rounding_never_excuses_an_uncovered_core_line(self):
         files = {"core/example.cpp": {i: int(i != 0) for i in range(100000)},

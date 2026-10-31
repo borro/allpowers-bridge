@@ -1,0 +1,46 @@
+include_guard(GLOBAL)
+
+# Check every shared/desktop header, not only today's reachable includes, so an
+# indirect dependency added to core cannot silently pull device code into Windows.
+function(ap_check_host_boundaries root)
+  file(REAL_PATH "${root}/firmware" forbidden)
+  set(files)
+  foreach(area core apps/windows drivers/windows tests/desktop tests/native)
+    file(GLOB_RECURSE entries "${root}/${area}/*.h" "${root}/${area}/*.cpp")
+    list(APPEND files ${entries})
+  endforeach()
+  list(REMOVE_ITEM files "${root}/tests/native/firmware_test.cpp")
+  foreach(file IN LISTS files)
+    file(READ "${file}" content)
+    string(REGEX MATCHALL "#[ \t]*include[ \t]*[<\"][^>\"\r\n]+[>\"]" includes "${content}")
+    get_filename_component(parent "${file}" DIRECTORY)
+    foreach(include IN LISTS includes)
+      string(REGEX REPLACE "^#[ \t]*include[ \t]*[<\"]([^>\"]+)[>\"]$" "\\1" name "${include}")
+      string(REPLACE "\\" "/" name "${name}")
+      foreach(directory "${parent}" "${root}/core/src" "${root}/core/native"
+          "${root}/apps/windows" "${root}/tests/desktop" "${root}/tests/native"
+          "${root}/firmware/R2500Adapter")
+        set(candidate "${directory}/${name}")
+        if(IS_ABSOLUTE "${name}")
+          set(candidate "${name}")
+        endif()
+        if(NOT EXISTS "${candidate}")
+          continue()
+        endif()
+        file(REAL_PATH "${candidate}" resolved)
+        cmake_path(IS_PREFIX forbidden "${resolved}" NORMALIZE device_header)
+        if(device_header AND EXISTS "${resolved}")
+          message(FATAL_ERROR "Host code must not include firmware: ${file} -> ${name}")
+        endif()
+        break()
+      endforeach()
+    endforeach()
+  endforeach()
+endfunction()
+
+function(ap_add_host_boundary_check root)
+  ap_check_host_boundaries("${root}")
+  add_custom_target(host-boundaries
+    COMMAND "${CMAKE_COMMAND}" "-DROOT=${root}"
+      -P "${root}/cmake/scripts/quality/CheckHostBoundaries.cmake" VERBATIM)
+endfunction()

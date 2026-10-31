@@ -23,7 +23,7 @@ string(JSON expected_maintenance GET "${hid_contract}" maintenance_source_sha256
 if(NOT maintenance_hash STREQUAL expected_maintenance)
   message(FATAL_ERROR "Legacy maintenance HID descriptor changed")
 endif()
-file(READ "${ROOT}/firmware/R2500Adapter/HidTelemetryServer.h" telemetry_source)
+file(READ "${ROOT}/core/src/HidTelemetryServer.h" telemetry_source)
 string(REGEX MATCH "constexpr uint8_t Descriptor\\[\\] = \\{([^}]+)\\}" match "${telemetry_source}")
 string(REGEX REPLACE "[ \r\n\t]+" "" telemetry "${CMAKE_MATCH_1}")
 string(SHA256 telemetry_hash "${telemetry}")

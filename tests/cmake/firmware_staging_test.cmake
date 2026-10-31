@@ -17,14 +17,9 @@ file(COPY "${ROOT}/tests/fixtures/usb-contract.json" DESTINATION "${source}/test
 file(COPY "${ROOT}/tests/fixtures/hid-telemetry-contract.json" DESTINATION "${source}/tests/fixtures")
 file(WRITE "${source}/firmware/R2500Adapter/removed.cpp" "// stale sketch input\n")
 file(WRITE "${source}/core/src/removed.h" "// stale library input\n")
-if(CMAKE_HOST_WIN32)
-  set(cli "${scratch}/fake-cli.cmd")
-  file(WRITE "${cli}" "@echo off\r\nif \"%1\"==\"version\" (\r\necho {\"VersionString\":\"${ALLPOWERS_ARDUINO_VERSION}\"}\r\nexit /b 0\r\n)\r\nexit /b 37\r\n")
-else()
-  set(cli "${scratch}/fake-cli")
-  file(WRITE "${cli}" "#!/bin/sh\nif [ \"$1\" = version ]; then\nprintf '%s\\n' '{\"VersionString\":\"${ALLPOWERS_ARDUINO_VERSION}\"}'\nexit 0\nfi\nexit 37\n")
-  file(CHMOD "${cli}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
-endif()
+set(cli "${scratch}/fake-cli")
+file(WRITE "${cli}" "#!/bin/sh\nif [ \"$1\" = version ]; then\nprintf '%s\\n' '{\"VersionString\":\"${ALLPOWERS_ARDUINO_VERSION}\"}'\nexit 0\nfi\nexit 37\n")
+file(CHMOD "${cli}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
 function(stage)
   execute_process(COMMAND "${CMAKE_COMMAND}" "-DROOT=${source}" "-DWORK=${scratch}/work"
     "-DCLI=${cli}" "-DDATA=${scratch}/data" "-DOUTPUT=${scratch}/output" -DVERSION=1.2.3

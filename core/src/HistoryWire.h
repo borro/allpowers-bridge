@@ -35,9 +35,9 @@ inline bool wireSelfTest(uint8_t *memory){
   r=example();r.magic=header(0x3f,2); // Legacy16: USB output unknown.
   if(!restored.append(r)||r.sequence!=3)return false;
   records[1]=r;Record read;
-  if(!atOrAfter(records,0,2,2,1,read)||read.sequence!=1||
-     !atOrAfter(records,0,2,2,next(read.sequence),read)||read.sequence!=3||
-     atOrAfter(records,0,2,2,next(read.sequence),read))return false;
+  if(!atOrAfter(records,0,2,2,1,read)||read.sequence!=1)return false;
+  if(!atOrAfter(records,0,2,2,next(read.sequence),read)||read.sequence!=3)return false;
+  if(atOrAfter(records,0,2,2,next(read.sequence),read))return false;
   if(!restored.readSequence(3,read)||known(read.magic)!=0x3f||model(read.magic)!=2)return false;
   char json[512];int length=serialize(read,json,sizeof(json));
   if(length<=0||size_t(length)>=sizeof(json)||!strstr(json,"\"record_version\":3")||!strstr(json,"\"known\":63"))return false;

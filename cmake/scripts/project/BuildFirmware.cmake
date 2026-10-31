@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 4.4)
+if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+  message(FATAL_ERROR "Firmware compilation is Linux-only; use the firmware-linux preset in Linux/WSL")
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/../../Dependencies.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../modules/common/Json.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../modules/release/Partitions.cmake")

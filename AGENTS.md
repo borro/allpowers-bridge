@@ -16,6 +16,9 @@
   handler, and confirm independent physical recovery on the selected board.
   A second write is not required and cannot protect against losing the update
   path on the first write. Micropitch pads are not an accessible user recovery path.
+- Shared protocols and portable archive logic belong in core. Windows products
+  and tests must not include firmware headers. Build firmware images and
+  device-specific tests on Linux only (WSL is permitted).
 - Preserve USB/partition/maintenance contracts; do not regenerate fixtures simply
   to bypass a failing check. Preserve NVS/history and never write eFuses here.
 - Distinguish BLE observation, a real Central/GATT connection and functioning USB

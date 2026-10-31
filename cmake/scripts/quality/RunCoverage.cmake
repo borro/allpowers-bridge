@@ -27,11 +27,10 @@ set(test_command "${CMAKE_CTEST_COMMAND}" --test-dir "${binary}"
   --output-junit "${report}/tests.xml")
 if(WINDOWS)
   file(TO_NATIVE_PATH "${root}/core" core_sources)
-  file(TO_NATIVE_PATH "${root}/firmware/R2500Adapter" firmware_sources)
   file(TO_NATIVE_PATH "${root}/apps/windows" windows_sources)
   file(TO_NATIVE_PATH "${binary}" modules)
   execute_process(COMMAND "${TOOL}" --quiet --cover_children
-    --modules "${modules}" --sources "${core_sources}" --sources "${firmware_sources}"
+    --modules "${modules}" --sources "${core_sources}"
     --sources "${windows_sources}"
     --export_type "cobertura:${report}/raw.xml" --export_type "html:${report}/html"
     -- ${test_command} RESULT_VARIABLE tests_result)
@@ -66,12 +65,13 @@ if(WINDOWS)
   list(APPEND report_options --require-prefix apps/windows/)
 else()
   set(coverage_platform linux)
+  list(APPEND report_options --require-prefix firmware/R2500Adapter/)
 endif()
 execute_process(COMMAND "${PYTHON}" "${root}/tools/quality/coverage_report.py"
   --platform "${coverage_platform}"
   --root "${root}" --input "${report}/raw.xml" --output "${report}/coverage.xml"
   --summary "${report}/summary.md" --require-prefix core/
-  --require-prefix firmware/R2500Adapter/ ${report_options}
+  ${report_options}
   COMMAND_ERROR_IS_FATAL ANY)
 if(NOT tests_result STREQUAL "0")
   message(FATAL_ERROR "Coverage tests failed (${tests_result}); report is incomplete")

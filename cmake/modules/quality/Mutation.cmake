@@ -79,7 +79,7 @@ function(ap_add_mutation_target)
     DEPENDS mutation_control USES_TERMINAL VERBATIM)
   # Explicit source/test pairs also scan the shared library, not only executable TUs.
   set(pairs "")
-  foreach(target models_test abi_test ups_test firmware_test history_rollback_test hid_telemetry_test)
+  foreach(target models_test abi_test ups_test archive_core_test firmware_test history_rollback_test hid_telemetry_test)
     string(APPEND pairs "[\"$<TARGET_FILE:${target}>\",\"$<TARGET_FILE:${target}>\"],\n")
   endforeach()
   foreach(target abi_test ups_test)

@@ -25,8 +25,8 @@ shared `build/deps` downloads, and separate result directories for each mode;
 existing normal builds are not cleaned. `ALLPOWERS_QT_ROOT` may select an existing
 static Qt SDK through a user preset or an initial configure.
 
-The `verify` target builds the portable library/tests, both board firmwares and,
-on Windows, the monitor, widget and UPS driver. `check-all` runs the current
+The `verify` target builds the portable library/tests and host products. Firmware
+images are built only on Linux; Windows builds the monitor, widget and UPS driver. `check-all` runs the current
 configuration's CTest suite (including Qt and build contracts), Python maintenance
 tests, formatting controls, working-tree/history/secret audits and whitespace
 checks. Separate preset builds run coverage with the existing thresholds,
@@ -41,10 +41,10 @@ Cppcheck, Mull, actionlint and ShellCheck. Missing host tools are listed as
 `Unavailable` during configuration; a selected check that fails is a failure,
 not a skip. Windows-only checks remain in CI on Linux.
 
-Windows also runs the Linux workflow in WSL Ubuntu when CMake 4.4+ is available
+Windows also runs the Linux checks and both firmware builds in WSL Ubuntu when CMake 4.4+ is available
 there. The existing optional `.local/hooks.json` supplies the distribution,
 Linux CMake and existing analysis/coverage tool paths; hook installation is not required. Without WSL,
-Linux coverage, sanitizers, Valgrind, mutation, fuzz and workflow lint remain
+both firmware builds, Linux coverage, sanitizers, Valgrind, mutation, fuzz and workflow lint remain
 unavailable locally. No machine-wide packages are installed automatically.
 
 Windows source archives, their rebuild tests and CPack run only after all selected
@@ -93,7 +93,7 @@ cmake --build --preset native
 ctest --preset native
 ```
 
-`native` configures core/tests plus available firmware targets without a desktop.
+`native` configures core/tests without a desktop; firmware targets exist only on Linux.
 `windows` also configures the static Qt superbuild. `all-windows` / `all-linux`
 build all products supported by that host. `native-tests` builds the C++ tests;
 `core` builds the actual shared C ABI library. There is no Linux desktop yet.
@@ -180,7 +180,7 @@ The required minimums apply separately to each measured source area:
 | Source area | Linux | Windows |
 | --- | ---: | ---: |
 | `core/` | 100% | 100% |
-| `firmware/R2500Adapter/` in host tests | 100% | 98% |
+| `firmware/R2500Adapter/` in host tests | 100% | Not built |
 | `apps/windows/` | Not measured | 90% |
 
 `tools/quality/coverage_report.py` owns these thresholds. Exact covered/total counts are
@@ -402,11 +402,12 @@ Review surviving mutations separately from ordinary missing scenarios:
 ## Firmware
 
 ```sh
-cmake --build build/windows --target arduino-setup
-cmake --build build/windows --target waveshare-147 pocket-096
+cmake --preset firmware-linux
+cmake --build --preset firmware-linux
 ```
 
-Use build/native on Linux. Setup downloads a checksum-verified Arduino CLI 1.5.1
+Run these commands on Linux or inside WSL; Windows has no firmware/SDK targets.
+Setup downloads a checksum-verified Arduino CLI 1.5.1
 and installs ESP32 Core 3.3.11. ARDUINO_CLI and ARDUINO_DATA_DIR are cache paths;
 ALLPOWERS_ARDUINO_JOBS controls compiler jobs per board (default 2).
 ALLPOWERS_FIRMWARE_PARALLEL_BOARDS bounds concurrent board builds through a Ninja
@@ -570,7 +571,7 @@ source location and explain why the reported path is impossible.
 
 ## Memory checking with Valgrind
 
-The `valgrind` job runs the six portable native tests through CTest Memcheck on
+The `valgrind` job runs the portable and firmware native tests through CTest Memcheck on
 Ubuntu 24.04, in full push/PR and manual runs. It uses a separate Debug build,
 without ASan/UBSan, coverage or Mull instrumentation. It checks the portable
 core/shared ABI, UPS logic and host firmware, not Windows/Qt or physical devices.

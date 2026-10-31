@@ -25,7 +25,7 @@ CTest scheduler under `cmake/projects/HookChecks`. See [CMake structure](cmake.m
   Clang-Tidy/Cppcheck, Linux coverage (100% for core and host-tested firmware),
   ASan/UBSan, and Valgrind including its failing control.
 - **Pre-push**, in parallel: mutation tests including their control and survivor
-  review, both fuzzers with **30 seconds each** and their fatal-UB control, and
+  review, all three fuzzers with **30 seconds each** and their fatal-UB control, and
   Windows coverage with its existing per-area thresholds.
 
 Commit builds use a snapshot of the index, so partially staged changes are
@@ -88,7 +88,7 @@ coverage depend on the SDK producer, not on the Linux analyzers. All mandatory
 results join at **CI result**; unexpected skips, failures or cancellations fail it.
 Codecov service availability does not replace the local coverage requirement.
 Coverage also enforces per-area minimums: core 100% on both hosts, host-tested
-firmware 100% on Linux and 98% on Windows, and Windows applications 90%. Rounded
+firmware 100% on Linux (not compiled on Windows), and Windows applications 90%. Rounded
 percentages do not determine acceptance. Threshold failures preserve reports and
 fail the mandatory coverage job; Codecov statuses remain informational.
 

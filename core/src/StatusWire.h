@@ -1,11 +1,9 @@
 #pragma once
 #include <TelemetryState.h>
 #include "StationIdentity.h"
-#include "StationPicker.h"
 #include "HistoryStatus.h"
 #include "HistoryCompatibility.h"
 #include "HistoryOperation.h"
-#include "GraphHistory.h"
 #include <stdio.h>
 namespace HistoryFormat {
 struct StatusConnection {
@@ -14,7 +12,9 @@ struct StatusConnection {
   const char *phase="SEARCHING";
 };
 struct StatusSnapshot {
-  StatusConnection state;HistoryStats log;StationPicker::Snapshot nearby;StationPicker::Target target;
+  StatusConnection state;HistoryStats log;
+  struct {char selectedMAC[18]={};int selectedIndex=-1;uint8_t total=0;} nearby;
+  struct {StationIdentity identity;} target;
   bool historyAvailable=true;
   struct {uint32_t runtime_seconds=0;uint8_t status=0;} ups;
   struct {bool usbMounted=false;uint32_t connects=0,drops=0,heapFree=0,heapMin=0,psramFree=0,resetCode=0;} d;
@@ -83,7 +83,7 @@ inline int serializeStatus(const StatusSnapshot &frame,uint8_t index,char *out,s
   case 10:return snprintf(out,capacity,"{\"picker_highlight\":\"%s\",\"picker_back\":%s,\"picker_index\":%d,\"picker_total\":%u}\n",
     nearby.selectedMAC,state.pickerBack?"true":"false",nearby.selectedIndex,nearby.total);
   case 4:return snprintf(out,capacity,"{\"graph_selftest\":%s,\"graph_live_records\":%lu,\"graph_live_samples\":%lu,\"graph_live_latest_s\":%lu,\"graph_refresh_ms\":1000,\"graph_scale\":\"log1p_age\",\"graph_horizon_s\":%lu}\n",
-    log.graphTest?"true":"false",(unsigned long)log.liveCount,(unsigned long)log.liveSamples,(unsigned long)log.liveLatest,(unsigned long)GraphHistory::kHorizon);
+    log.graphTest?"true":"false",(unsigned long)log.liveCount,(unsigned long)log.liveSamples,(unsigned long)log.liveLatest,(unsigned long)HistoryFormat::kGraphHorizon);
   case 11:return snprintf(out,capacity,"{\"button_selftest\":%s}\n",buttonPassed?"true":"false");
   case 12:return snprintf(out,capacity,"{\"screen_count\":%u,\"diagnostic_page\":2,\"usb_mounted\":%s,\"ble_connects\":%lu,\"ble_drops\":%lu,\"heap_free\":%lu,\"heap_min\":%lu,\"psram_free\":%lu,\"reset_reason\":%lu}\n",
     frame.screenCount,d.usbMounted?"true":"false",(unsigned long)d.connects,(unsigned long)d.drops,(unsigned long)d.heapFree,(unsigned long)d.heapMin,(unsigned long)d.psramFree,(unsigned long)d.resetCode);

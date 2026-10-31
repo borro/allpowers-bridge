@@ -13,8 +13,7 @@ foreach(subject ble hid_wire hid_server control)
   add_executable(fuzz_${subject} ${subject}.cpp)
   set_target_properties(fuzz_${subject} PROPERTIES CXX_SCAN_FOR_MODULES OFF INTERPROCEDURAL_OPTIMIZATION OFF)
   target_compile_features(fuzz_${subject} PRIVATE cxx_std_23)
-  target_include_directories(fuzz_${subject} PRIVATE "${PROJECT_SOURCE_DIR}/core/src"
-    "${PROJECT_SOURCE_DIR}/firmware/R2500Adapter")
+  target_include_directories(fuzz_${subject} PRIVATE "${PROJECT_SOURCE_DIR}/core/src")
   target_compile_options(fuzz_${subject} PRIVATE -O1 -g -UNDEBUG
     -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
   target_link_options(fuzz_${subject} PRIVATE -fsanitize=fuzzer,address,undefined)

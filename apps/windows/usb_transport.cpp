@@ -1,9 +1,9 @@
 #include "usb_transport.h"
-#include "../../firmware/R2500Adapter/HistoryOperation.h"
-#include "../../firmware/R2500Adapter/HistoryWire.h"
 #include "AllpowersModels.h"
 #include "runtime_log.h"
 #include "usb_hid.h"
+#include <HistoryOperation.h>
+#include <HistoryWire.h>
 #include <QBluetoothAddress>
 #include <QCoreApplication>
 #include <QDateTime>

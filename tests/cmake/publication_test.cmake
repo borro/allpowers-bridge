@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 4.4)
 find_package(Git REQUIRED)
 include("${ROOT}/cmake/modules/common/PublicSources.cmake")
+# Regression: the broad firmware *.hex ignore rule must not drop retained seeds.
+ap_public_sources(OUTPUT project_files ROOT "${ROOT}")
+file(GLOB corpus_inputs RELATIVE "${ROOT}" "${ROOT}/tests/fuzz/corpus/*/*.hex")
+if(NOT corpus_inputs)
+  message(FATAL_ERROR "Retained fuzz corpus is absent")
+endif()
+foreach(seed IN LISTS corpus_inputs)
+  if(NOT seed IN_LIST project_files)
+    message(FATAL_ERROR "Retained fuzz input excluded from source package: ${seed}")
+  endif()
+endforeach()
 file(MAKE_DIRECTORY "${WORK}")
 file(REAL_PATH "${WORK}" scratch)
 file(REAL_PATH "${BUILD_ROOT}" build_root)
@@ -49,6 +60,24 @@ list(LENGTH files count)
 if(NOT count EQUAL 2)
   message(FATAL_ERROR "Ignored files entered the public source inventory")
 endif()
+# Only reviewed, hash-named text corpora in the three known targets are public.
+string(SHA256 corpus_hash "synthetic")
+set(corpus_name "tests/fuzz/corpus/ble/${corpus_hash}.hex")
+file(WRITE "${repo}/${corpus_name}" "73796e746865746963\n")
+audit(worktree pass)
+ap_public_sources(OUTPUT files ROOT "${repo}")
+if(NOT corpus_name IN_LIST files)
+  message(FATAL_ERROR "Retained fuzz corpus missing from source inventory")
+endif()
+foreach(unreviewed
+    "tests/fuzz/corpus/ble/short.hex"
+    "tests/fuzz/corpus/unknown/${corpus_hash}.hex"
+    "tests/fuzz/corpus/ble/${corpus_hash}.bin")
+  file(WRITE "${repo}/${unreviewed}" "00\n")
+  audit(worktree fail)
+  file(REMOVE "${repo}/${unreviewed}")
+endforeach()
+file(REMOVE "${repo}/${corpus_name}")
 # A pending deletion belongs to the worktree inventory, while index auditing
 # still reads the staged blob. Source archives must never copy a missing file.
 file(REMOVE "${repo}/README.md")

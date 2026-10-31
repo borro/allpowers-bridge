@@ -23,6 +23,10 @@ CMakeUserPresets.json
 *.tar.gz
 *.tar.xz
 *.hex
+# Reviewed text-encoded synthetic fuzz corpora, not firmware images.
+!/tests/fuzz/corpus/ble/*.hex
+!/tests/fuzz/corpus/hid_wire/*.hex
+!/tests/fuzz/corpus/hid_server/*.hex
 *.uf2
 *.dfu
 *.rom

@@ -1,8 +1,11 @@
 """Seed the generated libFuzzer corpora; never delete discoveries from earlier runs."""
 from pathlib import Path
+import hashlib
 import struct
 import sys
 import zlib
+
+CORPUS_ROOT = Path(__file__).resolve().parent / "corpus"
 
 
 def seed(root):
@@ -39,6 +42,11 @@ def seed(root):
         (root / subject / "crashes").mkdir(parents=True, exist_ok=True)
         for index, data in enumerate(inputs):
             (root / subject / "corpus" / f"seed-{index}").write_bytes(data)
+        for source in sorted((CORPUS_ROOT / subject).iterdir()):
+            data = bytes.fromhex(source.read_text(encoding="ascii"))
+            if source.suffix != ".hex" or source.stem != hashlib.sha256(data).hexdigest():
+                raise ValueError(f"Corpus checksum/name mismatch: {source.name}")
+            (root / subject / "corpus" / f"corpus-{source.stem}").write_bytes(data)
 
 
 if __name__ == "__main__":

@@ -500,14 +500,17 @@ ctest --preset fuzz-linux --verbose
 Only fuzz targets receive libFuzzer/ASan/UBSan flags. Coverage, mutation and ordinary
 sanitizer builds must use separate directories. `tests/fuzz/seed_corpus.py` creates
 reviewable protocol seeds (valid packets/commands, overflow and malformed cases)
-under `build/fuzz-linux/fuzz/{ble,cdc,hid_wire,hid_server}/corpus`; it does not delete local discoveries.
-CI starts from these seeds on each fresh checkout and uses seed `20261027`.
+and decodes the retained synthetic inputs from `tests/fuzz/corpus/` into
+`build/fuzz-linux/fuzz/{ble,hid_wire,hid_server}/corpus`; it does not delete local discoveries.
+CI starts from both sets on each fresh checkout and uses seed `20261027`.
+The retained inputs use SHA-256 names and text hex encoding; the generator checks
+their decoded hashes. See [corpus provenance and refresh procedure](../tests/fuzz/corpus/README.md).
 Elapsed-time scheduling can still change the number of explored inputs.
 
 The `fuzz-linux` artifact retains corpus, `crashes/` inputs and verbose CTest logs
 for 14 days, including on failure. Investigate an input before adding it to the
 seed generator or making it a permanent regression test. To reproduce a saved
-CDC failure after rebuilding the same revision:
+HID failure after rebuilding the same revision:
 
 ```sh
 build/fuzz-linux/tests/fuzz/fuzz_hid_wire path/to/crash-input -runs=1

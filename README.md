@@ -94,6 +94,9 @@ applications. Builds use CMake Presets/Ninja, CTest and CPack; Linux supports th
 core and firmware build, with no Linux desktop app yet. Build and test commands
 never flash boards or connect to stations.
 
+Fuzzing starts from generated examples and a retained synthetic
+[corpus](tests/fuzz/corpus/README.md), so fresh CI runs reuse paths found by longer runs.
+
 Builds and analyzers run in parallel; release packages are published only for valid `v` tags. Documentation-only changes use short checks. Windows applications use MSVC/WinRT, and both firmware boards build on Linux. See [CI jobs, images and cache ownership](docs/ci.md).
 
 Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/analyze` for Windows products, and actionlint/ShellCheck for workflows and Bash. [Local commands and scope](docs/building.md#static-analysis).

@@ -237,8 +237,9 @@ private slots:
       int limit=100;while(!commands.empty()&&--limit){auto bytes=commands.front();commands.pop_front();Request r;
         QVERIFY(decode(reinterpret_cast<const uint8_t*>(bytes.data())+1,63,r));
         uint8_t body[MessageLimit];size_t size=0;auto result=server.respond(r,1,body,size);
+        const auto digest=crc32(body,size);
         for(size_t offset=0;offset<size;){uint8_t report[64]{};report[0]=ResponseReport;
-          offset+=fragment(r,result,body,size,offset,report+1);
+          offset+=fragment(r,result,body,size,digest,offset,report+1);
           session.input(QByteArray(reinterpret_cast<char*>(report),64),1);}
       }QVERIFY(limit>0);
     };

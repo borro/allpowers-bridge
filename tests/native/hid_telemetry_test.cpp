@@ -74,16 +74,17 @@ static void boundaryTests() {
   }
   encode(live, wire); put16(wire + 20, 4096); seal(wire); assert(!decode(wire, Payload, liveCopy));
   uint8_t message[84]{};
-  assert(!fragment(r, Result::Ok, message, 0, 0, wire));
-  assert(!fragment(r, Result::Ok, message, MessageLimit + 1, 0, wire));
+  const auto digest = crc32(message, sizeof(message));
+  assert(!fragment(r, Result::Ok, message, 0, 0, 0, wire));
+  assert(!fragment(r, Result::Ok, message, MessageLimit + 1, 0, 0, wire));
   memset(wire, 0xa5, sizeof(wire));
-  assert(!fragment(r, Result::Ok, message, 84, 84, wire));
+  assert(!fragment(r, Result::Ok, message, 84, digest, 84, wire));
   for (auto byte : wire) assert(byte == 0xa5); // Invalid range must not publish a header.
   Assembly assembly; assembly.expect(r);
-  fragment(r, Result::Error, message, 84, 0, wire); assert(assembly.accept(wire, Payload) == 0);
-  fragment(r, Result::Error, message, 84, 28, wire); assert(assembly.accept(wire, Payload) == 0);
-  fragment(r, Result::Error, message, 84, 40, wire); assert(assembly.accept(wire, Payload) == -1);
-  fragment(r, Result::Error, message, 84, 56, wire); assert(assembly.accept(wire, Payload) == 1);
+  fragment(r, Result::Error, message, 84, digest, 0, wire); assert(assembly.accept(wire, Payload) == 0);
+  fragment(r, Result::Error, message, 84, digest, 28, wire); assert(assembly.accept(wire, Payload) == 0);
+  fragment(r, Result::Error, message, 84, digest, 40, wire); assert(assembly.accept(wire, Payload) == -1);
+  fragment(r, Result::Error, message, 84, digest, 56, wire); assert(assembly.accept(wire, Payload) == 1);
   assert(assembly.status() == Result::Error);
   put16(wire + 27, 84); assert(assembly.accept(wire, Payload) == -1);
   Source source; Server server(source); uint8_t response[MessageLimit]; size_t size;
@@ -148,7 +149,46 @@ static void boundaryTests() {
   guard.server.expire(IdleMs); guard.server.stop();
   for (auto value : guard.tail) assert(value == 255);
 }
+static void fragmentContractTests() {
+  assert(crc32("123456789", 9) == 0xcbf43926u);
+  Request request; request.operation.bytes[0] = 7; request.boot = 42;
+  std::array<uint8_t, MessageLimit> message{};
+  for (size_t i = 0; i < message.size(); ++i) message[i] = uint8_t(i * 17);
+  for (const size_t length : {size_t(1), size_t(27), size_t(28), size_t(29), size_t(260), MessageLimit}) {
+    const auto digest = HistoryFormat::crc32(message.data(), length);
+    for (auto status : {Result::Ok, Result::Busy, Result::Invalid, Result::Expired, Result::Error}) {
+      Assembly assembly; assembly.expect(request);
+      for (size_t offset = 0; offset < length;) {
+        std::array<uint8_t, Payload> report, retry;
+        report.fill(0xa5);
+        const auto count = fragment(request, status, message.data(), length, digest, offset, report.data());
+        assert(count == (length - offset < FragmentBytes ? length - offset : FragmentBytes));
+        assert(get32(report.data() + 31) == digest);
+        assert(fragment(request, status, message.data(), length, digest, offset, retry.data()) == count);
+        assert(retry == report);
+        assert(assembly.accept(report.data(), Payload) == (offset + count == length ? 1 : 0));
+        offset += count;
+      }
+      assert(assembly.size() == length && assembly.status() == status);
+      assert(!memcmp(assembly.bytes, message.data(), length));
+    }
+  }
+  // Last fragment of a 29-byte message, captured from the previous implementation.
+  const uint8_t expected[Payload] = {
+    0x02,0x04,0x07,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x2a,0,0,0,0,0,0,0,
+    0x01,0x1c,0,0x1d,0,0xf5,0xe1,0xfb,0x31,0xdc
+  };
+  uint8_t golden[Payload];
+  assert(fragment(request, Result::Error, message.data(), 29, crc32(message.data(), 29), 28, golden) == 1);
+  assert(!memcmp(golden, expected, Payload));
+  // A supplied bad digest must remain on the wire and be rejected by the receiver.
+  uint8_t report[Payload]; Assembly bad; bad.expect(request);
+  const auto wrong = crc32(message.data(), 1) ^ 1;
+  assert(fragment(request, Result::Ok, message.data(), 1, wrong, 0, report) == 1);
+  assert(get32(report + 31) == wrong && bad.accept(report, Payload) == -1);
+}
 int main() {
+  fragmentContractTests();
   boundaryTests();
   Request a; a.boot = 42; a.operation.bytes[0] = 1; a.archive = a.operation; a.op = Op::Open;
   Request b = a; b.operation.bytes[0] = 2; b.archive = b.operation;
@@ -165,18 +205,19 @@ int main() {
          copy.mainAge == UINT32_MAX && copy.sourceRaw == 65535 && copy.known == 4095);
   std::vector<uint8_t> message(8192);
   for (size_t i = 0; i < message.size(); ++i) message[i] = uint8_t(i);
+  const auto digest = crc32(message.data(), message.size());
   Assembly one, two; one.expect(a); two.expect(b);
   for (size_t offset = 0; offset < message.size();) {
-    size_t count = fragment(a, Result::Ok, message.data(), message.size(), offset, wire);
+    size_t count = fragment(a, Result::Ok, message.data(), message.size(), digest, offset, wire);
     assert(count); assert(two.accept(wire, Payload) == 0);
     assert(one.accept(wire, Payload) == (offset + count == message.size() ? 1 : 0));
     if (offset) assert(one.accept(wire, Payload) == 0); // Duplicate does not append.
     offset += count;
   }
   assert(one.size() == message.size() && !memcmp(one.bytes, message.data(), message.size()));
-  one.expect(a); fragment(a, Result::Ok, message.data(), message.size(), FragmentBytes, wire);
+  one.expect(a); fragment(a, Result::Ok, message.data(), message.size(), digest, FragmentBytes, wire);
   assert(one.accept(wire, Payload) == -1);
-  one.expect(a); fragment(a, Result::Ok, message.data(), 5, 0, wire); wire[35] ^= 1;
+  one.expect(a); fragment(a, Result::Ok, message.data(), 5, crc32(message.data(), 5), 0, wire); wire[35] ^= 1;
   assert(one.accept(wire, Payload) == -1);
   Source source; Server server(source); uint8_t response[MessageLimit]; size_t size = 0;
   assert(server.respond(a, 1, response, size) == Result::Ok && size == 24);

@@ -570,7 +570,7 @@ static void historyTask(void*){
 static void pumpHid(){
   using namespace HidTelemetry;
   static Request current;static uint8_t message[MessageLimit];
-  static size_t size=0,offset=0;static Result result=Result::Ok;static uint32_t started=0;
+  static size_t size=0,offset=0;static Result result=Result::Ok;static uint32_t started=0,digest=0;
   const uint32_t now=millis();hidServer.expire(now);
   if(size&&uint32_t(now-started)>5000){size=offset=0;}
   if(!size){
@@ -585,9 +585,10 @@ static void pumpHid(){
       }
       portEXIT_CRITICAL(&hidLock);
     }
+    if(size)digest=crc32(message,size);
   }
   if(size&&hid.ready()){
-    uint8_t report[Payload];size_t count=fragment(current,result,message,size,offset,report);
+    uint8_t report[Payload];size_t count=fragment(current,result,message,size,digest,offset,report);
     if(count&&hid.SendReport(ResponseReport,report,sizeof(report),5)){
       offset+=count;if(offset==size)size=offset=0;
     }

@@ -102,13 +102,15 @@ inline bool decode(const uint8_t *p, size_t n, Live &v) {
   v.settingsAge = get32(p + 39); v.valid = get32(p + 43); v.invalid = get32(p + 47);
   v.ups = p[51]; v.firmware = p[52]; v.uptimeSeconds = get32(p + 53); return true;
 }
+// Compute digest once after preparing the immutable message, then reuse it for
+// every fragment and retry. The receiver still verifies the complete message.
 inline size_t fragment(const Request &r, Result result, const uint8_t *message,
-                       size_t length, size_t offset, uint8_t *p) {
+                       size_t length, uint32_t digest, size_t offset, uint8_t *p) {
   if (!length || length > MessageLimit || offset >= length) return 0;
   memset(p, 0, Payload); p[0] = Version; p[1] = uint8_t(result);
   memcpy(p + 2, r.operation.bytes, 16); put64(p + 18, r.boot); p[26] = uint8_t(r.op);
   put16(p + 27, uint16_t(offset)); put16(p + 29, uint16_t(length));
-  put32(p + 31, crc32(message, length));
+  put32(p + 31, digest);
   const size_t count = length - offset < FragmentBytes ? length - offset : FragmentBytes;
   memcpy(p + 35, message + offset, count); return count;
 }

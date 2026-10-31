@@ -94,10 +94,11 @@ private slots:
         char text[2048]; const int n = HistoryFormat::serializeStatus(frame, row, text, sizeof(text));
         QVERIFY(n > 0 && n < int(sizeof(text))); body.append(text, n);
       }
+      const auto digest = crc32(body.constData(), size_t(body.size()));
       for (size_t offset = 0; offset < size_t(body.size());) {
         uint8_t report[64]{}; report[0] = ResponseReport;
         offset += fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()),
-                           size_t(body.size()), offset, report + 1);
+                           size_t(body.size()), digest, offset, report + 1);
         session.input(QByteArray(reinterpret_cast<char *>(report), 64), now);
       }
     };
@@ -171,7 +172,9 @@ private slots:
         const QByteArray message = mode == 1 ? "[1,2]" : "x";
         uint8_t report[64]{}; report[0] = ResponseReport;
         const auto result = mode == 1 ? Result::Ok : mode == 2 ? Result::Error : Result::Busy;
-        fragment(request, result, reinterpret_cast<const uint8_t *>(message.constData()), size_t(message.size()), 0, report + 1);
+        const auto digest = crc32(message.constData(), size_t(message.size()));
+        fragment(request, result, reinterpret_cast<const uint8_t *>(message.constData()),
+                 size_t(message.size()), digest, 0, report + 1);
         session.input(QByteArray(reinterpret_cast<char *>(report), 64), 1);
         if (mode == 3) {
           QVERIFY(error.isEmpty()); session.tick(10001); QCOMPARE(output.size(), 2);
@@ -200,9 +203,10 @@ private slots:
         QVERIFY(decode(reinterpret_cast<const uint8_t *>(raw.constData()) + 1, 63, request));
         uint8_t body[MessageLimit]; size_t size = 0;
         const auto result = server.respond(request, uint32_t(++now), body, size);
+        const auto digest = crc32(body, size);
         for (size_t offset = 0; offset < size;) {
           uint8_t report[64]{}; report[0] = ResponseReport;
-          offset += fragment(request, result, body, size, offset, report + 1);
+          offset += fragment(request, result, body, size, digest, offset, report + 1);
           const QByteArray input(reinterpret_cast<char *>(report), 64);
           one.input(input, now); two.input(input, now);
         }
@@ -242,12 +246,13 @@ private slots:
     Request request;
     QVERIFY(decode(reinterpret_cast<const uint8_t *>(commands[0].constData()) + 1, 63, request));
     const QByteArray body = "{\"station_name\":\"test\",\"station_address\":\"02:00:00:00:00:01\"}\n";
+    const auto digest = crc32(body.constData(), size_t(body.size()));
     uint8_t report[64]{}; report[0] = ResponseReport;
-    fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), 28, report + 1);
+    fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), digest, 28, report + 1);
     session.input(QByteArray(reinterpret_cast<char *>(report), 64), 1); QVERIFY(data.isEmpty());
     session.tick(10000); QCOMPARE(commands.size(), 2); QCOMPARE(commands[0], commands[1]);
     for (size_t offset = 0; offset < size_t(body.size());) {
-      offset += fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), offset, report + 1);
+      offset += fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), digest, offset, report + 1);
       session.input(QByteArray(reinterpret_cast<char *>(report), 64), 10001);
     }
     QCOMPARE(data, body); QVERIFY(error.isEmpty());

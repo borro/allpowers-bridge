@@ -81,10 +81,11 @@ BOOL WINAPI write(HANDLE, LPCVOID data, DWORD size, LPDWORD count, LPOVERLAPPED 
   const QByteArray body = request.op == HidTelemetry::Op::Metadata
     ? "{\"station_name\":\"test\",\"station_address\":\"02:00:00:00:00:01\"}\n"
     : "{\"diagnostic\":true,\"rows\":[]}\n";
+  const auto digest = HidTelemetry::crc32(body.constData(), size_t(body.size()));
   for (size_t offset = 0; offset < size_t(body.size());) {
     uint8_t response[64]{}; response[0] = HidTelemetry::ResponseReport;
     offset += HidTelemetry::fragment(request, HidTelemetry::Result::Ok,
-      reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), offset, response + 1);
+      reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), digest, offset, response + 1);
     for (auto &entry : devices)
       entry.second.reports.emplace_back(reinterpret_cast<char *>(response), 64);
   }

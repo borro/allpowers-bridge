@@ -60,9 +60,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   capabilities(report.data(), request.boot, size && (data[0] & 1));
   assert(sealed(report.data(), Payload) && get64(report.data() + 6) == request.boot);
   assert(report[14] == Version && get16(report.data() + 17) == 2880);
-  assert(!fragment(request, Result::Ok, data, 0, 0, report.data()));
-  assert(!fragment(request, Result::Ok, data, MessageLimit + 1, 0, report.data()));
-  assert(!fragment(request, Result::Ok, data, size, size, report.data()));
+  assert(!fragment(request, Result::Ok, data, 0, 0, 0, report.data()));
+  assert(!fragment(request, Result::Ok, data, MessageLimit + 1, 0, 0, report.data()));
+  assert(!fragment(request, Result::Ok, data, size, 0, size, report.data()));
   Assembly raw; raw.expect(request);
   for (size_t at = 0; at < size;) {
     const size_t n = size - at < Payload ? size - at : Payload;
@@ -74,10 +74,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   const size_t length = 1 + (size * (1 + data[0])) % MessageLimit;
   std::vector<uint8_t> message(length);
   for (size_t i = 0; i < length; ++i) message[i] = data[i % size];
+  const auto digest = crc32(message.data(), length);
   Assembly complete, damaged;
   complete.expect(request); damaged.expect(request);
   for (size_t at = 0, index = 0; at < length; ++index) {
-    const auto n = fragment(request, Result::Ok, message.data(), length, at, report.data());
+    const auto n = fragment(request, Result::Ok, message.data(), length, digest, at, report.data());
     assert(n && n <= FragmentBytes);
     const int result = complete.accept(report.data(), Payload);
     assert(result == (at + n == length ? 1 : 0));

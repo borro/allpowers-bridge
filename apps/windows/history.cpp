@@ -67,6 +67,46 @@ int sourceChange(const HistoryPoint &a, const HistoryPoint &b) {
 double logPosition(double age, double horizon) {
   return 1 - std::log1p(qBound(0., age, horizon)) / std::log1p(horizon);
 }
+namespace {
+HistoryPoint persistedPoint(const QString &address, const QString &session, const ap_snapshot &s,
+                            qint64 wall, qint64 tick, int stride) {
+  HistoryPoint point;
+  point.address = address;
+  point.session = session;
+  point.wall = wall;
+  point.tick = tick;
+  point.stride = stride;
+  point.data.fresh = s.fresh;
+  point.data.known = s.known;
+  point.data.soc = s.soc;
+  point.data.input_w = s.input_w;
+  point.data.output_w = s.output_w;
+  point.data.source = s.source;
+  point.data.ac_output = s.ac_output;
+  point.data.usb_output = s.usb_output;
+  point.data.dc_output = s.dc_output;
+  return point;
+}
+HistoryPoint queryPoint(const QSqlQuery &query, int offset, bool archive = false) {
+  ap_snapshot snapshot{};
+  snapshot.fresh = query.value(offset + 4).toUInt();
+  snapshot.known = query.value(offset + 5).toUInt();
+  snapshot.soc = query.value(offset + 6).toUInt();
+  snapshot.input_w = query.value(offset + 7).toUInt();
+  snapshot.output_w = query.value(offset + 8).toUInt();
+  snapshot.source = query.value(offset + 9).toUInt();
+  snapshot.ac_output = query.value(offset + 10).toUInt();
+  snapshot.usb_output = query.value(offset + 11).toUInt();
+  snapshot.dc_output = query.value(offset + 12).toUInt();
+  auto point =
+      persistedPoint(query.value(offset).toString(), query.value(offset + 3).toString(), snapshot,
+                     query.value(offset + 1).toLongLong(), query.value(offset + 2).toLongLong(),
+                     query.value(offset + 13).toInt());
+  if (archive)
+    point.sequence = query.value(offset + 15).toUInt();
+  return point;
+}
+} // namespace
 HistoryPoints mergeHistory(const HistoryPoints &local, const HistoryPoints &remote) {
   QMap<QPair<QString, qint64>, HistoryPoint> selected;
   QSet<QPair<QString, qint64>> seconds;
@@ -216,6 +256,139 @@ void HistoryStore::newSession() {
   session_ = QUuid::createUuid().toString(QUuid::Id128);
   lastKey.clear();
 }
+bool HistoryStore::setBuffered(bool enabled) {
+  if (buffered_ == enabled)
+    return true;
+  if (!enabled && !flush())
+    return false;
+  QSqlQuery query(db);
+  if (!query.exec(enabled ? "PRAGMA synchronous=FULL" : "PRAGMA synchronous=NORMAL"))
+    return false;
+  buffered_ = enabled;
+  bufferedVersion_ = -1;
+  return true;
+}
+bool HistoryStore::readBufferedTables(CachedTables &tables) const {
+  for (int index = 0; index < 2; ++index) {
+    QSqlQuery query(db);
+    if (!query.exec("SELECT rowid,* FROM " + QString(index ? "minutes" : "live") +
+                    " ORDER BY rowid"))
+      return false;
+    while (query.next())
+      tables[index].append(
+          {query.value(0).toLongLong(), query.value(15).toLongLong(), queryPoint(query, 1)});
+    if (query.lastError().isValid())
+      return false;
+  }
+  return true;
+}
+void HistoryStore::applyBufferedPoint(CachedTables &tables, const HistoryPoint &point,
+                                      const std::array<qint64, 2> &rowids) const {
+  for (int index = 0; index < 2; ++index) {
+    auto &rows = tables[index];
+    rows.removeIf([&](const CachedRow &row) {
+      return row.point.wall < point.wall - 172800 ||
+             (row.point.address == point.address &&
+              (index ? row.bucket == point.wall / 60 : row.point.wall == point.wall));
+    });
+    auto stored = point;
+    stored.stride = index ? 60 : 1;
+    rows.append({rowids[index], point.wall / 60, std::move(stored)});
+    const int limit = qMax(0, index ? minuteLimit : liveLimit);
+    if (rows.size() > limit)
+      rows.remove(0, rows.size() - limit);
+  }
+}
+bool HistoryStore::prepareBufferedTables() const {
+  if (!refreshPointCacheVersion())
+    return false;
+  if (bufferedVersion_ == pointCacheVersion_)
+    return true;
+  CachedTables tables;
+  if (!readBufferedTables(tables))
+    return false;
+  QSqlQuery count(db);
+  if (!count.exec("SELECT COUNT(*) FROM usb_minutes") || !count.next())
+    return false;
+  bufferedUsbCount_ = count.value(0).toInt();
+  for (const auto &point : pending_)
+    applyBufferedPoint(tables, point);
+  bufferedTables_ = std::move(tables);
+  bufferedVersion_ = pointCacheVersion_;
+  return true;
+}
+bool HistoryStore::stage(const QString &address, const ap_snapshot &snapshot, qint64 wall,
+                         qint64 tick, const QString &board, quint32 epoch) {
+  const auto session = !board.isEmpty() && epoch
+                           ? QString("usb-live:%1:%2:%3").arg(board).arg(epoch).arg(session_)
+                           : session_;
+  const auto key = address + ":" + QString::number(wall) + ":" + session;
+  if (!valid() || !buffered_ || pending_.size() >= 3600 || lastKey == key ||
+      !prepareBufferedTables())
+    return false;
+  auto point = persistedPoint(address, session, snapshot, wall, tick, 1);
+  pending_.append(point);
+  applyBufferedPoint(bufferedTables_, point);
+  lastKey = key;
+  return true;
+}
+bool HistoryStore::flush() {
+  if (pending_.isEmpty())
+    return true;
+  if (!valid() || !db.transaction())
+    return false;
+  CachedTables tables;
+  bool ok = readBufferedTables(tables);
+  // Simulate the original arrival-order retention in RAM. Physical cleanup is
+  // done once per table, after the complete batch, including clock rollbacks.
+  for (const auto &point : pending_) {
+    if (!ok)
+      break;
+    std::array<qint64, 2> rowids{};
+    const auto &s = point.data;
+    for (int index = 0; index < 2; ++index) {
+      QSqlQuery query(db);
+      query.prepare("INSERT OR REPLACE INTO " + QString(index ? "minutes" : "live") +
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      for (const auto &value : QVariantList{
+               point.address, point.wall, point.tick, point.session, int(s.fresh), int(s.known),
+               int(s.soc), int(s.input_w), int(s.output_w), int(s.source), int(s.ac_output),
+               int(s.usb_output), int(s.dc_output), index ? 60 : 1, point.wall / 60})
+        query.addBindValue(value);
+      if (!query.exec()) {
+        ok = false;
+        break;
+      }
+      rowids[index] = query.lastInsertId().toLongLong();
+    }
+    if (ok)
+      applyBufferedPoint(tables, point, rowids);
+  }
+  for (int index = 0; ok && index < 2; ++index) {
+    QStringList placeholders;
+    for (qsizetype i = 0; i < tables[index].size(); ++i)
+      placeholders.append("?");
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM " + QString(index ? "minutes" : "live") +
+                  (placeholders.isEmpty()
+                       ? QString{}
+                       : " WHERE rowid NOT IN (" + placeholders.join(',') + ")"));
+    for (const auto &row : tables[index])
+      query.addBindValue(row.rowid);
+    ok = query.exec();
+  }
+  if (ok)
+    ok = db.commit();
+  if (!ok)
+    db.rollback();
+  if (ok)
+    pending_.clear();
+  // A failed commit can race with an external writer too. Rebase the retained
+  // pending batch on the next read; never present uncommitted SQL as durable.
+  bufferedVersion_ = -1;
+  pointCache_.clear();
+  return ok;
+}
 bool HistoryStore::record(const QString &address, const ap_snapshot &s, qint64 wall, qint64 tick,
                           const QString &board, quint32 epoch) {
   const auto session = !board.isEmpty() && epoch
@@ -224,9 +397,13 @@ bool HistoryStore::record(const QString &address, const ap_snapshot &s, qint64 w
   QString key = address + ":" + QString::number(wall) + ":" + session;
   if (!valid() || lastKey == key)
     return false;
+  const bool cached = refreshPointCacheVersion() && pointCache_.contains(address);
   if (!db.transaction())
     return false;
   bool ok = true;
+  bool cacheMetadata = cached;
+  std::array<qint64, 2> inserted{}, retained{};
+  std::array<bool, 2> nonempty{};
   for (int index = 0; index < 2; ++index) {
     QString table = index ? "minutes" : "live";
     QSqlQuery q(db);
@@ -236,7 +413,10 @@ bool HistoryStore::record(const QString &address, const ap_snapshot &s, qint64 w
                       int(s.input_w), int(s.output_w), int(s.source), int(s.ac_output),
                       int(s.usb_output), int(s.dc_output), index ? 60 : 1, wall / 60})
       q.addBindValue(value);
-    ok = q.exec() && ok;
+    const bool written = q.exec();
+    ok = written && ok;
+    if (written)
+      inserted[index] = q.lastInsertId().toLongLong();
     q.prepare("DELETE FROM " + table + " WHERE wall < ?");
     q.addBindValue(wall - 172800);
     ok = q.exec() && ok;
@@ -244,13 +424,47 @@ bool HistoryStore::record(const QString &address, const ap_snapshot &s, qint64 w
               " ORDER BY rowid DESC LIMIT -1 OFFSET ?)");
     q.addBindValue(index ? minuteLimit : liveLimit);
     ok = q.exec() && ok;
+    if (cached) {
+      QSqlQuery metadata(db);
+      if (metadata.exec("SELECT MIN(rowid) FROM " + table) && metadata.next()) {
+        nonempty[index] = !metadata.value(0).isNull();
+        retained[index] = metadata.value(0).toLongLong();
+      } else {
+        cacheMetadata = false;
+      }
+    }
   }
   if (ok)
     ok = db.commit();
   else
     db.rollback();
-  if (ok)
+  if (ok) {
     lastKey = key;
+    // data_version changes only for writes by another connection. Check again
+    // after committing in case another writer committed before our transaction.
+    if (!refreshPointCacheVersion() || !cacheMetadata || !pointCache_.contains(address)) {
+      pointCache_.clear();
+    } else {
+      auto tables = pointCache_.take(address);
+      // The SQL retention limits apply globally, so other addresses must reload
+      // before being read again. The current address can be updated exactly.
+      pointCache_.clear();
+      for (int index = 0; index < 2; ++index) {
+        auto &rows = tables[index];
+        rows.removeIf([&](const CachedRow &row) {
+          return !nonempty[index] || row.rowid < retained[index] ||
+                 row.point.wall < wall - 172800 ||
+                 (index ? row.bucket == wall / 60 : row.point.wall == wall);
+        });
+        if (nonempty[index] && inserted[index] >= retained[index])
+          rows.append({inserted[index], wall / 60,
+                       persistedPoint(address, session, s, wall, tick, index ? 60 : 1)});
+      }
+      pointCache_.insert(address, std::move(tables));
+    }
+  } else {
+    pointCache_.clear();
+  }
   return ok;
 }
 bool HistoryStore::importPoints(const HistoryPoints &points, qint64 now) {
@@ -341,9 +555,13 @@ bool HistoryStore::importPoints(const HistoryPoints &points, qint64 now) {
     prune.addBindValue(minuteLimit);
     ok = prune.exec() && ok;
   }
-  if (ok && db.commit())
+  if (ok && db.commit()) {
+    pointCache_.clear();
+    bufferedVersion_ = -1;
     return true;
+  }
   db.rollback();
+  pointCache_.clear();
   return false;
 }
 void HistoryWorker::importPoints(HistoryPoints points, qint64 now) {
@@ -354,7 +572,75 @@ void HistoryWorker::importPoints(HistoryPoints points, qint64 now) {
   if (!points.isEmpty())
     load(points.first().address, now);
 }
+bool HistoryStore::refreshPointCacheVersion() const {
+  QSqlQuery query(db);
+  if (!query.exec("PRAGMA data_version") || !query.next()) {
+    pointCache_.clear();
+    pointCacheVersion_ = -1;
+    return false;
+  }
+  const auto version = query.value(0).toLongLong();
+  if (version != pointCacheVersion_)
+    pointCache_.clear();
+  pointCacheVersion_ = version;
+  return true;
+}
+bool HistoryStore::loadPointCache(const QString &address) const {
+  CachedTables tables;
+  for (int index = 0; index < 2; ++index) {
+    QSqlQuery query(db);
+    query.prepare("SELECT rowid,* FROM " + QString(index ? "minutes" : "live") +
+                  " WHERE address=?");
+    query.addBindValue(address);
+    if (!query.exec())
+      return false;
+    while (query.next())
+      tables[index].append(
+          {query.value(0).toLongLong(), query.value(15).toLongLong(), queryPoint(query, 1)});
+    if (query.lastError().isValid())
+      return false;
+  }
+  pointCache_.insert(address, std::move(tables));
+  return true;
+}
 HistoryPoints HistoryStore::points(const QString &address, qint64 now) const {
+  if (buffered_ && !address.startsWith("usb-board:") &&
+      (prepareBufferedTables() || !pending_.isEmpty())) {
+    HistoryPoints output;
+    QSet<qint64> buckets;
+    for (int index = 0; index < 2; ++index)
+      for (const auto &row : bufferedTables_[index]) {
+        if (row.point.address != address || row.point.wall < now - 172800 || row.point.wall > now ||
+            (index && buckets.contains(row.bucket)))
+          continue;
+        if (!index)
+          buckets.insert(row.bucket);
+        output.append(row.point);
+      }
+    std::sort(output.begin(), output.end(),
+              [](const auto &a, const auto &b) { return a.wall < b.wall; });
+    return output;
+  }
+  if (address.startsWith("usb-board:") || !refreshPointCacheVersion() ||
+      (!pointCache_.contains(address) && !loadPointCache(address)))
+    return readPoints(address, now);
+  HistoryPoints output;
+  QSet<qint64> buckets;
+  const auto &tables = pointCache_.constFind(address).value();
+  for (int index = 0; index < 2; ++index)
+    for (const auto &row : tables[index]) {
+      if (row.point.wall < now - 172800 || row.point.wall > now ||
+          (index && buckets.contains(row.bucket)))
+        continue;
+      if (!index)
+        buckets.insert(row.bucket);
+      output.append(row.point);
+    }
+  std::sort(output.begin(), output.end(),
+            [](const auto &a, const auto &b) { return a.wall < b.wall; });
+  return output;
+}
+HistoryPoints HistoryStore::readPoints(const QString &address, qint64 now) const {
   HistoryPoints output;
   QSet<qint64> buckets;
   const QStringList tables = address.startsWith("usb-board:") ? QStringList{"usb_minutes"}
@@ -372,24 +658,7 @@ HistoryPoints HistoryStore::points(const QString &address, qint64 now) const {
         continue;
       if (table == "live")
         buckets.insert(bucket);
-      HistoryPoint p;
-      p.address = q.value(0).toString();
-      p.wall = q.value(1).toLongLong();
-      p.tick = q.value(2).toLongLong();
-      p.session = q.value(3).toString();
-      p.data.fresh = q.value(4).toUInt();
-      p.data.known = q.value(5).toUInt();
-      p.data.soc = q.value(6).toUInt();
-      p.data.input_w = q.value(7).toUInt();
-      p.data.output_w = q.value(8).toUInt();
-      p.data.source = q.value(9).toUInt();
-      p.data.ac_output = q.value(10).toUInt();
-      p.data.usb_output = q.value(11).toUInt();
-      p.data.dc_output = q.value(12).toUInt();
-      p.stride = q.value(13).toInt();
-      if (table == "usb_minutes")
-        p.sequence = q.value(15).toUInt();
-      output.append(p);
+      output.append(queryPoint(q, 0, table == "usb_minutes"));
     }
   }
   std::sort(output.begin(), output.end(),
@@ -424,6 +693,11 @@ HistoryPoints HistoryStore::undatedPoints(const QString &address) const {
   return output;
 }
 QJsonObject HistoryStore::stats() const {
+  if (buffered_ && (prepareBufferedTables() || !pending_.isEmpty()))
+    return {{"live", int(bufferedTables_[0].size())},
+            {"minutes", int(bufferedTables_[1].size())},
+            {"usb_minutes", bufferedUsbCount_},
+            {"pending", pendingCount()}};
   QJsonObject result;
   for (const QString &t : {QString("live"), QString("minutes"), QString("usb_minutes")}) {
     QSqlQuery q(db);
@@ -493,13 +767,46 @@ void HistoryWorker::exportPoints(HistoryPoints points, QString path) {
 HistoryWorker::~HistoryWorker() {
   delete store;
 }
+void HistoryWorker::reportBufferState(QString error) {
+  if (!error.isEmpty() && error != bufferError)
+    emit problem(error);
+  bufferError = std::move(error);
+  emit bufferStateChanged(store ? store->pendingCount() : 0, bufferError);
+}
+void HistoryWorker::setBuffered(bool enabled) {
+  if (store && !store->setBuffered(enabled)) {
+    reportBufferState(QCoreApplication::translate("Allpowers", "Could not save history point"));
+    return;
+  }
+  buffered = enabled;
+  if (enabled && store) {
+    if (!flushTimer) {
+      flushTimer = new QTimer(this);
+      flushTimer->setTimerType(Qt::PreciseTimer);
+      flushTimer->setInterval(60000);
+      connect(flushTimer, &QTimer::timeout, this, [this] { flush(); });
+    }
+    flushTimer->start();
+  } else if (flushTimer) {
+    flushTimer->stop();
+  }
+}
+bool HistoryWorker::flush() {
+  const bool ok = !store || store->flush();
+  reportBufferState(ok ? QString{}
+                       : QCoreApplication::translate("Allpowers", "Could not save history point"));
+  return ok;
+}
 void HistoryWorker::open(const QString &path) {
   directory = QFileInfo(path).absolutePath();
   store = new HistoryStore(path);
   if (!store->valid())
     emit problem(store->error());
-  else
+  else {
+    if (buffered)
+      setBuffered(true);
     emit opened();
+  }
 }
 void HistoryWorker::newSession() {
   if (store)
@@ -515,8 +822,16 @@ void HistoryWorker::sampleUsb(QString a, ap_snapshot s, qint64 w, qint64 t, QStr
 void HistoryWorker::writeSample(QString a, ap_snapshot s, qint64 w, qint64 t, const QString &board,
                                 quint32 epoch) {
   if (store && store->valid()) {
-    if (!store->record(a, s, w, t, board, epoch))
+    if (buffered) {
+      if (store->pendingCount() >= 3600)
+        flush();
+      if (!store->stage(a, s, w, t, board, epoch))
+        reportBufferState(QCoreApplication::translate("Allpowers", "Could not save history point"));
+      else
+        reportBufferState(bufferError);
+    } else if (!store->record(a, s, w, t, board, epoch)) {
       emit problem(QCoreApplication::translate("Allpowers", "Could not save history point"));
+    }
     load(a, w);
   }
   emit sampleFinished();

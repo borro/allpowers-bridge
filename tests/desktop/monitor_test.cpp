@@ -32,6 +32,7 @@
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QSqlDatabase>
+#include <QSqlDriver>
 #include <QSqlQuery>
 #include <QDialog>
 #include <QTabWidget>
@@ -42,6 +43,15 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <memory>
+
+// Use SQLite's supported per-connection trace hook without depending on private
+// Qt headers or adding performance counters to the product API.
+struct sqlite3;
+extern "C" int sqlite3_trace_v2(sqlite3 *, unsigned,
+                               int (*)(unsigned, void *, void *, void *), void *);
+extern "C" int sqlite3_set_authorizer(
+    sqlite3 *, int (*)(void *, int, const char *, const char *, const char *, const char *), void *);
+extern "C" void sqlite3_progress_handler(sqlite3 *, int, int (*)(void *), void *);
 
 static HistoryFormat::Record archiveRecord(quint32 sequence){
   auto r=HistoryFormat::example();r.magic=HistoryFormat::header(0x7f,3);
@@ -288,6 +298,473 @@ private slots:
     usb.stop(); const auto writes = io->writes; const int count = snapshots.count();
     emit io->opened(); emit io->failed("late failure"); io->feed(cycle); usb.refresh();
     QCOMPARE(io->writes, writes); QCOMPARE(snapshots.count(), count); QVERIFY(!usb.active());
+  }
+  void historyCacheDoesNotReloadEverySample() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    const auto previousConnections = QSqlDatabase::connectionNames();
+    HistoryStore store(path);
+    QVERIFY(store.valid());
+    auto connections = QSqlDatabase::connectionNames();
+    for (const auto &previous : previousConnections)
+      connections.removeAll(previous);
+    QCOMPARE(connections.size(), 1);
+    auto database = QSqlDatabase::database(connections.first(), false);
+    auto handle = database.driver()->handle();
+    QCOMPARE(QByteArray(handle.typeName()), QByteArray("sqlite3*"));
+    auto *sqlite = *static_cast<sqlite3 **>(handle.data());
+    QVERIFY(sqlite);
+    struct Trace { int fullReads = 0, metadataReads = 0; } trace;
+    const auto callback = [](unsigned, void *context, void *, void *statement) -> int {
+      auto &counts = *static_cast<Trace *>(context);
+      const auto sql = QString::fromUtf8(static_cast<const char *>(statement));
+      if (sql.startsWith("SELECT rowid,* FROM ") || sql.startsWith("SELECT * FROM "))
+        ++counts.fullReads;
+      if (sql.startsWith("SELECT MIN(rowid) FROM "))
+        ++counts.metadataReads;
+      return 0;
+    };
+    QCOMPARE(sqlite3_trace_v2(sqlite, 1u, callback, &trace), 0); // SQLITE_TRACE_STMT
+    const auto detach = qScopeGuard([&] { sqlite3_trace_v2(sqlite, 0, nullptr, nullptr); });
+    ap_snapshot sample{}; sample.known = 1; sample.soc = 40;
+    QVERIFY(store.record("fixture", sample, 10000, 1));
+    QCOMPARE(store.points("fixture", 9999).size(), 0);
+    QCOMPARE(trace.fullReads, 2); // One raw load of each table, independent of the first window.
+    QCOMPARE(store.points("fixture", 10000).size(), 1);
+    QCOMPARE(trace.fullReads, 2);
+    sample.soc = 41;
+    QVERIFY(store.record("fixture", sample, 10001, 2));
+    QCOMPARE(trace.metadataReads, 2);
+    const auto points = store.points("fixture", 10001);
+    QCOMPARE(points.size(), 2);
+    QCOMPARE(points.last().data.soc, 41u);
+    QCOMPARE(trace.fullReads, 2); // A committed sample updates rows without SELECT * decoding.
+    HistoryStore external(path);
+    sample.soc = 77;
+    QVERIFY(external.record("fixture", sample, 10002, 3));
+    QCOMPARE(store.points("fixture", 10002).last().data.soc, 77u);
+    QCOMPARE(trace.fullReads, 4); // An external commit invalidates and reloads both raw tables.
+    struct Authorize { bool denyMetadata = true, denyRawRead = false; int metadataFailures = 0; } auth;
+    const auto authorize = [](void *context, int action, const char *, const char *second,
+                              const char *, const char *) -> int {
+      auto &state = *static_cast<Authorize *>(context);
+      if (action == 31 && state.denyMetadata && second && qstricmp(second, "min") == 0) {
+        ++state.metadataFailures;
+        return 1; // SQLITE_DENY for the optional MIN(rowid) metadata, not the actual write.
+      }
+      if (action == 20 && state.denyRawRead && second && qstricmp(second, "ROWID") == 0)
+        return 1; // Force the cache loader to use the legacy SELECT * fallback.
+      return 0;
+    };
+    QCOMPARE(sqlite3_set_authorizer(sqlite, authorize, &auth), 0);
+    const auto detachAuthorizer = qScopeGuard([&] { sqlite3_set_authorizer(sqlite, nullptr, nullptr); });
+    sample.soc = 78;
+    QVERIFY(store.record("fixture", sample, 10003, 4));
+    QCOMPARE(auth.metadataFailures, 2);
+    QCOMPARE(trace.fullReads, 4);
+    auth.denyMetadata = false;
+    auth.denyRawRead = true;
+    const auto fallback = store.points("fixture", 10003);
+    QCOMPARE(fallback.size(), 4);
+    QCOMPARE(fallback.last().data.soc, 78u);
+    QCOMPARE(trace.fullReads, 6); // Both fallback SELECT * reads must be visible to the assertion.
+    auth.denyRawRead = false;
+    QCOMPARE(store.points("fixture", 10003).size(), 4);
+    QCOMPARE(trace.fullReads, 8); // Failed cache loading must not install a partial/empty cache.
+  }
+  void historyCacheMatchesSqlAfterRetentionAndClockChanges_data() {
+    QTest::addColumn<int>("liveLimit");
+    QTest::addColumn<int>("minuteLimit");
+    QTest::newRow("empty") << 0 << 0;
+    QTest::newRow("one-each") << 1 << 1;
+    QTest::newRow("global-retention") << 3 << 2;
+    QTest::newRow("live-only") << 2 << 0;
+    QTest::newRow("minutes-only") << 0 << 2;
+  }
+  void historyCacheMatchesSqlAfterRetentionAndClockChanges() {
+    QFETCH(int, liveLimit);
+    QFETCH(int, minuteLimit);
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    HistoryStore cached(path, liveLimit, minuteLimit);
+    // This connection never receives cached's incremental updates. Its
+    // data_version changes force a fresh SQL read after every committed write.
+    HistoryStore sqlReader(path, liveLimit, minuteLimit);
+    QVERIFY(cached.valid() && sqlReader.valid());
+    auto compare = [&](const QString &address, qint64 now) {
+      const auto actual = cached.points(address, now);
+      const auto expected = sqlReader.points(address, now);
+      QByteArray actualCsv, expectedCsv;
+      QBuffer actualBuffer(&actualCsv), expectedBuffer(&expectedCsv);
+      QVERIFY(actualBuffer.open(QIODevice::WriteOnly));
+      QVERIFY(expectedBuffer.open(QIODevice::WriteOnly));
+      QVERIFY(writeHistoryCsv(actual, actualBuffer));
+      QVERIFY(writeHistoryCsv(expected, expectedBuffer));
+      QCOMPARE(actualCsv, expectedCsv);
+      for (const auto &point : actual) {
+        QCOMPARE(point.data.runtime_s, 0u); // Unpersisted telemetry must not leak through the cache.
+        QCOMPARE(point.data.abi_version, 0u);
+        QVERIFY(!point.bridgeFromPrevious);
+      }
+    };
+    constexpr qint64 base = 1800010000;
+    const QList<QPair<QString, qint64>> writes{
+        {"a", 0}, {"a", 1}, {"b", 60}, {"a", 61}, {"b", 2}, {"a", 120},
+        {"a", 120}, {"b", 121}, {"a", 172921}, {"b", 172922}, {"a", 3}, {"b", 4}};
+    ap_snapshot sample{};
+    sample.abi_version = 1; sample.runtime_s = 999; sample.fresh = 1; sample.known = 895;
+    sample.soc = 40; sample.input_w = 100; sample.output_w = 80; sample.source = 2;
+    sample.ac_output = 1; sample.usb_output = 1; sample.dc_output = 1;
+    for (qsizetype i = 0; i < writes.size(); ++i) {
+      const auto &[address, offset] = writes[i];
+      const auto wall = base + offset;
+      cached.newSession(); // Includes replacing an identical wall/bucket in another session.
+      sample.soc = quint32(40 + i);
+      QVERIFY(cached.record(address, sample, wall, i, "synthetic", 7));
+      for (const auto &id : {QString("a"), QString("b")}) {
+        compare(id, wall - 1); // Seed with a window which does not yet include the new point.
+        compare(id, wall);
+        compare(id, wall + 172801);
+        compare(id, base + 200000); // Arbitrary forward/backward reads retain SQL semantics.
+      }
+    }
+    // A different connection may write the same database. Never keep stale data
+    // merely because this connection did not perform the write itself.
+    sample.soc = 99;
+    sqlReader.newSession();
+    QVERIFY(sqlReader.record("a", sample, base + 6, 500));
+    compare("a", base + 6);
+    compare("b", base + 200000);
+    if (liveLimit || minuteLimit) {
+      const auto latest = cached.points("a", base + 6);
+      QVERIFY(!latest.isEmpty());
+      QCOMPARE(latest.last().data.soc, 99u);
+    }
+    cached.newSession();
+    sample.soc = 76;
+    QVERIFY(cached.record("b", sample, base + 7, 501));
+    compare("a", base + 7);
+    compare("b", base + 7);
+  }
+  void historyBufferedFlushUsesFullDurabilityAndOneCleanup() {
+    QTemporaryDir dir;
+    const auto previous = QSqlDatabase::connectionNames();
+    HistoryStore store(dir.filePath("history.sqlite3"));
+    QVERIFY(store.setBuffered(true));
+    auto connections = QSqlDatabase::connectionNames();
+    for (const auto &name : previous) connections.removeAll(name);
+    QCOMPARE(connections.size(), 1);
+    auto database = QSqlDatabase::database(connections.first(), false);
+    QSqlQuery sync(database); QVERIFY(sync.exec("PRAGMA synchronous")); QVERIFY(sync.next());
+    QCOMPARE(sync.value(0).toInt(), 2); // SQLITE_SYNC_FULL, not the immediate-mode NORMAL.
+    sync.finish();
+    auto handle = database.driver()->handle();
+    QCOMPARE(QByteArray(handle.typeName()), QByteArray("sqlite3*"));
+    auto *sqlite = *static_cast<sqlite3 **>(handle.data()); QVERIFY(sqlite);
+    struct Trace { int begin = 0, commit = 0, cleanup = 0, writes = 0; } trace;
+    const auto callback = [](unsigned, void *context, void *, void *statement) -> int {
+      auto &counts = *static_cast<Trace *>(context);
+      const auto sql = QString::fromUtf8(static_cast<const char *>(statement));
+      if (sql.startsWith("BEGIN")) ++counts.begin;
+      if (sql.startsWith("COMMIT")) ++counts.commit;
+      if (sql.startsWith("DELETE FROM ")) ++counts.cleanup;
+      if (sql.startsWith("INSERT OR REPLACE INTO ")) ++counts.writes;
+      return 0;
+    };
+    QCOMPARE(sqlite3_trace_v2(sqlite, 1u, callback, &trace), 0);
+    const auto detach = qScopeGuard([&] { sqlite3_trace_v2(sqlite, 0, nullptr, nullptr); });
+    ap_snapshot sample{}; sample.soc = 42;
+    for (int i = 0; i < 60; ++i)
+      QVERIFY(store.stage("fixture", sample, 10000 + i, i));
+    QCOMPARE(trace.begin, 0); QCOMPARE(trace.writes, 0); QCOMPARE(trace.cleanup, 0);
+    QVERIFY(store.flush());
+    QCOMPARE(trace.begin, 1); QCOMPARE(trace.commit, 1);
+    QCOMPARE(trace.writes, 120); QCOMPARE(trace.cleanup, 2);
+    QVERIFY(store.setBuffered(false));
+    QVERIFY(sync.exec("PRAGMA synchronous")); QVERIFY(sync.next());
+    QCOMPARE(sync.value(0).toInt(), 1); // Immediate consumers retain NORMAL.
+  }
+  void historyBufferedWorkerPublishesBeforeFlushAndRetries() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    HistoryWorker worker;
+    worker.setBuffered(true); // Widget enables buffering before opening on its worker thread.
+    worker.open(path);
+    HistoryStore disk(path);
+    QSignalSpy loaded(&worker, &HistoryWorker::loaded);
+    QSignalSpy states(&worker, &HistoryWorker::bufferStateChanged);
+    QSignalSpy errors(&worker, &HistoryWorker::problem);
+    QSignalSpy finished(&worker, &HistoryWorker::sampleFinished);
+    ap_snapshot sample{}; sample.fresh = 1; sample.soc = 40;
+    worker.sampleUsb("fixture", sample, 10000, 1, "synthetic", 7);
+    worker.newSession();
+    sample.soc = 41;
+    worker.sampleUsb("fixture", sample, 10001, 2, "synthetic", 8);
+    QCOMPARE(finished.count(), 2);
+    QCOMPARE(disk.stats()["live"].toInt(), 0);
+    const auto ram = qvariant_cast<HistoryPoints>(loaded.last()[1]);
+    QCOMPARE(ram.size(), 2);
+    QCOMPARE(historyEpoch(ram.first()), 7u);
+    QCOMPARE(historyEpoch(ram.last()), 8u);
+    QVERIFY(ram.first().session != ram.last().session);
+    QCOMPARE(states.last()[0].toInt(), 2);
+    const auto csv = dir.filePath("before-flush.csv");
+    worker.exportFile("fixture", 10001, csv);
+    QFile exported(csv); QVERIFY(exported.open(QIODevice::ReadOnly));
+    QVERIFY(exported.readAll().contains("10001,2,"));
+    const auto connection = QUuid::createUuid().toString();
+    {
+      auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+      db.setDatabaseName(path); QVERIFY(db.open());
+      QSqlQuery query(db);
+      QVERIFY(query.exec("CREATE TRIGGER reject_batch BEFORE INSERT ON minutes BEGIN "
+                         "SELECT RAISE(ABORT, 'synthetic batch failure'); END"));
+      QVERIFY(!worker.flush());
+      QCOMPARE(disk.stats()["live"].toInt(), 0); // First table also rolled back.
+      QCOMPARE(states.last()[0].toInt(), 2);
+      QVERIFY(!states.last()[1].toString().isEmpty());
+      QCOMPARE(errors.count(), 1);
+      QVERIFY(!worker.flush()); QCOMPARE(errors.count(), 1); // Repeated failures do not spam logs.
+      worker.load("fixture", 10001);
+      QCOMPARE(qvariant_cast<HistoryPoints>(loaded.last()[1]).size(), 2);
+      QVERIFY(query.exec("DROP TRIGGER reject_batch"));
+      QVERIFY(worker.flush());
+      QCOMPARE(states.last()[0].toInt(), 0);
+      QVERIFY(states.last()[1].toString().isEmpty());
+      QCOMPARE(disk.points("fixture", 10001).size(), 2);
+      QVERIFY(worker.flush()); // Explicit shutdown flush is also safe when empty.
+      db.close();
+    }
+    QSqlDatabase::removeDatabase(connection);
+    // The periodic timer runs on Qt's monotonic event dispatcher. Shorten its
+    // interval here without adding a clock/test-only hook to product code.
+    auto *timer = worker.findChild<QTimer *>(); QVERIFY(timer);
+    QCOMPARE(timer->interval(), 60000); QCOMPARE(timer->timerType(), Qt::PreciseTimer);
+    worker.sample("fixture", sample, 10002, 3);
+    timer->setInterval(1);
+    QTRY_COMPARE(disk.points("fixture", 10002).size(), 3);
+  }
+  void historyBufferedBatchMatchesImmediateRetention_data() {
+    historyCacheMatchesSqlAfterRetentionAndClockChanges_data();
+    QTest::newRow("negative-offset") << -1 << -1;
+  }
+  void historyBufferedBatchMatchesImmediateRetention() {
+    QFETCH(int, liveLimit); QFETCH(int, minuteLimit);
+    QTemporaryDir dir;
+    HistoryStore ram(dir.filePath("buffered.sqlite3"), liveLimit, minuteLimit);
+    HistoryStore immediate(dir.filePath("immediate.sqlite3"), liveLimit, minuteLimit);
+    QVERIFY(ram.setBuffered(true));
+    const auto identity = [](const HistoryPoints &points) {
+      QByteArray result;
+      for (const auto &p : points)
+        result += QString("%1/%2/%3/%4/%5/%6/%7;").arg(p.address).arg(p.wall).arg(p.tick)
+                      .arg(p.stride).arg(p.data.soc).arg(historyBoard(p)).arg(historyEpoch(p)).toUtf8();
+      return result;
+    };
+    constexpr qint64 base = 1800010000;
+    const QList<QPair<QString, qint64>> writes{
+        {"a", 0}, {"b", 60}, {"a", 0}, {"a", 61}, {"b", 2},
+        {"a", 172921}, {"b", 172922}, {"a", 3}, {"b", 4}};
+    ap_snapshot sample{}; sample.fresh = 1;
+    for (qsizetype i = 0; i < writes.size(); ++i) {
+      const auto &[address, offset] = writes[i]; sample.soc = quint32(40 + i);
+      ram.newSession(); immediate.newSession();
+      QVERIFY(ram.stage(address, sample, base + offset, i, "synthetic", 7));
+      QVERIFY(immediate.record(address, sample, base + offset, i, "synthetic", 7));
+      for (const auto &id : {QString("a"), QString("b")})
+        for (const auto now : {base + offset, base + 200000, base + 10})
+          QCOMPARE(identity(ram.points(id, now)), identity(immediate.points(id, now)));
+    }
+    // Rebase the pending batch over an external writer at commit time, without
+    // overwriting rows for unrelated addresses or using a stale cached snapshot.
+    HistoryStore external(dir.filePath("buffered.sqlite3"), liveLimit, minuteLimit);
+    sample.soc = 99;
+    QVERIFY(external.record("outside", sample, base + 5, 100));
+    // Replay the buffered batch on the same external seed for a SQL oracle.
+    HistoryStore expected(dir.filePath("external-oracle.sqlite3"), liveLimit, minuteLimit);
+    QVERIFY(expected.record("outside", sample, base + 5, 100));
+    for (qsizetype i = 0; i < writes.size(); ++i) {
+      const auto &[address, offset] = writes[i]; sample.soc = quint32(40 + i);
+      expected.newSession();
+      QVERIFY(expected.record(address, sample, base + offset, i, "synthetic", 7));
+    }
+    QVERIFY(ram.flush()); QCOMPARE(ram.pendingCount(), 0);
+    for (const auto &id : {QString("a"), QString("b"), QString("outside")})
+      for (const auto now : {base + 4, base + 200000}) {
+        QCOMPARE(identity(ram.points(id, now)), identity(expected.points(id, now)));
+        QCOMPARE(identity(external.points(id, now)), identity(expected.points(id, now)));
+      }
+  }
+  void historyBufferedCapacityRejectsExplicitlyWithoutDroppingAcceptedPoints() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    HistoryStore store(path);
+    QVERIFY(store.setBuffered(true));
+    ap_snapshot sample{}; sample.soc = 42;
+    for (int i = 0; i < 3600; ++i)
+      QVERIFY(store.stage("fixture", sample, 10000 + i, i));
+    QCOMPARE(store.pendingCount(), 3600);
+    QVERIFY(!store.stage("fixture", sample, 13600, 3600));
+    QCOMPARE(store.pendingCount(), 3600);
+    QCOMPARE(store.points("fixture", 13600).size(), 3600);
+    QVERIFY(store.flush());
+    QVERIFY(store.stage("fixture", sample, 13600, 3600));
+    QVERIFY(store.flush());
+    HistoryStore disk(path);
+    const auto points = disk.points("fixture", 13600);
+    QCOMPARE(points.size(), 3600);
+    QCOMPARE(points.first().wall, 10001);
+    QCOMPARE(points.last().wall, 13600);
+  }
+  void historyBufferedTransactionAndReadFailuresKeepAcceptedPoints() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    const auto previous = QSqlDatabase::connectionNames();
+    HistoryStore store(path);
+    auto connections = QSqlDatabase::connectionNames();
+    for (const auto &name : previous) connections.removeAll(name);
+    QCOMPARE(connections.size(), 1);
+    auto database = QSqlDatabase::database(connections.first(), false);
+    auto handle = database.driver()->handle();
+    QCOMPARE(QByteArray(handle.typeName()), QByteArray("sqlite3*"));
+    auto *sqlite = *static_cast<sqlite3 **>(handle.data()); QVERIFY(sqlite);
+    struct Fault { QString transaction; bool sync = false, rawRead = false, count = false; } fault;
+    const auto authorize = [](void *context, int action, const char *first, const char *second,
+                              const char *, const char *) -> int {
+      const auto &f = *static_cast<Fault *>(context);
+      if (action == 22 && first && f.transaction == QLatin1String(first)) return 1;
+      if (action == 19 && first && f.sync && qstricmp(first, "synchronous") == 0) return 1;
+      if (action == 20 && second && f.rawRead && qstricmp(second, "ROWID") == 0) return 1;
+      if (action == 31 && second && f.count && qstricmp(second, "count") == 0) return 1;
+      return 0;
+    };
+    QCOMPARE(sqlite3_set_authorizer(sqlite, authorize, &fault), 0);
+    const auto detach = qScopeGuard([&] { sqlite3_set_authorizer(sqlite, nullptr, nullptr); });
+    ap_snapshot sample{}; sample.fresh = 1; sample.soc = 42;
+    fault.sync = true;
+    QVERIFY(!store.setBuffered(true));
+    QVERIFY(!store.stage("fixture", sample, 10000, 1));
+    fault.sync = false;
+    QVERIFY(store.setBuffered(true));
+    fault.rawRead = true;
+    QVERIFY(!store.stage("fixture", sample, 10000, 1));
+    QCOMPARE(store.pendingCount(), 0);
+    fault.rawRead = false; fault.count = true;
+    QVERIFY(!store.stage("fixture", sample, 10000, 1));
+    fault.count = false;
+    QVERIFY(store.stage("fixture", sample, 10000, 1));
+    HistoryStore disk(path);
+    for (const auto &transaction : {QString("BEGIN"), QString("COMMIT")}) {
+      fault.transaction = transaction;
+      QVERIFY(!store.flush());
+      QCOMPARE(store.pendingCount(), 1);
+      QCOMPARE(store.points("fixture", 10000).size(), 1);
+      QCOMPARE(disk.stats()["live"].toInt(), 0);
+      fault.transaction.clear();
+    }
+    fault.rawRead = true;
+    QVERIFY(!store.flush());
+    QCOMPARE(store.pendingCount(), 1);
+    QCOMPARE(store.points("fixture", 10000).size(), 1); // Last accepted RAM view survives rebase failure.
+    fault.rawRead = false;
+    QVERIFY(store.flush());
+    QCOMPARE(store.pendingCount(), 0);
+    QCOMPARE(disk.points("fixture", 10000).size(), 1);
+  }
+  void historyBufferedPartialReadDoesNotInstallTruncatedModel() {
+    QTemporaryDir dir;
+    const auto previous = QSqlDatabase::connectionNames();
+    HistoryStore store(dir.filePath("history.sqlite3"));
+    ap_snapshot sample{}; sample.soc = 42;
+    for (int i = 0; i < 100; ++i) QVERIFY(store.record("fixture", sample, 10000 + i, i));
+    QVERIFY(store.setBuffered(true));
+    auto connections = QSqlDatabase::connectionNames();
+    for (const auto &name : previous) connections.removeAll(name);
+    QCOMPARE(connections.size(), 1);
+    auto database = QSqlDatabase::database(connections.first(), false);
+    auto handle = database.driver()->handle();
+    auto *sqlite = *static_cast<sqlite3 **>(handle.data()); QVERIFY(sqlite);
+    struct Interrupt { sqlite3 *database; int steps = 0, interruptions = 0; } interrupt{sqlite};
+    const auto trace = [](unsigned, void *context, void *, void *statement) -> int {
+      auto *state = static_cast<Interrupt *>(context);
+      if (QString::fromUtf8(static_cast<const char *>(statement)).startsWith("SELECT rowid,* FROM live"))
+        sqlite3_progress_handler(state->database, 1, [](void *context) -> int {
+          auto &state = *static_cast<Interrupt *>(context);
+          if (++state.steps == 70) { ++state.interruptions; return 1; }
+          return 0;
+        }, state);
+      return 0;
+    };
+    QCOMPARE(sqlite3_trace_v2(sqlite, 1u, trace, &interrupt), 0);
+    const auto detach = qScopeGuard([&] {
+      sqlite3_progress_handler(sqlite, 0, nullptr, nullptr);
+      sqlite3_trace_v2(sqlite, 0, nullptr, nullptr);
+    });
+    QVERIFY(!store.stage("fixture", sample, 10100, 100));
+    QCOMPARE(interrupt.interruptions, 1);
+    QCOMPARE(store.pendingCount(), 0);
+    sqlite3_progress_handler(sqlite, 0, nullptr, nullptr);
+    sqlite3_trace_v2(sqlite, 0, nullptr, nullptr);
+    QVERIFY(store.stage("fixture", sample, 10100, 100));
+    QCOMPARE(store.points("fixture", 10100).size(), 101);
+    QVERIFY(store.flush());
+  }
+  void historyBufferedFlushPreservesUnrelatedExternalWriter() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    HistoryStore store(path, 20, 20);
+    QVERIFY(store.setBuffered(true));
+    ap_snapshot sample{}; sample.soc = 42;
+    QVERIFY(store.stage("fixture", sample, 10000, 1));
+    HistoryStore external(path, 20, 20);
+    sample.soc = 87;
+    QVERIFY(external.record("outside", sample, 11000, 2));
+    // Do not read through store before flushing: the transaction itself must
+    // rebase, even when its last RAM snapshot predates the external commit.
+    QVERIFY(store.flush());
+    const auto outside = external.points("outside", 11000);
+    QCOMPARE(outside.size(), 1); QCOMPARE(outside.first().data.soc, 87u);
+    QCOMPARE(external.points("fixture", 11000).size(), 1);
+  }
+  void historyBufferedWorkerCapacityFailureRetriesWithoutDroppingAcceptedBatch() {
+    QTemporaryDir dir;
+    const auto path = dir.filePath("history.sqlite3");
+    HistoryWorker worker; worker.setBuffered(true); worker.open(path);
+    QSignalSpy errors(&worker, &HistoryWorker::problem);
+    QSignalSpy state(&worker, &HistoryWorker::bufferStateChanged);
+    QSignalSpy finished(&worker, &HistoryWorker::sampleFinished);
+    ap_snapshot sample{}; sample.soc = 42;
+    // Alternating keys retain a tiny plotted view while filling the admission
+    // buffer; repeated arrival-order replacements still all require persistence.
+    for (int i = 0; i < 3600; ++i) worker.sample(i % 2 ? "a" : "b", sample, 10000, i);
+    QCOMPARE(state.last()[0].toInt(), 3600);
+    worker.sample("a", sample, 10001, 3600); // Full healthy buffer flushes before accepting the next point.
+    QCOMPARE(state.last()[0].toInt(), 1);
+    for (int i = 0; i < 3599; ++i) worker.sample(i % 2 ? "a" : "b", sample, 10001, 3601 + i);
+    QCOMPARE(state.last()[0].toInt(), 3600);
+    const auto connection = QUuid::createUuid().toString();
+    {
+      auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+      db.setDatabaseName(path); QVERIFY(db.open()); QSqlQuery query(db);
+      QVERIFY(query.exec("CREATE TRIGGER reject_full_batch BEFORE INSERT ON minutes BEGIN "
+                         "SELECT RAISE(ABORT, 'synthetic full-buffer failure'); END"));
+      worker.sample("a", sample, 10002, 7200);
+      QCOMPARE(finished.count(), 7201); QCOMPARE(state.last()[0].toInt(), 3600);
+      QCOMPARE(errors.count(), 1); QVERIFY(!state.last()[1].toString().isEmpty());
+      QVERIFY(query.exec("SELECT COUNT(*) FROM live")); QVERIFY(query.next());
+      QCOMPARE(query.value(0).toInt(), 2); query.finish();
+      QVERIFY(query.exec("DROP TRIGGER reject_full_batch"));
+      QVERIFY(worker.flush()); QCOMPARE(state.last()[0].toInt(), 0);
+      QVERIFY(query.exec("SELECT COUNT(*) FROM live")); QVERIFY(query.next());
+      QCOMPARE(query.value(0).toInt(), 4); query.finish();
+      worker.sample("a", sample, 10002, 7200); // Rejected sample was not silently acknowledged as stored.
+      QCOMPARE(state.last()[0].toInt(), 1);
+      QVERIFY(worker.flush());
+      QVERIFY(query.exec("SELECT COUNT(*) FROM live")); QVERIFY(query.next());
+      QCOMPARE(query.value(0).toInt(), 5); query.finish();
+      db.close();
+    }
+    QSqlDatabase::removeDatabase(connection);
   }
   void historyTransactionsRollbackAndRecover() {
     QTemporaryDir dir;

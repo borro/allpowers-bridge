@@ -28,5 +28,8 @@ public:
   void input(const QByteArray &report, qint64 now);
   void command(const QByteArray &command, qint64 now);
   void tick(qint64 now);
+  // Absolute session-clock deadline; no periodic polling is needed before it.
+  qint64 nextWakeup() const;
   void stop();
+  void stop(qint64 now);
 };

@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QSystemTrayIcon>
 #include <QVariantAnimation>
+#include <array>
 class QSettings;
 class QDialog;
 class QPainter;
@@ -22,18 +23,32 @@ class WidgetCard : public DesktopSurface {
   Q_OBJECT
   ap_snapshot snapshot_{};
   HistoryPoints points_;
+  struct GraphPoint {
+    qint64 wall;
+    quint32 watts;
+    bool starts;
+  };
+  std::array<QList<GraphPoint>, 2> graph_;
   QString phase_ = QCoreApplication::translate("Allpowers", "No connection");
   QString deviceName_ = QCoreApplication::translate("Allpowers", "No device");
   qint64 now_ = 0;
   QVariantAnimation graphAnimation_;
+  QTimer graphFrameTimer_;
   double graphNow_ = 0, graphMaximum_ = 10;
   double fromNow_ = 0, fromMaximum_ = 10, targetMaximum_ = 10;
   QPoint dragOrigin, savedOffset;
   bool dragging = false, locked_ = false;
+  bool telemetrySet_ = false;
+  mutable QImage staticCard_;
+  mutable QString staticMaximum_;
+  void rebuildGraph();
   void drawCard(QPainter &painter) const;
+  void drawStaticCard(QPainter &painter) const;
+  void drawGraph(QPainter &painter) const;
 
 public:
   explicit WidgetCard(bool desktop = true, std::function<quintptr()> hostFinder = {});
+  ~WidgetCard() override;
   void setTelemetry(ap_snapshot value, QString phase);
   void setDeviceName(QString name);
   void setHistory(HistoryPoints points, qint64 now);
@@ -76,15 +91,20 @@ class WidgetController : public QObject {
   QTimer timer;
   ap_snapshot latest{};
   qint64 receivedAt = -1, sampleAt = -1;
-  QString historyAddress, historyError, usbEndpoint;
+  qint64 plottedAt = -1;
+  QString historyAddress, historyError, historyFlushError, usbEndpoint;
+  int bufferedSamples = 0;
+  QString plottedUsbSession;
   HistoryPoints stored, remotePoints, usbPoints, plotted;
   HistorySampleQueue sampleQueue;
   WidgetRuntime runtime_;
   qint64 wallNow() const;
   qint64 elapsedNow() const;
   bool offline_, locked = false, historyReady = false;
+  bool refreshPending = false, historyDirty = true, plottedUsb = false;
   QPointer<QDialog> settingsDialog;
   bool save();
+  void requestRefresh();
   void refresh();
   void refreshHistory();
   void receive(ap_snapshot);

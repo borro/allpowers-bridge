@@ -2,8 +2,11 @@
 #include "session.h"
 #include <QJsonObject>
 #include <QList>
+#include <QMap>
 #include <QSqlDatabase>
 #include <QThread>
+#include <QTimer>
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -89,6 +92,25 @@ class HistoryStore {
   QString session_;
   int liveLimit, minuteLimit;
   QString lastKey;
+  struct CachedRow {
+    qint64 rowid, bucket;
+    HistoryPoint point;
+  };
+  using CachedTables = std::array<QList<CachedRow>, 2>;
+  mutable QMap<QString, CachedTables> pointCache_;
+  mutable qint64 pointCacheVersion_ = -1;
+  bool refreshPointCacheVersion() const;
+  bool loadPointCache(const QString &address) const;
+  HistoryPoints readPoints(const QString &address, qint64 now) const;
+  bool buffered_ = false;
+  HistoryPoints pending_;
+  mutable CachedTables bufferedTables_;
+  mutable qint64 bufferedVersion_ = -1;
+  mutable int bufferedUsbCount_ = 0;
+  bool readBufferedTables(CachedTables &tables) const;
+  bool prepareBufferedTables() const;
+  void applyBufferedPoint(CachedTables &, const HistoryPoint &,
+                          const std::array<qint64, 2> &rowids = {}) const;
 
 public:
   HistoryStore(const QString &path, int live = 3600, int minutes = 2880);
@@ -98,6 +120,13 @@ public:
   }
   QString error() const;
   void newSession();
+  bool setBuffered(bool enabled);
+  bool stage(const QString &, const ap_snapshot &, qint64 wall, qint64 tick,
+             const QString &board = {}, quint32 epoch = 0);
+  bool flush();
+  int pendingCount() const {
+    return int(pending_.size());
+  }
   bool record(const QString &, const ap_snapshot &, qint64 wall, qint64 tick,
               const QString &board = {}, quint32 epoch = 0);
   bool importPoints(const HistoryPoints &, qint64 now);
@@ -112,6 +141,10 @@ class HistoryWorker : public QObject {
   Q_OBJECT
   HistoryStore *store = nullptr;
   QString directory;
+  bool buffered = false;
+  QTimer *flushTimer = nullptr;
+  QString bufferError;
+  void reportBufferState(QString error = {});
   void writeSample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick,
                    const QString &board = {}, quint32 epoch = 0);
 
@@ -121,6 +154,8 @@ public slots:
   void exportPoints(HistoryPoints points, QString path);
   void importPoints(HistoryPoints points, qint64 now);
   virtual void open(const QString &path);
+  void setBuffered(bool enabled);
+  bool flush();
   void newSession();
   virtual void sample(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick);
   void sampleUsb(QString address, ap_snapshot snapshot, qint64 wall, qint64 tick, QString board,
@@ -136,4 +171,5 @@ signals:
   void undatedLoaded(QString address, HistoryPoints points);
   void problem(QString message);
   void exported(QString path, bool ok);
+  void bufferStateChanged(int pending, QString error);
 };

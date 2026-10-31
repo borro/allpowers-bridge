@@ -194,8 +194,11 @@ function(ap_add_desktop_tests)
     endif()
     add_test(NAME widget COMMAND widget_tests -platform offscreen
       -v1 -o -,txt -o widget-tests.xml,junitxml)
-    add_test(NAME widget-native COMMAND widget_tests nativeHostRecovery nativeCardPaintAndDrag -platform windows
+    add_test(NAME widget-native COMMAND widget_tests nativeHostRecovery nativeCardPaintAndDrag nativeImageBufferReuseAndRecovery -platform windows
       -o -,txt -o widget-native-tests.xml,junitxml)
+    add_test(NAME widget-cache-scaled COMMAND widget_tests staticLayerCacheFollowsTelemetryAndLanguage
+      staticLayerMaximumFollowsAnimation -platform offscreen -o -,txt -o widget-cache-scaled-tests.xml,junitxml)
+    set_tests_properties(widget-cache-scaled PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=1.5" TIMEOUT 120 LABELS coverage)
 
     if(MSVC)
       target_compile_options(monitor_tests PRIVATE /utf-8 /UNDEBUG)
@@ -209,7 +212,7 @@ function(ap_add_desktop_tests)
     # OutputDebugString instead of the captured stream, even with -o -,txt.
     set_property(TEST integration-contract usb-serial-contract battery-contract
       service-contract ${cli_contract_shards} ipc-contract archive-transport languages
-      widget widget-native desktop dropdown-native APPEND PROPERTY ENVIRONMENT
+      widget widget-native widget-cache-scaled desktop dropdown-native APPEND PROPERTY ENVIRONMENT
       "QT_FORCE_STDERR_LOGGING=1")
     set_tests_properties(widget-native dropdown-native PROPERTIES RESOURCE_LOCK windows-desktop)
     set_tests_properties(history-operation-process archive-transport languages widget widget-native

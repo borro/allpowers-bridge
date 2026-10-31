@@ -19,7 +19,6 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QScopeGuard>
@@ -28,7 +27,9 @@
 #include <QStandardPaths>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 bool setWidgetStartup(QSettings &store, bool enabled, const QString &executable) {
   if (enabled)
@@ -40,20 +41,45 @@ bool setWidgetStartup(QSettings &store, bool enabled, const QString &executable)
 }
 
 WidgetCard::WidgetCard(bool desktop, std::function<quintptr()> hostFinder)
-    : DesktopSurface(desktop, std::move(hostFinder)), graphAnimation_(this) {
+    : DesktopSurface(desktop, std::move(hostFinder)), graphAnimation_(this),
+      graphFrameTimer_(this) {
   setWindowTitle(QStringLiteral("ALLPOWERS Widget"));
   setFixedSize(300, 210);
   setCursor(Qt::SizeAllCursor);
   graphAnimation_.setDuration(900);
+  // Keep Qt's continuous animation clock, publishing at about 30 fps. The
+  // final frame is published immediately, regardless of the repaint cadence.
+  graphFrameTimer_.setInterval(33);
+  graphFrameTimer_.setTimerType(Qt::PreciseTimer);
+  const auto repaintGraph = [this] {
+    update();
+    if (attached())
+      presentImage(renderedImage());
+  };
+  connect(&graphFrameTimer_, &QTimer::timeout, this, repaintGraph);
   connect(&graphAnimation_, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
     const double progress = value.toDouble();
     graphNow_ = fromNow_ + (double(now_) - fromNow_) * progress;
     graphMaximum_ = fromMaximum_ + (targetMaximum_ - fromMaximum_) * progress;
-    update();
-    if (attached())
-      presentImage(renderedImage());
   });
-  connect(this, &DesktopSurface::surfaceChanged, this, [this] { presentImage(renderedImage()); });
+  connect(&graphAnimation_, &QAbstractAnimation::stateChanged, this,
+          [this, repaintGraph](QAbstractAnimation::State state) {
+            if (state == QAbstractAnimation::Running)
+              graphFrameTimer_.start();
+            else {
+              graphFrameTimer_.stop();
+              repaintGraph();
+            }
+          });
+  connect(this, &DesktopSurface::surfaceChanged, this, [this] {
+    rebuildGraph();
+    presentImage(renderedImage());
+  });
+}
+WidgetCard::~WidgetCard() {
+  graphAnimation_.disconnect(this);
+  graphFrameTimer_.stop();
+  graphAnimation_.stop();
 }
 QString WidgetCard::reading(const ap_snapshot &s, quint32 mask, quint32 value, QString suffix) {
   return (s.known & mask) ? QString::number(value) + suffix : QStringLiteral("—");
@@ -70,20 +96,36 @@ void WidgetCard::setDeviceName(QString name) {
   if (deviceName_ == name)
     return;
   deviceName_ = std::move(name);
+  staticCard_ = {};
   setAccessibleName(deviceName_ + " " + reading(snapshot_, 1, snapshot_.soc, "%"));
   update();
   if (attached())
     presentImage(renderedImage());
 }
 void WidgetCard::setTelemetry(ap_snapshot value, QString phase) {
+  const bool changed = !telemetrySet_ || (snapshot_.known & 15u) != (value.known & 15u) ||
+                       bool(snapshot_.fresh) != bool(value.fresh) ||
+                       ((value.known & 1u) && snapshot_.soc != value.soc) ||
+                       ((value.known & 2u) && snapshot_.input_w != value.input_w) ||
+                       ((value.known & 4u) && snapshot_.output_w != value.output_w) ||
+                       ((value.known & 8u) && remainingTime(snapshot_) != remainingTime(value));
+  const bool statusChanged = !telemetrySet_ || phase_ != phase ||
+                             bool(snapshot_.fresh) != bool(value.fresh) ||
+                             bool(snapshot_.known) != bool(value.known);
   snapshot_ = value;
+  telemetrySet_ = true;
   phase_ = std::move(phase);
-  const QString status = !value.fresh && value.known
-                             ? QCoreApplication::translate("Allpowers", "Data stale · ") + phase_
-                             : phase_;
-  setToolTip(status);
+  if (statusChanged) {
+    const QString status = !value.fresh && value.known
+                               ? QCoreApplication::translate("Allpowers", "Data stale · ") + phase_
+                               : phase_;
+    setToolTip(status);
+    setAccessibleDescription(status);
+  }
+  if (!changed)
+    return;
+  staticCard_ = {};
   setAccessibleName(deviceName_ + " " + reading(value, 1, value.soc, "%"));
-  setAccessibleDescription(status);
   update();
   if (attached())
     presentImage(renderedImage());
@@ -91,7 +133,7 @@ void WidgetCard::setTelemetry(ap_snapshot value, QString phase) {
 void WidgetCard::setHistory(HistoryPoints points, qint64 now) {
   points_ = std::move(points);
   double maximum = 10;
-  for (const auto &point : points_)
+  for (const auto &point : std::as_const(points_))
     if (point.wall >= now - 3600 && point.wall <= now && point.data.fresh) {
       if (point.data.known & 2)
         maximum = qMax(maximum, double(point.data.input_w));
@@ -116,13 +158,117 @@ void WidgetCard::setHistory(HistoryPoints points, qint64 now) {
       graphAnimation_.start();
     }
   }
+  rebuildGraph();
   update();
   if (attached())
     presentImage(renderedImage());
 }
 double WidgetCard::graphPosition(double age) {
   // Compress the latest seconds while retaining the full hour and logarithmic history.
-  return logPosition(age / 4., 3600. / 4.);
+  static const double inverseLogHorizon = 1. / std::log1p(3600. / 4.);
+  return 1. - std::log1p(qBound(0., age / 4., 3600. / 4.)) * inverseLogHorizon;
+}
+void WidgetCard::rebuildGraph() {
+  // Simplify each connected run once per history update, not on every animation
+  // frame. Preserve extrema within half a physical pixel before simplifying
+  // runs, checking both ends of the animation at its largest vertical scale.
+  // Retained vertices still use the exact logarithmic position on every frame.
+  const double start = graphNow_;
+  const double end = double(now_);
+  const double height = 54. / qMin(graphMaximum_, targetMaximum_);
+  const double tolerance = .15 / desktopScale();
+  const double toleranceSquared = tolerance * tolerance;
+  const double columns = 2. * desktopScale();
+  const auto &points = std::as_const(points_);
+  auto distanceSquared = [](QPointF point, QPointF a, QPointF b) {
+    const auto line = b - a;
+    const double length = QPointF::dotProduct(line, line);
+    const double fraction =
+        length > 0 ? qBound(0., QPointF::dotProduct(point - a, line) / length, 1.) : 0.;
+    const auto delta = point - (a + fraction * line);
+    return QPointF::dotProduct(delta, delta);
+  };
+  for (int series = 0; series < 2; ++series) {
+    auto &graph = graph_[series];
+    graph.clear();
+    const quint32 mask = series == 0 ? 2u : 4u;
+    QList<GraphPoint> run;
+    auto appendRun = [&] {
+      if (run.size() < 2)
+        return;
+      QList<QPointF> from, to;
+      from.reserve(run.size());
+      to.reserve(run.size());
+      for (const auto &point : run) {
+        const double y = double(point.watts) * height;
+        from.append({272. * graphPosition(start - double(point.wall)), y});
+        to.append({272. * graphPosition(end - double(point.wall)), y});
+      }
+      QList<qsizetype> candidates;
+      for (qsizetype first = 0; first < run.size();) {
+        const auto fromColumn = qFloor(from[first].x() * columns);
+        const auto toColumn = qFloor(to[first].x() * columns);
+        qsizetype next = first + 1, minimum = first, maximum = first;
+        while (next < run.size() && qFloor(from[next].x() * columns) == fromColumn &&
+               qFloor(to[next].x() * columns) == toColumn) {
+          if (run[next].watts < run[minimum].watts)
+            minimum = next;
+          if (run[next].watts > run[maximum].watts)
+            maximum = next;
+          ++next;
+        }
+        std::array<qsizetype, 4> extrema{first, minimum, maximum, next - 1};
+        std::sort(extrema.begin(), extrema.end());
+        for (auto index : extrema)
+          if (candidates.isEmpty() || candidates.last() != index)
+            candidates.append(index);
+        first = next;
+      }
+      QList<bool> keep(candidates.size(), false);
+      keep.first() = keep.last() = true;
+      QList<QPair<qsizetype, qsizetype>> spans{{0, candidates.size() - 1}};
+      while (!spans.isEmpty()) {
+        const auto [first, last] = spans.takeLast();
+        double largest = toleranceSquared;
+        qsizetype selected = -1;
+        for (qsizetype i = first + 1; i < last; ++i) {
+          const auto a = candidates[first], b = candidates[last], point = candidates[i];
+          const double error = qMax(distanceSquared(from[point], from[a], from[b]),
+                                    distanceSquared(to[point], to[a], to[b]));
+          if (error > largest) {
+            largest = error;
+            selected = i;
+          }
+        }
+        if (selected >= 0) {
+          keep[selected] = true;
+          spans.append({first, selected});
+          spans.append({selected, last});
+        }
+      }
+      for (qsizetype i = 0; i < candidates.size(); ++i)
+        if (keep[i]) {
+          const auto &point = run[candidates[i]];
+          graph.append({point.wall, point.watts, i == 0});
+        }
+      run.clear();
+    };
+    auto vertex = [mask](const HistoryPoint &point) {
+      return GraphPoint{point.wall, mask == 2 ? point.data.input_w : point.data.output_w, false};
+    };
+    for (qsizetype i = 1; i < points.size(); ++i) {
+      const auto &a = points[i - 1], &b = points[i];
+      if (a.wall >= now_ - 3600 && b.wall <= now_ && (a.data.known & mask) &&
+          (b.data.known & mask) && joinPoints(a, b)) {
+        if (run.isEmpty())
+          run.append(vertex(a));
+        run.append(vertex(b));
+      } else {
+        appendRun();
+      }
+    }
+    appendRun();
+  }
 }
 int WidgetCard::graphSegments(const HistoryPoints &points, quint32 mask, qint64 now) {
   int result = 0;
@@ -148,6 +294,22 @@ QImage WidgetCard::renderedImage() const {
   return frame;
 }
 void WidgetCard::drawCard(QPainter &p) const {
+  const qreal scale = p.device()->devicePixelRatioF();
+  const QSize pixels(qRound(width() * scale), qRound(height() * scale));
+  const QString maximum = QString::number(graphMaximum_, 'f', 0);
+  if (staticCard_.size() != pixels || staticCard_.devicePixelRatio() != scale ||
+      staticMaximum_ != maximum) {
+    staticCard_ = QImage(pixels, QImage::Format_ARGB32_Premultiplied);
+    staticCard_.setDevicePixelRatio(scale);
+    staticCard_.fill(Qt::transparent);
+    QPainter background(&staticCard_);
+    drawStaticCard(background);
+    staticMaximum_ = maximum;
+  }
+  p.drawImage(QPoint(0, 0), staticCard_);
+  drawGraph(p);
+}
+void WidgetCard::drawStaticCard(QPainter &p) const {
   p.fillRect(rect(), QColor("#101b2d"));
   p.setRenderHint(QPainter::Antialiasing, false);
   p.setPen(QPen(QColor("#30415b"), 1));
@@ -188,26 +350,33 @@ void WidgetCard::drawCard(QPainter &p) const {
   p.setPen(QPen(QColor("#2b3b53"), 1));
   p.drawLine(plot.bottomLeft(), plot.bottomRight());
   p.drawLine(plot.topLeft(), plot.topRight());
-  p.save();
-  p.setClipRect(plot.adjusted(-3, -1, 3, 3));
-  for (quint32 mask : {2u, 4u}) {
-    p.setPen(QPen(QColor(mask == 2 ? "#65baff" : "#eff5ff"), 1.6));
-    auto point = [&](const HistoryPoint &v) {
-      double watts = mask == 2 ? v.data.input_w : v.data.output_w;
-      return QPointF(plot.left() + graphPosition(graphNow_ - double(v.wall)) * plot.width(),
-                     plot.bottom() - watts * plot.height() / maximum);
-    };
-    for (qsizetype i = 1; i < points_.size(); ++i) {
-      const auto &a = points_[i - 1], &b = points_[i];
-      if (a.wall >= now_ - 3600 && b.wall <= now_ && (a.data.known & mask) &&
-          (b.data.known & mask) && joinPoints(a, b))
-        p.drawLine(point(a), point(b));
-    }
-  }
-  p.restore();
   text({14, 184, 180, 16}, QCoreApplication::translate("Allpowers", "−1 hour · log time"), 8,
        QColor("#8ea5c4"));
   text({240, 184, 50, 16}, QCoreApplication::translate("Allpowers", "now"), 8, QColor("#8ea5c4"));
+}
+void WidgetCard::drawGraph(QPainter &p) const {
+  const QRectF plot(14, 126, 272, 54);
+  const double maximum = graphMaximum_;
+  p.save();
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setBrush(Qt::NoBrush);
+  p.setClipRect(plot.adjusted(-3, -1, 3, 3));
+  for (int series = 0; series < 2; ++series) {
+    p.setPen(QPen(QColor(series == 0 ? "#65baff" : "#eff5ff"), 1.6));
+    QList<QLineF> lines;
+    lines.reserve(graph_[series].size());
+    QPointF previous;
+    for (const auto &point : graph_[series]) {
+      const QPointF pixel(plot.left() +
+                              graphPosition(graphNow_ - double(point.wall)) * plot.width(),
+                          plot.bottom() - double(point.watts) * plot.height() / maximum);
+      if (!point.starts)
+        lines.append({previous, pixel});
+      previous = pixel;
+    }
+    p.drawLines(lines);
+  }
+  p.restore();
 }
 void WidgetCard::mousePressEvent(QMouseEvent *event) {
   if (event->button() != Qt::LeftButton)
@@ -253,7 +422,28 @@ bool WidgetCard::event(QEvent *event) {
       emit positionChanged();
     }
   }
-  return DesktopSurface::event(event);
+  const bool result = DesktopSurface::event(event);
+  switch (event->type()) {
+  case QEvent::LanguageChange:
+  case QEvent::LocaleChange:
+  case QEvent::ApplicationFontChange:
+  case QEvent::FontChange:
+  case QEvent::StyleChange:
+  case QEvent::ApplicationPaletteChange:
+  case QEvent::PaletteChange:
+  case QEvent::DevicePixelRatioChange:
+    staticCard_ = {};
+    telemetrySet_ = false;
+    if (event->type() == QEvent::DevicePixelRatioChange)
+      rebuildGraph();
+    update();
+    if (attached())
+      presentImage(renderedImage());
+    break;
+  default:
+    break;
+  }
+  return result;
 }
 
 qint64 WidgetController::wallNow() const {
@@ -281,7 +471,10 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
   history = runtime_.makeHistoryWorker ? runtime_.makeHistoryWorker() : new HistoryWorker;
   history->moveToThread(&historyThread);
   connect(&historyThread, &QThread::finished, history, &QObject::deleteLater);
-  connect(this, &WidgetController::openHistory, history, &HistoryWorker::open);
+  connect(this, &WidgetController::openHistory, history, [worker = history](const QString &path) {
+    worker->setBuffered(true);
+    worker->open(path);
+  });
   connect(history, &HistoryWorker::opened, this, [this] { historyReady = true; });
   connect(this, &WidgetController::loadHistory, history, &HistoryWorker::load);
   connect(this, &WidgetController::sample, history, &HistoryWorker::sample);
@@ -301,24 +494,33 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
               usbPoints = std::move(points);
             else
               stored = std::move(points);
-            refreshHistory();
+            historyDirty = true;
+            requestRefresh();
           });
   connect(history, &HistoryWorker::problem, this, [this](QString message) {
     RuntimeLog::record("history.error", {{"message", message}});
     historyError = message;
-    refresh();
+    requestRefresh();
+  });
+  connect(history, &HistoryWorker::bufferStateChanged, this, [this](int pending, QString error) {
+    bufferedSamples = pending;
+    if (!historyFlushError.isEmpty() && historyError == historyFlushError)
+      historyError = error;
+    historyFlushError = std::move(error);
+    requestRefresh();
   });
   historyThread.start();
   emit openHistory(directory + "/history.sqlite3");
   connect(&transport, &TelemetryTransport::snapshot, this, &WidgetController::receive);
-  connect(&transport, &TelemetryTransport::stateChanged, this, &WidgetController::refresh);
+  connect(&transport, &TelemetryTransport::stateChanged, this, &WidgetController::requestRefresh);
   connect(&transport, &TelemetryTransport::newSession, this, [this] {
     sampleQueue.clearPending();
     emit newSession();
   });
   connect(&transport, &TelemetryTransport::historyReady, this, [this](HistoryPoints points) {
     remotePoints = std::move(points);
-    refreshHistory();
+    historyDirty = true;
+    requestRefresh();
   });
   connect(&transport, &TelemetryTransport::historyImported, this,
           [this](HistoryPoints points) { emit importHistory(points, wallNow()); });
@@ -356,13 +558,13 @@ WidgetController::WidgetController(QString path, bool offline, bool desktop,
     RuntimeLog::record("widget.attachment", card_.nativeDiagnostics());
     if (!card_.attached() && !offline_)
       tray.showMessage("ALLPOWERS Widget", card_.attachmentError());
-    refresh();
+    requestRefresh();
   });
   timer.setInterval(1000);
   connect(&timer, &QTimer::timeout, this, [this] {
     if (!offline_ && receivedAt >= 0 && elapsedNow() - receivedAt > 5000)
       latest.fresh = false;
-    refresh();
+    requestRefresh();
   });
   timer.start();
   new TransportTrace(&transport, this, [this] {
@@ -379,8 +581,13 @@ WidgetController::~WidgetController() {
   save();
   if (auto pending = sampleQueue.takePending())
     emit sample(pending->address, pending->data, pending->wall, pending->tick);
-  // All posted history writes complete before the worker thread quits.
-  QMetaObject::invokeMethod(history, [] {}, Qt::BlockingQueuedConnection);
+  // Drain posted samples, then commit the in-memory tail on its owning thread.
+  bool flushed = false;
+  QMetaObject::invokeMethod(
+      history, [worker = history, &flushed] { flushed = worker->flush(); },
+      Qt::BlockingQueuedConnection);
+  if (!flushed)
+    RuntimeLog::record("history.flush_failed");
   historyThread.quit();
   historyThread.wait();
   RuntimeLog::record("widget.destroy_end");
@@ -436,6 +643,7 @@ void WidgetController::receive(ap_snapshot value) {
     historyAddress = address;
     stored.clear();
     remotePoints.clear();
+    historyDirty = true;
     sampleAt = -1;
     sampleQueue.clearPending();
     emit newSession();
@@ -455,11 +663,25 @@ void WidgetController::receive(ap_snapshot value) {
   }
   refresh();
 }
+void WidgetController::requestRefresh() {
+  if (refreshPending)
+    return;
+  refreshPending = true;
+  QMetaObject::invokeMethod(
+      this,
+      [this] {
+        if (refreshPending)
+          refresh();
+      },
+      Qt::QueuedConnection);
+}
 void WidgetController::refresh() {
+  refreshPending = false;
   const QString endpoint = transport.usb() ? transport.endpoint() : QString{};
   if (endpoint != usbEndpoint) {
     usbEndpoint = endpoint;
     usbPoints.clear();
+    historyDirty = true;
     if (!endpoint.isEmpty())
       emit loadHistory("usb-board:" + endpoint, wallNow());
   }
@@ -478,13 +700,27 @@ void WidgetController::refresh() {
     refreshHistory();
 }
 void WidgetController::refreshHistory() {
-  plotted = mergeHistory(stored, remotePoints);
-  if (transport.usb()) {
+  const bool usb = transport.usb();
+  QString session;
+  if (usb) {
     const auto boot = transport.diagnostics()["history_session"].toInteger();
-    plotted = mergeUsbHistory(plotted, usbPoints,
-                              transport.connected() ? QString("usb-%1").arg(boot) : QString{});
+    if (transport.connected())
+      session = QString("usb-%1").arg(boot);
   }
-  card_.setHistory(plotted, wallNow());
+  const bool changed = historyDirty || usb != plottedUsb || session != plottedUsbSession;
+  if (changed) {
+    plotted = mergeHistory(stored, remotePoints);
+    if (usb)
+      plotted = mergeUsbHistory(plotted, usbPoints, session);
+    historyDirty = false;
+    plottedUsb = usb;
+    plottedUsbSession = std::move(session);
+  }
+  const auto now = wallNow();
+  if (changed || now != plottedAt) {
+    plottedAt = now;
+    card_.setHistory(plotted, now);
+  }
 }
 void WidgetController::configure() {
   if (settingsDialog) {
@@ -615,6 +851,7 @@ void WidgetController::configure() {
   stored.clear();
   remotePoints.clear();
   usbPoints.clear();
+  historyDirty = true;
   usbEndpoint.clear();
   historyAddress.clear();
   transport.setMode(mode.currentData().toString());
@@ -648,6 +885,8 @@ void WidgetController::loadDemo() {
 QJsonObject WidgetController::diagnostics() const {
   auto result = card_.nativeDiagnostics();
   const QJsonObject values{{"history_error", historyError},
+                           {"history_flush_error", historyFlushError},
+                           {"history_buffered_samples", bufferedSamples},
                            {"diagnostic_log", RuntimeLog::path()},
                            {"transport", transport.diagnostics()},
                            {"snapshot_age_ms", receivedAt < 0 ? -1 : elapsedNow() - receivedAt},

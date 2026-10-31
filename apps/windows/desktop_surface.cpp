@@ -9,6 +9,51 @@
 #include <windows.h>
 #include <windowsx.h>
 
+struct DesktopSurface::ImageBuffer {
+  HDC dc = nullptr;
+  HBITMAP bitmap = nullptr;
+  HGDIOBJ previous = nullptr;
+  void *pixels = nullptr;
+  QSize size;
+
+  ImageBuffer() = default;
+  ImageBuffer(const ImageBuffer &) = delete;
+  ImageBuffer &operator=(const ImageBuffer &) = delete;
+
+  ~ImageBuffer() {
+    if (dc && previous)
+      SelectObject(dc, previous);
+    if (bitmap)
+      DeleteObject(bitmap);
+    if (dc)
+      DeleteDC(dc);
+  }
+
+  static std::unique_ptr<ImageBuffer> create(QSize size) {
+    auto result = std::make_unique<ImageBuffer>();
+    result->size = size;
+    result->dc = CreateCompatibleDC(nullptr);
+    if (!result->dc)
+      return {};
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = size.width();
+    info.bmiHeader.biHeight = -size.height();
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    result->bitmap =
+        CreateDIBSection(result->dc, &info, DIB_RGB_COLORS, &result->pixels, nullptr, 0);
+    if (!result->bitmap || !result->pixels)
+      return {};
+    const auto previous = SelectObject(result->dc, result->bitmap);
+    if (!previous || previous == HGDI_ERROR)
+      return {};
+    result->previous = previous;
+    return result;
+  }
+};
+
 namespace {
 BOOL CALLBACK findDesktop(HWND window, LPARAM value) {
   if (auto view = FindWindowExW(window, nullptr, L"SHELLDLL_DefView", nullptr)) {
@@ -168,7 +213,14 @@ void DesktopSurface::attach() {
     emit attachmentChanged();
 }
 void DesktopSurface::presentImage(const QImage &image) {
-  frame_ = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+  if (image.isNull())
+    return;
+  auto frame = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+  if (frame.isNull()) {
+    error_ = QCoreApplication::translate("Allpowers", "Could not allocate card image");
+    return;
+  }
+  frame_ = std::move(frame);
   publish();
 }
 void DesktopSurface::publish() {
@@ -177,38 +229,41 @@ void DesktopSurface::publish() {
   HWND window = reinterpret_cast<HWND>(handle);
   if (!IsWindow(window))
     return;
-  BITMAPINFO bitmap{};
-  bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-  bitmap.bmiHeader.biWidth = frame_.width();
-  bitmap.bmiHeader.biHeight = -frame_.height();
-  bitmap.bmiHeader.biPlanes = 1;
-  bitmap.bmiHeader.biBitCount = 32;
-  bitmap.bmiHeader.biCompression = BI_RGB;
-  void *pixels = nullptr;
-  HDC memory = CreateCompatibleDC(nullptr);
-  HBITMAP dib = CreateDIBSection(memory, &bitmap, DIB_RGB_COLORS, &pixels, nullptr, 0);
-  if (!memory || !dib || !pixels) {
-    if (dib)
-      DeleteObject(dib);
-    if (memory)
-      DeleteDC(memory);
-    error_ = QCoreApplication::translate("Allpowers", "Could not allocate card image");
-    return;
+  // The source always has a fixed 32-bit premultiplied format. Keep the DC and
+  // its selected DIB across frames, including Explorer host recreation; only
+  // the actual pixel dimensions require another allocation.
+  auto *buffer = imageBuffer_.get();
+  std::unique_ptr<ImageBuffer> replacement;
+  if (!buffer || buffer->size != frame_.size()) {
+    replacement = ImageBuffer::create(frame_.size());
+    if (!replacement) {
+      error_ = QCoreApplication::translate("Allpowers", "Could not allocate card image");
+      return;
+    }
+    buffer = replacement.get();
   }
-  std::memcpy(pixels, frame_.constBits(), size_t(frame_.sizeInBytes()));
-  const auto previous = SelectObject(memory, dib);
+  const qsizetype rowBytes = qsizetype(frame_.width()) * 4;
+  if (frame_.bytesPerLine() == rowBytes)
+    std::memcpy(buffer->pixels, frame_.constBits(), size_t(rowBytes) * frame_.height());
+  else
+    for (int y = 0; y < frame_.height(); ++y)
+      std::memcpy(static_cast<uchar *>(buffer->pixels) + qsizetype(y) * rowBytes,
+                  frame_.constScanLine(y), size_t(rowBytes));
   // Bitmap publication must not move a child window. Feeding screen coordinates
   // to its parent-relative destination accumulates the host offset every frame.
   POINT source{0, 0};
   SIZE size{frame_.width(), frame_.height()};
   BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-  const BOOL ok =
-      UpdateLayeredWindow(window, nullptr, nullptr, &size, memory, &source, 0, &blend, ULW_ALPHA);
+  const BOOL ok = UpdateLayeredWindow(window, nullptr, nullptr, &size, buffer->dc, &source, 0,
+                                      &blend, ULW_ALPHA);
   const DWORD error = ok ? 0 : GetLastError();
-  SelectObject(memory, previous);
-  DeleteObject(dib);
-  DeleteDC(memory);
+  // Commit replacements only after publication succeeds. A transient failure
+  // leaves the previous allocation and the last displayed frame available.
+  if (ok && replacement)
+    imageBuffer_ = std::move(replacement);
   published_ = bool(ok);
+  if (ok)
+    error_.clear();
   if (ok && !IsWindowVisible(window))
     SetWindowPos(window, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);

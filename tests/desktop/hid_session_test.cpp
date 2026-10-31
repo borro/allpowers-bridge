@@ -8,6 +8,7 @@
 #include <QUuid>
 #include <deque>
 #include <vector>
+#include <limits>
 using namespace HidTelemetry;
 namespace {
 struct Source : Provider {
@@ -52,6 +53,84 @@ struct BridgeChannel : UsbChannel {
 class HidSessionTests : public QObject {
   Q_OBJECT
 private slots:
+  void nextWakeupTracksRetriesAndPeriodicMetadata() {
+    QList<QByteArray> output; QString error;
+    HidSession session({[&](QByteArray data) { output.append(data); }, [](QByteArray) {},
+      [&](QString text) { error = text; }, [] { return QByteArray(16, 'a'); }});
+    QCOMPARE(session.nextWakeup(), std::numeric_limits<qint64>::max());
+    QVERIFY(session.start(caps(), 500));
+    QCOMPARE(session.nextWakeup(), qint64(10500));
+    auto respond = [&](const QByteArray &command, qint64 now) {
+      Request request;
+      QVERIFY(decode(reinterpret_cast<const uint8_t *>(command.constData()) + 1, 63, request));
+      const QByteArray body = "{\"station_name\":\"test\",\"station_address\":\"02:00:00:00:00:01\"}\n";
+      const auto digest = crc32(body.constData(), size_t(body.size()));
+      for (size_t offset = 0; offset < size_t(body.size());) {
+        uint8_t report[64]{}; report[0] = ResponseReport;
+        offset += fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()),
+          size_t(body.size()), digest, offset, report + 1);
+        session.input(QByteArray(reinterpret_cast<char *>(report), 64), now);
+      }
+    };
+    respond(output.first(), 501);
+    QCOMPARE(session.nextWakeup(), qint64(10500));
+    session.command("DIAG\n", 1987);
+    session.tick(10499); QCOMPARE(output.size(), 2);
+    session.tick(10500); QCOMPARE(output.size(), 3);
+    QCOMPARE(session.nextWakeup(), qint64(11987)); // Preserve deadlines between live ticks.
+    respond(output.last(), 10501);
+    QCOMPARE(session.nextWakeup(), qint64(11987));
+    session.tick(11987); QCOMPARE(output.size(), 4);
+    QCOMPARE(output[1], output[3]); // Same operation on a retry.
+    QCOMPARE(session.nextWakeup(), qint64(20500));
+    QVERIFY(error.isEmpty());
+  }
+  void nextWakeupStopsAfterFailure() {
+    HidSession session({[](QByteArray) {}, [](QByteArray) {}, [](QString) {},
+      [] { return QByteArray(16, 'a'); }});
+    QVERIFY(session.start(caps(), 0));
+    for (qint64 now : {10000, 20000, 30000}) {
+      session.tick(now);
+      QCOMPARE(session.nextWakeup(), now + 10000);
+    }
+    session.tick(40000);
+    QCOMPARE(session.nextWakeup(), std::numeric_limits<qint64>::max());
+  }
+  void idleCancelKeepsAFullCloseRetryDeadline() {
+    QList<QByteArray> output; QString error; unsigned entropy = 0;
+    HidSession session({[&](QByteArray data) { output.append(data); }, [](QByteArray) {},
+      [&](QString text) { error = text; }, [&] {
+        QByteArray id(16, 0); id[0] = char(++entropy); return id;
+      }});
+    auto metadata = [&](const QByteArray &command, qint64 now) {
+      Request request;
+      QVERIFY(decode(reinterpret_cast<const uint8_t *>(command.constData()) + 1, 63, request));
+      QVERIFY(request.op == Op::Metadata);
+      const QByteArray body = "{\"station_name\":\"test\",\"station_address\":\"02:00:00:00:00:01\"}\n";
+      const auto digest = crc32(body.constData(), size_t(body.size()));
+      for (size_t offset = 0; offset < size_t(body.size());) {
+        uint8_t report[64]{}; report[0] = ResponseReport;
+        offset += fragment(request, Result::Ok, reinterpret_cast<const uint8_t *>(body.constData()),
+          size_t(body.size()), digest, offset, report + 1);
+        session.input(QByteArray(reinterpret_cast<char *>(report), 64), now);
+      }
+    };
+    QVERIFY(session.start(caps(), 0)); metadata(output.first(), 0);
+    session.tick(10000); metadata(output.last(), 10000);
+    session.command("HISTORY-EXPORT 1 01000000000000000000000000000000\n", 10001);
+    session.stop(10987); // No input or tick has advanced the session since 10001.
+    const auto close = output.last();
+    Request request;
+    QVERIFY(decode(reinterpret_cast<const uint8_t *>(close.constData()) + 1, 63, request));
+    QVERIFY(request.op == Op::Close);
+    session.tick(20000); // Only periodic metadata is due here.
+    QCOMPARE(session.nextWakeup(), qint64(20987));
+    const auto beforeRetry = output.size();
+    session.tick(20986); QCOMPARE(output.size(), beforeRetry);
+    session.tick(20987); QCOMPARE(output.size(), beforeRetry + 1);
+    QCOMPARE(output.last(), close);
+    QVERIFY(error.isEmpty());
+  }
   void productionMetadataPreservesLive_data() {
     QTest::addColumn<int>("model");
     QTest::newRow("Old10") << 1;

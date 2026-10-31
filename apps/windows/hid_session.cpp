@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QJsonDocument>
 #include <array>
+#include <limits>
 
 using namespace HidTelemetry;
 namespace {
@@ -188,7 +189,11 @@ HidSession::HidSession(Callbacks cb) : impl(std::make_unique<Impl>()) {
 }
 HidSession::~HidSession() = default;
 void HidSession::stop() {
+  stop(impl->clock);
+}
+void HidSession::stop(qint64 now) {
   auto &d = *impl;
+  d.clock = now;
   if (d.importing && !d.failed)
     d.request(2, Op::Close, d.archive);
   d.importing = false;
@@ -349,4 +354,16 @@ void HidSession::tick(qint64 now) {
     d.metadataAt = now;
     d.request(0, Op::Metadata);
   }
+}
+qint64 HidSession::nextWakeup() const {
+  const auto &d = *impl;
+  qint64 next = std::numeric_limits<qint64>::max();
+  if (d.failed || !d.boot)
+    return next;
+  for (const auto &p : d.pending)
+    if (p.active)
+      next = qMin(next, p.sent + 10000);
+  if (!d.pending[0].active)
+    next = qMin(next, d.metadataAt + 10000);
+  return next;
 }

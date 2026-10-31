@@ -4,6 +4,7 @@
 #include <QTimer>
 #include <QWidget>
 #include <functional>
+#include <memory>
 
 // Native DWM surface is independent of Qt's QWidget backing-store lifecycle.
 class DesktopSurface : public QWidget {
@@ -15,6 +16,8 @@ class DesktopSurface : public QWidget {
   bool enabled_, published_ = false;
   std::function<quintptr()> hostFinder_;
   QImage frame_;
+  struct ImageBuffer;
+  std::unique_ptr<ImageBuffer> imageBuffer_;
   void attach();
   void publish();
 

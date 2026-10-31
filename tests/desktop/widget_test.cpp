@@ -23,6 +23,8 @@
 #include <QMutexLocker>
 #include <QDateTime>
 #include <memory>
+#include <cstring>
+#include <algorithm>
 #include <thread>
 
 struct DelayedHistoryState {
@@ -181,6 +183,69 @@ static QByteArray widgetUsbStatus(const QString &board, int frames, int output =
   return data;
 }
 
+// Count native allocations without exposing renderer internals. Only this EXE's
+// CreateDIBSection import is replaced, and the test restores it before pumping events.
+class DibAllocationProbe {
+  using Create = decltype(&::CreateDIBSection);
+  inline static Create original = nullptr;
+  inline static int allocations = 0;
+  inline static void *latestPixels = nullptr;
+  inline static bool failNextAllocation = false;
+  void **slot = nullptr;
+  static HBITMAP WINAPI counted(HDC dc, const BITMAPINFO *info, UINT usage, void **bits,
+                                HANDLE section, DWORD offset) {
+    ++allocations;
+    if (failNextAllocation) {
+      failNextAllocation = false;
+      SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+      return nullptr;
+    }
+    const auto bitmap = original(dc, info, usage, bits, section, offset);
+    if (bitmap) latestPixels = *bits;
+    return bitmap;
+  }
+  bool replace(void *value) {
+    DWORD protection = 0;
+    if (!VirtualProtect(slot, sizeof(*slot), PAGE_READWRITE, &protection)) return false;
+    *slot = value;
+    DWORD ignored = 0;
+    VirtualProtect(slot, sizeof(*slot), protection, &ignored);
+    return true;
+  }
+public:
+  DibAllocationProbe() {
+    auto *base = reinterpret_cast<uchar *>(GetModuleHandleW(nullptr));
+    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
+    const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(base + dos->e_lfanew);
+    const auto directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    auto *entry = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR *>(base + directory.VirtualAddress);
+    for (; entry->Name && !slot; ++entry) {
+      if (!entry->OriginalFirstThunk) continue;
+      auto *names = reinterpret_cast<IMAGE_THUNK_DATA *>(base + entry->OriginalFirstThunk);
+      auto *addresses = reinterpret_cast<IMAGE_THUNK_DATA *>(base + entry->FirstThunk);
+      for (; names->u1.AddressOfData; ++names, ++addresses) {
+        if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+        auto *name = reinterpret_cast<IMAGE_IMPORT_BY_NAME *>(base + names->u1.AddressOfData);
+        if (strcmp(reinterpret_cast<const char *>(name->Name), "CreateDIBSection")) continue;
+        slot = reinterpret_cast<void **>(&addresses->u1.Function);
+        original = reinterpret_cast<Create>(*slot);
+        allocations = 0;
+        latestPixels = nullptr;
+        failNextAllocation = false;
+        if (!replace(reinterpret_cast<void *>(&counted))) slot = nullptr;
+        break;
+      }
+    }
+  }
+  ~DibAllocationProbe() { if (slot) replace(reinterpret_cast<void *>(original)); }
+  DibAllocationProbe(const DibAllocationProbe &) = delete;
+  DibAllocationProbe &operator=(const DibAllocationProbe &) = delete;
+  bool active() const { return slot != nullptr; }
+  int count() const { return allocations; }
+  const QRgb *pixels() const { return static_cast<const QRgb *>(latestPixels); }
+  void failNext() { failNextAllocation = true; }
+};
+
 class WidgetTests : public QObject {
   Q_OBJECT
 private slots:
@@ -267,6 +332,41 @@ private slots:
     QCOMPARE(b.size(),2);QCOMPARE(b.first().data.soc,77u);QCOMPARE(b.last().data.soc,88u);
     QVERIFY(b.first().session!=b.last().session);
   }
+  void controllerDisplaysBufferedHistoryAndFlushesOnExit() {
+    QTemporaryDir dir;
+    const qint64 base = QDateTime::currentSecsSinceEpoch();
+    qint64 now = base;
+    WidgetHistoryTransport *transport = nullptr;
+    WidgetRuntime runtime;
+    runtime.wallClock = [&] { return now; };
+    runtime.elapsedClock = [&] { return (now - base) * 1000; };
+    auto widget = std::make_unique<WidgetController>(
+        dir.path(), false, false,
+        [&](const QString &, QObject *parent) {
+          return transport = new WidgetHistoryTransport(parent);
+        }, runtime);
+    QTRY_VERIFY(widget->diagnostics()["history_ready"].toBool());
+    transport->resume("buffered-station", {}, 3);
+    for (int i = 0; i < 5; ++i) {
+      now = base + i;
+      transport->feed(10 + i);
+      QTRY_COMPARE(widget->diagnostics()["history_buffered_samples"].toInt(), i + 1);
+      QTRY_COMPARE(widget->diagnostics()["points"].toInt(), i + 1);
+    }
+    {
+      HistoryStore disk(dir.filePath("history.sqlite3"));
+      QVERIFY(disk.valid());
+      QVERIFY(disk.points("buffered-station", now).isEmpty());
+    }
+    widget.reset(); // Exit must commit the complete tail before the worker stops.
+    HistoryStore disk(dir.filePath("history.sqlite3"));
+    const auto points = disk.points("buffered-station", now);
+    QCOMPARE(points.size(), 5);
+    for (int i = 0; i < points.size(); ++i) {
+      QCOMPARE(points[i].wall, base + i);
+      QCOMPARE(points[i].data.soc, quint32(10 + i));
+    }
+  }
   void realControllerCompletesInvalidDatabaseJobs() {
     QTemporaryDir dir;qint64 now=QDateTime::currentSecsSinceEpoch();
     auto state=std::make_shared<DelayedHistoryState>();state->permits.release(100);
@@ -321,6 +421,133 @@ private slots:
     QVERIFY(router.diagnostics()["bluetooth_used"].toBool());
     QCOMPARE(router.diagnostics()["connection_attempts"].toInteger(),1);
   }
+  void staticLayerCacheFollowsTelemetryAndLanguage() {
+    initializeUiFonts();
+    WidgetCard card(false);
+    ap_snapshot value{};
+    QString name = "Synthetic station", phase = QCoreApplication::translate("Allpowers", "No connection");
+    card.setTelemetry(value, phase);
+    QCOMPARE(card.toolTip(), phase);
+    QVERIFY(!card.accessibleName().isEmpty());
+    constexpr qint64 now = 100000;
+    HistoryPoint point;
+    point.address = "synthetic"; point.session = "live";
+    point.wall = point.tick = now - 1;
+    point.data.fresh = 1; point.data.known = 6;
+    point.data.input_w = 100; point.data.output_w = 40;
+    const HistoryPoints points{point};
+    value.fresh = 1; value.known = 15; value.soc = 74;
+    value.input_w = 80; value.output_w = 40; value.runtime_s = 7200;
+    auto freshImage = [&] {
+      WidgetCard fresh(false);
+      fresh.setDeviceName(name); fresh.setTelemetry(value, phase); fresh.setHistory(points, now);
+      return fresh.renderedImage();
+    };
+    card.setDeviceName(name); card.setTelemetry(value, phase); card.setHistory(points, now);
+    QCOMPARE(card.renderedImage(), freshImage());
+    const std::array<std::function<void()>, 9> changes{
+      [&] { value.soc = 31; }, [&] { value.input_w = 120; },
+      [&] { value.output_w = 65; }, [&] { value.runtime_s = 10800; },
+      [&] { value.fresh = 0; }, [&] { value.known &= ~quint32(4); },
+      [&] { value.known = 0; }, [&] { value.known = 15; value.fresh = 1; },
+      [&] { name = QStringLiteral("Очень длинное название станции — test long station name"); }
+    };
+    for (const auto &change : changes) {
+      change(); card.setDeviceName(name); card.setTelemetry(value, phase);
+      QCOMPARE(card.renderedImage(), freshImage());
+    }
+    const auto beforeMetadata = card.renderedImage();
+    value.main_age_ms = 1234; value.valid_frames = 123; phase = "Updated status";
+    card.setTelemetry(value, phase);
+    QCOMPARE(card.renderedImage(), beforeMetadata);
+    QCOMPARE(card.toolTip(), phase);
+    QCOMPARE(card.accessibleDescription(), phase);
+    for (const auto &language : {"en", "ru", "zh-CN", "zh-TW"}) {
+      UiLanguage selected(language);
+      QVERIFY(selected.valid());
+      QCoreApplication::processEvents();
+      card.setTelemetry(value, phase);
+      QCOMPARE(card.renderedImage(), freshImage());
+    }
+  }
+  void staticLayerMaximumFollowsAnimation() {
+    WidgetCard card(false);
+    HistoryPoint point;
+    point.address = "synthetic"; point.session = "live";
+    point.wall = point.tick = 99999;
+    point.data.known = 2; point.data.fresh = 1; point.data.input_w = 100;
+    card.setHistory({point}, 100000);
+    auto axis = [](const QImage &image) {
+      const auto s = image.devicePixelRatio();
+      return image.copy(qRound(14*s), qRound(108*s), qRound(180*s), qRound(16*s));
+    };
+    const auto before = axis(card.renderedImage());
+    point.data.input_w = 200;
+    card.setHistory({point}, 100001);
+    QCOMPARE(axis(card.renderedImage()), before);
+    auto *animation = card.findChild<QVariantAnimation *>();
+    QVERIFY(animation);
+    animation->setCurrentTime(animation->duration()/2);
+    WidgetCard middle(false);
+    auto midPoint = point; midPoint.data.input_w = 150;
+    middle.setHistory({midPoint}, 100001);
+    QCOMPARE(axis(card.renderedImage()), axis(middle.renderedImage()));
+    animation->setCurrentTime(animation->duration());
+    WidgetCard finished(false); finished.setHistory({point}, 100001);
+    QCOMPARE(axis(card.renderedImage()), axis(finished.renderedImage()));
+    QVERIFY(axis(card.renderedImage()) != before);
+  }
+  void unchangedControllerUpdatesKeepMergedHistory() {
+    struct MemoryHistory : HistoryWorker {
+      void open(const QString &) override { emit opened(); }
+      void sample(QString, ap_snapshot, qint64, qint64) override { emit sampleFinished(); }
+    };
+    QTemporaryDir directory;
+    QFile settings(directory.filePath("settings.json")); QVERIFY(settings.open(QIODevice::WriteOnly));
+    settings.write("{\"endpoint\":\"synthetic\",\"name\":\"Synthetic\"}"); settings.close();
+    qint64 now = 100000;
+    MemoryHistory *worker = nullptr;
+    WidgetHistoryTransport *transport = nullptr;
+    WidgetRuntime runtime;
+    runtime.wallClock = [&] { return now; }; runtime.elapsedClock = [] { return qint64(0); };
+    runtime.makeHistoryWorker = [&] { return worker = new MemoryHistory; };
+    WidgetController widget(directory.path(), false, false,
+      [&](const QString &, QObject *parent) { return transport = new WidgetHistoryTransport(parent); }, runtime);
+    widget.start();
+    QTRY_VERIFY(widget.diagnostics()["history_ready"].toBool());
+    transport->feed(50);
+    QTRY_VERIFY(!widget.diagnostics()["history_worker_busy"].toBool());
+    HistoryPoints points;
+    for (int age : {3, 2, 1}) {
+      HistoryPoint point; point.address = "synthetic"; point.session = "test";
+      point.wall = point.tick = now-age; point.data.fresh = 1; point.data.known = 4;
+      point.data.output_w = age == 2 ? 100 : 20; points.append(point);
+    }
+    auto deliver = [&] {
+      QMetaObject::invokeMethod(worker, [worker, points] { emit worker->loaded("synthetic", points, {}); }, Qt::QueuedConnection);
+    };
+    deliver();
+    QTRY_COMPARE(widget.card()->historyPoints().size(), 3);
+    auto *animation = widget.card()->findChild<QVariantAnimation *>(); QVERIFY(animation);
+    // Finish the initial vertical-scale transition before testing a new second.
+    animation->setCurrentTime(animation->duration());
+    QCOMPARE(animation->state(), QAbstractAnimation::Stopped);
+    const auto original = widget.card()->historyPoints();
+    for (int i = 0; i < 20; ++i) { emit transport->stateChanged(); transport->feed(50); }
+    QCoreApplication::processEvents();
+    QVERIFY(widget.card()->historyPoints().constData() == original.constData());
+    ++now; emit transport->stateChanged();
+    QTRY_COMPARE(animation->state(), QAbstractAnimation::Running);
+    QVERIFY(widget.card()->historyPoints().constData() == original.constData());
+    animation->pause(); animation->setCurrentTime(450);
+    for (int i = 0; i < 20; ++i) emit transport->stateChanged();
+    QCoreApplication::processEvents();
+    QCOMPARE(animation->currentTime(), 450);
+    QVERIFY(widget.card()->historyPoints().constData() == original.constData());
+    points.last().data.output_w = 90;
+    deliver();
+    QTRY_COMPARE(widget.card()->historyPoints().last().data.output_w, 90u);
+  }
   void recentGraphUpdatesRemainVisible() {
     WidgetCard card(false);
     const qint64 now = 100000;
@@ -354,12 +581,15 @@ private slots:
     auto *animation = card.findChild<QVariantAnimation *>();
     QVERIFY(animation);
     QCOMPARE(animation->state(), QAbstractAnimation::Running);
+    auto *frames = card.findChild<QTimer *>();
+    QVERIFY(frames && frames->isActive());
     // Inspect exact animation positions even if the runner is descheduled.
     animation->setCurrentTime(animation->duration() / 2);
     const auto moving = card.renderedImage();
     QVERIFY(moving != before);
     animation->setCurrentTime(animation->duration());
     QCOMPARE(animation->state(), QAbstractAnimation::Stopped);
+    QVERIFY(!frames->isActive()); // Idle cards must not keep waking the repaint timer.
     const auto after = card.renderedImage();
     QVERIFY(after != moving);
     QVERIFY(outputAt(after, 3, 127));
@@ -370,6 +600,59 @@ private slots:
     card.setHistory({points.last()}, now + 4);
     QVERIFY(!outputAt(card.renderedImage(), 5, 127)); // No fake live marker on stale history.
   }
+  void denseGraphPreservesPeaksAndGapsDuringAnimation() {
+    WidgetCard card(false);
+    constexpr qint64 now = 100000;
+    HistoryPoints points;
+    for (int age = 3599; age >= 0; --age) {
+      HistoryPoint point;
+      point.address = "synthetic";
+      point.session = age > 35 ? "previous" : "live";
+      point.wall = point.tick = now - age;
+      point.data.fresh = age < 7 || age > 9;
+      point.data.known = 6;
+      point.data.input_w = age == 90 ? 100 : 20;
+      point.data.output_w = age == 15 || age == 2500 ? 100 : 40;
+      points.append(point);
+    }
+    card.setHistory(points, now);
+    const auto initial = card.renderedImage();
+    card.setHistory(points, now + 1);
+    // Subpixel representatives on the compressed left side may change; the
+    // recent, visibly moving half must not jump when the new second arrives.
+    QCOMPARE(card.renderedImage().copy(150, 126, 140, 54), initial.copy(150, 126, 140, 54));
+    auto *animation = card.findChild<QVariantAnimation *>();
+    QVERIFY(animation);
+    QImage previous;
+    for (int elapsed : {0, 150, 300, 450, 600, 750, 900}) {
+      animation->setCurrentTime(elapsed);
+      const double shift = double(elapsed) / animation->duration();
+      const auto image = card.renderedImage();
+      auto hasLine = [&](double age, int y, bool input) {
+        const int x = qRound(14 + WidgetCard::graphPosition(age + shift) * 272);
+        for (int dx = -2; dx <= 2; ++dx)
+          for (int dy = -2; dy <= 2; ++dy) {
+            const auto color = image.pixelColor(x + dx, y + dy);
+            if (input ? color.blue() > 180 && color.red() < 150
+                      : color.red() > 180 && color.green() > 190 && color.blue() > 200)
+              return true;
+          }
+        return false;
+      };
+      QVERIFY(hasLine(90, 127, true));
+      QVERIFY(hasLine(15, 127, false));
+      QVERIFY(hasLine(2500, 127, false)); // Preserve a peak compressed into a fraction of a pixel.
+      const int gapX = qRound(14 + WidgetCard::graphPosition(8 + shift) * 272);
+      for (int y = 129; y < 177; ++y) {
+        const auto color = image.pixelColor(gapX, y);
+        QVERIFY(color.blue() < 150); // No line bridging the stale run.
+      }
+      if (!previous.isNull())
+        QVERIFY(image != previous); // Intermediate frames still advance smoothly.
+      previous = image;
+    }
+    QCOMPARE(card.historyPoints().size(), points.size()); // Keep the complete source history.
+  }
   void usbArchiveFillsWidgetGraph_data() {
     QTest::addColumn<QString>("board");
     QTest::newRow("waveshare") << QString("waveshare-147");
@@ -378,7 +661,11 @@ private slots:
   void usbArchiveFillsWidgetGraph() {
     QFETCH(QString, board);
     QTemporaryDir temporary;
-    const auto now = QDateTime::currentSecsSinceEpoch();
+    const auto base = QDateTime::currentSecsSinceEpoch();
+    qint64 now = base;
+    WidgetRuntime runtime;
+    runtime.wallClock = [&] { return now; };
+    runtime.elapsedClock = [&] { return (now - base)*1000; };
     HistoryPoint cached;
     cached.address = "usb-board:R2500-000000000001";
     cached.session = "cached-boot";
@@ -413,7 +700,7 @@ private slots:
                                     {"R2500-000000000002", "COM988", "Other synthetic board"}};
                               });
                               return usb;
-                            });
+                            }, runtime);
     QVERIFY(usb);
     usb->resume("R2500-000000000001", {}, 0);
     io->feed(widgetUsbStatus(board, 10));
@@ -441,12 +728,26 @@ private slots:
     QVERIFY(!joinPoints(points.first(), points[1])); // The genuine older-boot gap remains.
     // After importing history, live data must still reach both the graph model
     // and rendered graph pixels, rather than merely updating the numeric label.
+    auto *animation = widget.card()->findChild<QVariantAnimation *>();
+    QVERIFY(animation);
+    auto finishAnimation = [&] {
+      if (animation->state() == QAbstractAnimation::Running)
+        animation->setCurrentTime(animation->duration());
+      QCOMPARE(animation->state(), QAbstractAnimation::Stopped);
+    };
+    finishAnimation();
     auto graphImage = widget.card()->renderedImage().copy(14, 126, 272, 54);
     auto previousWall = widget.card()->historyPoints().last().wall;
     for (int power : {300, 70}) {
+      ++now;
       io->feed(widgetUsbStatus(board, power, power));
       QTRY_COMPARE(widget.card()->historyPoints().last().data.output_w, quint32(power));
       QVERIFY(widget.card()->historyPoints().last().wall > previousWall);
+      const auto &live = widget.card()->historyPoints();
+      QVERIFY(joinPoints(live[live.size()-2], live.last()));
+      // Receipt keeps the zero-animation frame at the previous time/scale;
+      // compare completed frames instead of racing the first animation tick.
+      finishAnimation();
       const auto nextImage = widget.card()->renderedImage().copy(14, 126, 272, 54);
       QVERIFY(nextImage != graphImage);
       graphImage = nextImage;
@@ -657,6 +958,127 @@ private slots:
       QVERIFY(IsWindowVisible(window));
     }
   }
+  void nativeImageBufferReuseAndRecovery() {
+    if (QGuiApplication::platformName() != "windows")
+      QSKIP("Requires native Windows platform");
+    const auto origin = QGuiApplication::primaryScreen()->geometry().topLeft();
+    auto makeHost = [&] {
+      auto window = CreateWindowExW(WS_EX_LAYERED, L"STATIC", L"ALLPOWERS image buffer test",
+        WS_POPUP | WS_CLIPCHILDREN, origin.x()+31, origin.y()+47, 1200, 900,
+        nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+      if (window) {
+        SetLayeredWindowAttributes(window, 0, 255, LWA_ALPHA);
+        SetWindowPos(window, HWND_TOP, 0, 0, 0, 0,
+          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+      }
+      return window;
+    };
+    HWND host = makeHost(); QVERIFY(host);
+    const auto closeHost = qScopeGuard([&] { if(host) DestroyWindow(host); });
+    const auto objects = [] { return GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS); };
+    // Warm native composition before measuring resources owned by the surface.
+    {
+      DesktopSurface warm(true, [&] { return reinterpret_cast<quintptr>(host); });
+      warm.setFixedSize(90, 60); warm.setDesktopPosition({}, {80, 80});
+      const auto s = warm.desktopScale();
+      QImage frame(QSize(qRound(90*s), qRound(60*s)), QImage::Format_ARGB32_Premultiplied);
+      frame.fill(Qt::blue); warm.presentImage(frame);
+      QVERIFY(warm.nativeDiagnostics()["native_frame_published"].toBool());
+      composedPixel(reinterpret_cast<HWND>(warm.nativeHandle()), {4, 4}, s);
+    }
+    const DWORD beforeSurface = objects();
+    QByteArray paddedStorage;
+    {
+      DesktopSurface surface(true, [&] { return reinterpret_cast<quintptr>(host); });
+      surface.setFixedSize(90, 60); surface.setDesktopPosition({}, {80, 80});
+      const auto scale = surface.desktopScale();
+      QImage frame(QSize(qRound(90*scale), qRound(60*scale)), QImage::Format_ARGB32_Premultiplied);
+      frame.fill(Qt::red);
+      const DWORD beforeBuffer = objects();
+      {
+        DibAllocationProbe allocations;
+        QVERIFY(allocations.active());
+        surface.presentImage(frame);
+        QCOMPARE(allocations.count(), 1);
+        QVERIFY(surface.nativeDiagnostics()["native_frame_published"].toBool());
+        QCOMPARE(objects(), beforeBuffer + 2);
+        for(int i=0;i<100;++i) {
+          frame.fill(i%2 ? Qt::green : Qt::red); surface.presentImage(frame);
+          QCOMPARE(objects(), beforeBuffer + 2);
+          QCOMPARE(allocations.count(), 1); // Stable resources alone would miss allocate/free churn.
+        }
+        const auto *oldPixels = allocations.pixels();
+        QVERIFY(oldPixels);
+        QImage allocationFrame(frame.width()+3, frame.height()+5, frame.format());
+        allocationFrame.fill(Qt::blue);
+        allocations.failNext();
+        surface.presentImage(allocationFrame);
+        QCOMPARE(allocations.count(), 2);
+        QVERIFY(!surface.attachmentError().isEmpty());
+        QCOMPARE(objects(), beforeBuffer + 2); // The failed DIB's temporary DC was released.
+        QCOMPARE(oldPixels[0], frame.pixel(0, 0)); // Last successful allocation and image survive.
+        surface.presentImage(allocationFrame);
+        QCOMPARE(allocations.count(), 3);
+        QVERIFY(surface.nativeDiagnostics()["native_frame_published"].toBool());
+        QVERIFY(surface.attachmentError().isEmpty());
+        QCOMPARE(objects(), beforeBuffer + 2);
+        QCOMPARE(allocations.pixels()[0], allocationFrame.pixel(0, 0));
+      }
+      surface.setFixedSize(120, 80); surface.setDesktopPosition({}, {80, 80});
+      QImage resized(QSize(qRound(120*scale), qRound(80*scale)), QImage::Format_ARGB32_Premultiplied);
+      resized.fill(Qt::green);
+      const QRgb *retainedPixels = nullptr;
+      {
+        DibAllocationProbe allocations;
+        QVERIFY(allocations.active());
+        surface.presentImage(resized);
+        QCOMPARE(allocations.count(), 1);
+        retainedPixels = allocations.pixels();
+        QVERIFY(retainedPixels);
+      }
+      QVERIFY(surface.nativeDiagnostics()["native_frame_published"].toBool());
+      QCOMPARE(objects(), beforeBuffer + 2);
+      HWND child = reinterpret_cast<HWND>(surface.nativeHandle());
+      const auto style = GetWindowLongPtrW(child, GWL_EXSTYLE);
+      SetWindowLongPtrW(child, GWL_EXSTYLE, style & ~WS_EX_LAYERED);
+      QImage failed(resized.width()+17, resized.height()+19, QImage::Format_ARGB32_Premultiplied);
+      failed.fill(Qt::red); surface.presentImage(failed);
+      QVERIFY(!surface.nativeDiagnostics()["native_frame_published"].toBool());
+      QVERIFY(!surface.attachmentError().isEmpty());
+      QCOMPARE(objects(), beforeBuffer + 2); // Failed replacement must release temporary handles.
+      SetWindowLongPtrW(child, GWL_EXSTYLE, style);
+      const qsizetype stride = resized.width()*4 + 16;
+      paddedStorage = QByteArray(stride*resized.height(), char(0xee));
+      for(int y=0;y<resized.height();++y) {
+        const QRgb color = y < resized.height()/3 ? qRgb(255,0,0)
+                          : y < resized.height()*2/3 ? qRgb(0,255,0) : qRgb(0,0,255);
+        auto *row = reinterpret_cast<QRgb *>(paddedStorage.data()+y*stride);
+        std::fill_n(row, resized.width(), color);
+        row[0] = qRgb(y & 255, (y*7) & 255, (y*13) & 255);
+      }
+      QImage padded(reinterpret_cast<uchar *>(paddedStorage.data()), resized.width(), resized.height(),
+                    stride, QImage::Format_ARGB32_Premultiplied);
+      surface.presentImage(padded);
+      QVERIFY(surface.nativeDiagnostics()["native_frame_published"].toBool());
+      QVERIFY(surface.attachmentError().isEmpty());
+      QCOMPARE(objects(), beforeBuffer + 2);
+      // Inspect the actual retained DIB too: composition can be obscured on a
+      // shared desktop, but padded rows must still be copied without skew.
+      for (int y : {0, resized.height()/2, resized.height()-1})
+        QCOMPARE(retainedPixels[y*resized.width()], padded.pixel(0, y));
+      if(unobscured(child, {4, 76}, scale))
+        QTRY_COMPARE(composedPixel(child, {4, 76}, scale), RGB(0,0,255));
+      surface.presentImage(QImage{});
+      DestroyWindow(host); host = makeHost(); QVERIFY(host);
+      surface.setDesktopPosition({}, {80, 80});
+      QVERIFY(surface.nativeDiagnostics()["native_frame_published"].toBool());
+      QCOMPARE(objects(), beforeBuffer + 2);
+      child = reinterpret_cast<HWND>(surface.nativeHandle());
+      if(unobscured(child, {4, 76}, scale))
+        QTRY_COMPARE(composedPixel(child, {4, 76}, scale), RGB(0,0,255));
+    }
+    QCOMPARE(objects(), beforeSurface);
+  }
   void nativeCardPaintAndDrag() {
     if (QGuiApplication::platformName() != "windows")
       QSKIP("Requires native Windows platform");
@@ -710,8 +1132,11 @@ private slots:
                      Qt::MouseButtons buttons) {
       QMouseEvent event(type, local, global, button, buttons, Qt::NoModifier);
       QCoreApplication::sendEvent(&surface, &event);
-      QCoreApplication::processEvents();
     };
+    // Inject each drag synchronously. Pumping while native capture is active
+    // mixes the synthetic coordinates with queued WM_MOUSEMOVE messages from
+    // the real cursor, especially under the slower coverage debugger.
+    QCoreApplication::processEvents();
     const QPoint local(120, 110); // the body, not just the header
     const QPoint global = origin + surface.desktopOffset() + local;
     const QPoint before = surface.desktopOffset();
@@ -722,6 +1147,7 @@ private slots:
     mouse(QEvent::MouseMove, local + QPoint(60, 40), global + QPoint(60, 40), Qt::NoButton,
           Qt::LeftButton);
     mouse(QEvent::MouseButtonRelease, local, global + QPoint(60, 40), Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::processEvents();
     QCOMPARE(surface.desktopOffset(), before + QPoint(60, 40));
     QCOMPARE(moved.count(), 1);
     RECT afterRect{};
@@ -735,6 +1161,7 @@ private slots:
     SendMessageW(child, WM_LBUTTONDOWN, MK_LBUTTON, nativePoint(local));
     SendMessageW(child, WM_MOUSEMOVE, MK_LBUTTON, nativePoint(local + QPoint(20, 10)));
     SendMessageW(child, WM_LBUTTONUP, 0, nativePoint(local));
+    QCoreApplication::processEvents();
     QCOMPARE(surface.desktopOffset(), beforeNative + QPoint(20, 10));
     surface.setLocked(true);
     const QPoint locked = surface.desktopOffset();
@@ -742,6 +1169,7 @@ private slots:
     mouse(QEvent::MouseMove, local + QPoint(20, 20), global + QPoint(20, 20), Qt::NoButton,
           Qt::LeftButton);
     mouse(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::processEvents();
     QCOMPARE(surface.desktopOffset(), locked);
     const int previousChecks = hostChecks;
     QTRY_VERIFY(hostChecks > previousChecks); // An actual health check must preserve position.

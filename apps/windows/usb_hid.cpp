@@ -5,6 +5,8 @@
 #include <QRegularExpression>
 #include <QThread>
 #include <QTimer>
+#include <QWinEventNotifier>
+#include <limits>
 #define WIN32_LEAN_AND_MEAN
 #include <hidclass.h>
 #include <hidsdi.h>
@@ -82,6 +84,7 @@ class HidWorker : public QObject {
   bool reading = false;
   uint8_t input[64]{};
   QTimer *timer = nullptr;
+  QWinEventNotifier *readNotifier = nullptr;
   QElapsedTimer clock;
   qint64 nextLive = 0;
   quint64 generation = 0;
@@ -131,10 +134,22 @@ class HidWorker : public QObject {
     if (!ok)
       error = "HID request failed";
   }
+  void schedule() {
+    if (!session || handle == INVALID_HANDLE_VALUE || !error.isEmpty())
+      return;
+    const auto next = qMin(nextLive, session->nextWakeup());
+    const auto delay =
+        qBound(qint64(0), next - clock.elapsed(), qint64(std::numeric_limits<int>::max()));
+    timer->start(int(delay));
+  }
   void poll() {
     if (handle == INVALID_HANDLE_VALUE || !session)
       return;
-    for (unsigned i = 0; i < 32 && error.isEmpty(); ++i) {
+    readNotifier->setEnabled(false);
+    // Drain a bounded batch, then leave the next read armed. An immediately
+    // completed read keeps the event signalled and resumes in the next event
+    // loop turn; an idle handle causes no wakeups until Windows completes it.
+    for (unsigned i = 0; error.isEmpty(); ++i) {
       DWORD count = 0;
       if (!reading) {
         ResetEvent(read.hEvent);
@@ -145,6 +160,8 @@ class HidWorker : public QObject {
         }
         reading = true;
       }
+      if (i == 32)
+        break;
       if (!GetOverlappedResult(handle, &read, &count, FALSE)) {
         if (GetLastError() != ERROR_IO_INCOMPLETE)
           error = "HID read failed";
@@ -154,6 +171,8 @@ class HidWorker : public QObject {
       session->input(QByteArray(reinterpret_cast<const char *>(input), int(count)),
                      clock.elapsed());
     }
+    if (error.isEmpty())
+      session->tick(clock.elapsed());
     if (error.isEmpty() && clock.elapsed() >= nextLive) {
       QByteArray payload;
       nextLive = clock.elapsed() + 1000;
@@ -162,21 +181,26 @@ class HidWorker : public QObject {
       else
         session->live(payload);
     }
-    if (error.isEmpty())
-      session->tick(clock.elapsed());
     if (!error.isEmpty()) {
       const auto reason = error;
       close();
       emit failed(generation, reason);
+      return;
     }
+    readNotifier->setEnabled(true);
+    schedule();
   }
 
 public:
   void close() {
     if (timer)
       timer->stop();
+    if (readNotifier) {
+      readNotifier->setEnabled(false);
+      readNotifier->setHandle(nullptr);
+    }
     if (session && handle != INVALID_HANDLE_VALUE)
-      session->stop();
+      session->stop(clock.elapsed());
     if (handle != INVALID_HANDLE_VALUE) {
       if (reading) {
         DWORD count = 0;
@@ -252,19 +276,27 @@ public:
     }
     if (!timer) {
       timer = new QTimer(this);
-      timer->setInterval(5);
+      timer->setSingleShot(true);
+      timer->setTimerType(Qt::PreciseTimer);
       connect(timer, &QTimer::timeout, this, &HidWorker::poll);
+      readNotifier = new QWinEventNotifier(this);
+      connect(readNotifier, &QWinEventNotifier::activated, this, [this] { poll(); });
     }
-    timer->start();
+    readNotifier->setHandle(read.hEvent);
     emit opened(token);
+    poll();
   }
   void write(const QByteArray &command, quint64 token) {
-    if (token == generation && session)
+    if (token == generation && session) {
       session->command(command, clock.elapsed());
+      poll();
+    }
   }
   void cancelHistory(quint64 token) {
-    if (token == generation && session)
-      session->stop();
+    if (token == generation && session) {
+      session->stop(clock.elapsed());
+      poll();
+    }
   }
 signals:
   void opened(quint64);

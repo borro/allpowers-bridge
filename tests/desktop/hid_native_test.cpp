@@ -8,6 +8,7 @@
 #include <map>
 #include <atomic>
 #include <vector>
+#include <algorithm>
 #include <windows.h>
 #include <setupapi.h>
 #include <hidsdi.h>
@@ -21,9 +22,48 @@ struct Spec { USHORT usage = 0xff01, reportSize = 64, vid = 0x303a; QString seri
 std::vector<Spec> enumeration;
 struct Device { std::deque<QByteArray> reports; Spec spec; };
 std::map<HANDLE, Device> devices;
-int opens = 0, writes = 0, reads = 0, cancelled = 0;
+struct PendingRead { HANDLE device; LPVOID destination; };
+std::map<LPOVERLAPPED, PendingRead> destinations;
+int opens = 0, writes = 0, reads = 0, cancelled = 0, completions = 0;
 bool wrongIdentity = false;
 std::atomic<int> fault = 0; // 1=open, 2=feature, 3=write, 4=read, 5=pending write timeout
+std::atomic<bool> synchronousReads = false;
+void completeQueued(HANDLE handle) {
+  auto &reports = devices.at(handle).reports;
+  for (auto it = destinations.begin(); it != destinations.end();) {
+    if (it->second.device != handle || reports.empty()) { ++it; continue; }
+    const auto operation = it->first;
+    memcpy(it->second.destination, reports.front().constData(), 64); reports.pop_front();
+    operation->Internal = 0; operation->InternalHigh = 64;
+    SetEvent(operation->hEvent);
+    it = destinations.erase(it);
+  }
+}
+int completionCount() { QMutexLocker guard(&lock); return completions; }
+void enqueuePackets(int count, int first = 0) {
+  QMutexLocker guard(&lock);
+  HidTelemetry::Request request; request.boot = 42; request.op = HidTelemetry::Op::Packet;
+  for (int n = first; n < first + count; ++n) {
+    const auto body = QByteArray("{\"marker\":") + QByteArray::number(n) + "}\n";
+    uint8_t report[64]{}; report[0] = HidTelemetry::ResponseReport;
+    const auto digest = HidTelemetry::crc32(body.constData(), size_t(body.size()));
+    Q_ASSERT(HidTelemetry::fragment(request, HidTelemetry::Result::Ok,
+      reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), digest, 0, report + 1) == size_t(body.size()));
+    for (auto &entry : devices) {
+      entry.second.reports.emplace_back(reinterpret_cast<char *>(report), 64);
+      completeQueued(entry.first);
+    }
+  }
+}
+void failPendingRead() {
+  QMutexLocker guard(&lock);
+  for (const auto &[operation, pending] : destinations) {
+    Q_UNUSED(pending);
+    operation->Internal = ERROR_DEVICE_NOT_CONNECTED;
+    SetEvent(operation->hEvent);
+  }
+  destinations.clear();
+}
 HANDLE WINAPI create(LPCWSTR path, DWORD access, DWORD sharing, LPSECURITY_ATTRIBUTES,
                      DWORD disposition, DWORD flags, HANDLE) {
   QMutexLocker guard(&lock);
@@ -86,33 +126,35 @@ BOOL WINAPI write(HANDLE, LPCVOID data, DWORD size, LPDWORD count, LPOVERLAPPED 
     uint8_t response[64]{}; response[0] = HidTelemetry::ResponseReport;
     offset += HidTelemetry::fragment(request, HidTelemetry::Result::Ok,
       reinterpret_cast<const uint8_t *>(body.constData()), size_t(body.size()), digest, offset, response + 1);
-    for (auto &entry : devices)
+    for (auto &entry : devices) {
       entry.second.reports.emplace_back(reinterpret_cast<char *>(response), 64);
+      completeQueued(entry.first);
+    }
   }
   operation->Internal = 0; operation->InternalHigh = *count = size; return TRUE;
 }
-std::map<LPOVERLAPPED, LPVOID> destinations;
-BOOL WINAPI read(HANDLE, LPVOID out, DWORD size, LPDWORD, LPOVERLAPPED operation) {
+BOOL WINAPI read(HANDLE handle, LPVOID out, DWORD size, LPDWORD count, LPOVERLAPPED operation) {
   QMutexLocker guard(&lock); ++reads; Q_ASSERT(size == 64);
   if (fault == 4) { SetLastError(ERROR_DEVICE_NOT_CONNECTED); return FALSE; }
-  destinations[operation] = out; operation->Internal = ERROR_IO_PENDING;
+  destinations[operation] = {handle, out}; operation->Internal = ERROR_IO_PENDING;
+  completeQueued(handle);
+  if (synchronousReads && operation->Internal == 0) { *count = 64; return TRUE; }
   SetLastError(ERROR_IO_PENDING); return FALSE;
 }
 BOOL WINAPI completed(HANDLE handle, LPOVERLAPPED operation, LPDWORD count, BOOL) {
-  QMutexLocker guard(&lock);
-  if (operation->Internal == ERROR_OPERATION_ABORTED) {
-    destinations.erase(operation); SetLastError(ERROR_OPERATION_ABORTED); return FALSE;
-  }
+  Q_UNUSED(handle);
+  QMutexLocker guard(&lock); ++completions;
   if (operation->Internal == ERROR_IO_PENDING) {
-    auto &reports = devices.at(handle).reports;
-    if (reports.empty()) { SetLastError(ERROR_IO_INCOMPLETE); return FALSE; }
-    memcpy(destinations.at(operation), reports.front().constData(), 64); reports.pop_front();
-    destinations.erase(operation); operation->Internal = 0; operation->InternalHigh = 64;
+    SetLastError(ERROR_IO_INCOMPLETE); return FALSE;
+  }
+  if (operation->Internal != 0) {
+    destinations.erase(operation); SetLastError(DWORD(operation->Internal)); return FALSE;
   }
   *count = DWORD(operation->InternalHigh); return TRUE;
 }
 BOOL WINAPI cancel(HANDLE, LPOVERLAPPED operation) {
-  QMutexLocker guard(&lock); ++cancelled; operation->Internal = ERROR_OPERATION_ABORTED; return TRUE;
+  QMutexLocker guard(&lock); ++cancelled; operation->Internal = ERROR_OPERATION_ABORTED;
+  SetEvent(operation->hEvent); return TRUE;
 }
 HDEVINFO WINAPI enumerate(const GUID *, PCWSTR, HWND, DWORD) { return reinterpret_cast<HDEVINFO>(1); }
 BOOL WINAPI enumerateInterface(HDEVINFO, PSP_DEVINFO_DATA, const GUID *, DWORD index, PSP_DEVICE_INTERFACE_DATA out) {
@@ -169,8 +211,9 @@ class HidNativeTests : public QObject {
   Q_OBJECT
 private slots:
   void init() {
-    FakeHid::opens = FakeHid::writes = FakeHid::reads = FakeHid::cancelled = 0;
+    FakeHid::opens = FakeHid::writes = FakeHid::reads = FakeHid::cancelled = FakeHid::completions = 0;
     FakeHid::fault = 0; FakeHid::wrongIdentity = false; FakeHid::enumeration.clear();
+    FakeHid::synchronousReads = false;
     QVERIFY(FakeHid::devices.empty()); QVERIFY(FakeHid::destinations.empty());
   }
   void discoverByUsageAndSerial() {
@@ -231,6 +274,68 @@ private slots:
     QTRY_COMPARE(errors.size(), 1); QCOMPARE(FakeHid::writes, writes);
     channel.reset(); QVERIFY(FakeHid::devices.empty());
     { QMutexLocker guard(&FakeHid::lock); FakeHid::wrongIdentity = false; }
+  }
+  void readinessWakesAnIdleReadWithoutPolling() {
+    auto channel = std::unique_ptr<UsbChannel>(nativeHidChannel(nullptr));
+    QSignalSpy received(channel.get(), &UsbChannel::received), errors(channel.get(), &UsbChannel::failed);
+    channel->openDevice({"R2500-000000000001", "synthetic", "fixture"});
+    QTRY_VERIFY_WITH_TIMEOUT(received.size() >= 2, 2000);
+    const auto before = FakeHid::completionCount();
+    QTest::qWait(120);
+    QCOMPARE(FakeHid::completionCount(), before); // Pending reads do not cause 5-ms native probes.
+    FakeHid::enqueuePackets(1, 731);
+    QTRY_VERIFY_WITH_TIMEOUT(std::any_of(received.begin(), received.end(), [](const auto &entry) {
+      return entry.first().toByteArray().contains("\"marker\":731");
+    }), 500); // Earlier than the next one-second Feature/deadline timer.
+    QCOMPARE(errors.size(), 0);
+    channel.reset(); QVERIFY(FakeHid::destinations.empty());
+  }
+  void readyBurstDrainsBeyondOneBatchInOrder_data() {
+    QTest::addColumn<bool>("synchronous");
+    QTest::newRow("pending-completion") << false;
+    QTest::newRow("immediate-completion") << true;
+  }
+  void readyBurstDrainsBeyondOneBatchInOrder() {
+    QFETCH(bool, synchronous); FakeHid::synchronousReads = synchronous;
+    auto channel = std::unique_ptr<UsbChannel>(nativeHidChannel(nullptr));
+    QSignalSpy received(channel.get(), &UsbChannel::received), errors(channel.get(), &UsbChannel::failed);
+    channel->openDevice({"R2500-000000000001", "synthetic", "fixture"});
+    QTRY_VERIFY_WITH_TIMEOUT(received.size() >= 2, 2000);
+    received.clear();
+    FakeHid::enqueuePackets(257);
+    auto markers = [&] {
+      QList<int> result;
+      for (const auto &entry : received) {
+        const auto object = QJsonDocument::fromJson(entry.first().toByteArray()).object();
+        if (object.contains("marker")) result.append(object["marker"].toInt());
+      }
+      return result;
+    };
+    QTRY_COMPARE_WITH_TIMEOUT(markers().size(), 257, 2000);
+    const auto result = markers();
+    for (int i = 0; i < result.size(); ++i) QCOMPARE(result[i], i);
+    QCOMPARE(errors.size(), 0);
+    channel.reset(); QVERIFY(FakeHid::destinations.empty());
+  }
+  void completionFailureAndOldActivationAreSafeAcrossReopen() {
+    auto channel = std::unique_ptr<UsbChannel>(nativeHidChannel(nullptr));
+    QSignalSpy received(channel.get(), &UsbChannel::received), errors(channel.get(), &UsbChannel::failed);
+    const UsbPort selected{"R2500-000000000001", "synthetic", "fixture"};
+    channel->openDevice(selected);
+    QTRY_VERIFY_WITH_TIMEOUT(received.size() >= 2, 2000);
+    FakeHid::failPendingRead();
+    QTRY_COMPARE_WITH_TIMEOUT(errors.size(), 1, 500);
+    channel->openDevice(selected);
+    received.clear();
+    QTRY_VERIFY_WITH_TIMEOUT(received.size() >= 2, 2000);
+    FakeHid::enqueuePackets(1, 777);
+    channel->close(); channel->openDevice(selected);
+    received.clear();
+    QTRY_VERIFY_WITH_TIMEOUT(received.size() >= 2, 2000);
+    for (const auto &entry : received)
+      QVERIFY(!entry.first().toByteArray().contains("\"marker\":777"));
+    QCOMPARE(errors.size(), 1);
+    channel.reset(); QVERIFY(FakeHid::devices.empty()); QVERIFY(FakeHid::destinations.empty());
   }
 };
 QTEST_GUILESS_MAIN(HidNativeTests)

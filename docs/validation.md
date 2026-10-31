@@ -2,6 +2,55 @@
 
 [Documentation](README.md)
 
+## Released v0.7.0 on both adapters — 2026-10-31
+
+Hardware checks used the published [v0.7.0 release](https://github.com/borro/allpowers-bridge/releases/tag/v0.7.0),
+commit `3259fb70a85e6594ab6cacb266e80b5aa978a068`. Downloaded firmware archives
+and the Windows Widget matched the release SHA256 sums. Firmware manifests,
+source hashes, service HID descriptors/handler/registration, partition boundaries
+and history compatibility were checked before writing. Each board was explicitly
+selected and matched to its private registered identity; physical ROM recovery
+had been verified previously, not repeated during this session.
+
+| Check | Waveshare 1.47 | Pocket 0.96 |
+| --- | --- | --- |
+| Release installation | Two writes, each with all four segment digests verified; the second entered ROM through the first release boot's service HID | One write, with all four segment digests verified; no second write |
+| Runtime | Firmware reports `0.7.0`; service, telemetry and UPS HID available | Firmware reports `0.7.0`; display, service and telemetry HID available; UPS HID appeared after station connection |
+| Saved state | All 577 pre-update archive records retained byte-for-byte; archive grew to 581 after the two writes. NVS station settings retained; only the boot counter changed in the compared NVS snapshots | Saved station matched the pre-write NVS record. The new-format archive initialized empty without errors; old-format record retention is not claimed |
+| Epochs | Persistent epoch advanced from 4 to 5 to 6 across the two writes | First release boot used epoch 1; the automatic restart that enabled UPS after connection used epoch 2 |
+| Native release Widget | Visible desktop frame, fresh readings, complete archive import and no history errors | Visible desktop frame, fresh readings, complete archive import and no history errors |
+| Independent HID reader alongside Widget | Complete checked archive read succeeded | Complete five-record archive, including two dated records, passed record CRC and whole-archive digest checks |
+| Windows UPS | Healthy, 100% charge, on mains | Healthy, 100% charge, on mains while Waveshare was paused |
+
+Pocket initially searched for the same saved station already used by Waveshare.
+Waveshare was temporarily placed in ROM through its service HID, without writing
+flash. Pocket then established the BLE connection and produced fresh telemetry:
+the direct probe observed 52 valid frames with a 222 ms main-frame age. Its
+20-second Widget check passed with zero USB failures, zero UPS send failures,
+78 UPS sends and a 49 ms snapshot age. Widget and the independent archive reader
+used separate HID handles; this session did not run Monitor alongside Widget on
+Pocket. These observations do not establish a general station connection limit.
+
+After checking Pocket, its service HID successfully entered ROM to release the
+station. Waveshare was reset back into the application and reconnected; Pocket
+was then returned to application mode. The Widget was switched back to Waveshare
+and passed a 15-second check with a complete 851-point archive import, zero USB
+or UPS send failures, and a 50 ms snapshot age. The normal release Widget was
+left running on Waveshare. These temporary pauses/resets made no firmware writes.
+
+The Waveshare second write above is historical evidence from before the rule
+change, not a requirement for future updates. Current rules require checking the
+candidate's update path and independent physical recovery **before the first
+write**, then checking service HID and normal operation after boot. Routine
+updates write once: a second write cannot prevent loss of access on the first.
+
+Battery discharge/charge transitions, Windows shutdown policy, USB unplug/replug,
+sleep/resume and a sustained load/soak test were not performed in this session.
+Private identities, raw reports, settings, NVS/history readbacks and recovery
+packages remain outside Git. The old Pocket application was not backed up for
+this update, as requested by the owner. A validated copy of its installed release
+package is registered privately for future recovery.
+
 ## Epoch chart follow-up — 2026-10-30
 
 Monitor's epoch view replaces the undated-only graph. It combines dated and
@@ -110,7 +159,7 @@ sanitizers-linux,valgrind-linux,static-analysis-linux}` and
 `build/verify/{coverage-windows,analysis}`. Coverage measures only product lines
 present in host binaries; it does not measure device-only firmware. No board was
 flashed or station connection changed. Real Windows HID fan-out, UPS reporting,
-sleep/resume and a second write through maintenance HID remain separate hardware
+sleep/resume and maintenance HID availability remain separate hardware
 acceptance steps; the earlier CDC-era hardware results below do not verify HID.
 
 Review follow-up: periodic Metadata originally republished legacy STATUS telemetry

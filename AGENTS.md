@@ -12,8 +12,10 @@
   Device maintenance always requires an explicit profile and matching identity.
 - Firmware changes must retain an accessible next write and independent physical
   recovery. An image backup, ROM presence or old updater alone is not proof.
-  Put update support in the first image and verify an actual second write before
-  further experimentation. Micropitch pads are not an accessible user recovery path.
+  Before the first write, verify the candidate image's update descriptors and
+  handler, and confirm independent physical recovery on the selected board.
+  A second write is not required and cannot protect against losing the update
+  path on the first write. Micropitch pads are not an accessible user recovery path.
 - Preserve USB/partition/maintenance contracts; do not regenerate fixtures simply
   to bypass a failing check. Preserve NVS/history and never write eFuses here.
 - Distinguish BLE observation, a real Central/GATT connection and functioning USB

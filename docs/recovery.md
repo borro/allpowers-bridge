@@ -37,6 +37,9 @@ physical ROM recovery as verified until BOOT/RESET entry works on that unit.
    SHA256 and manifest path outside Git.
 4. Copy `config/devices.example.json` to `.local/devices.json`, enter the actual
    identity, rollback path/hash and `physical_rom_verified: true` only after testing.
+5. Before the first write, verify the candidate firmware's service HID descriptor,
+   boot-command handler and USB registration, together with its image and partition
+   contracts. The old firmware's working updater does not validate the new image.
 
 Historical factory and application copies remain private recovery material. They
 do not automatically qualify as safe rollback for the current history format.
@@ -100,9 +103,12 @@ then writes only bootloader, partition table, boot_app0 and app0. It verifies th
 written segments and uses the existing volatile watchdog reset path. NVS/history
 are outside these writes; no full-chip erase or eFuse command is provided.
 
-After a new firmware's first activation, actually test another write before
-further experiments. A retained ROM or old updater alone is not proof of an
-accessible recovery path. Do not revive the retired AULA experiment.
+Routine updates write the image once. A second write is not required: it cannot
+prevent losing the update path during the first write. Check the candidate's
+update support and independent physical recovery before that first write; after
+boot, check the service HID response and normal device operation. A retained ROM
+or old updater alone is not proof of an accessible recovery path. Do not revive
+the retired AULA experiment.
 
 The optional maintenance command uses `boards.py` for board/identity checks and
 `image_contract.py` for image hashes and partition validation. Its dependencies

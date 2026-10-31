@@ -125,6 +125,9 @@ real USB devices. Firmware builds and package checks do not flash a board.
 Hardware acceptance is separate: verify both viewers and two full exports while
 Windows continues receiving UPS reports; test reconnect and sleep/resume. For
 each explicitly selected board, verify physical ROM entry and a compatible
-rollback before writing. After first activation, prove an actual second write
-through maintenance HID → ROM before further experiments. Successful compilation
-alone is not evidence for Windows HID fan-out, functioning UPS or recovery.
+rollback before writing, and check the candidate image's service HID descriptor,
+boot-command handler and USB registration. After activation, verify the service
+HID response and normal device operation. Routine updates require one write;
+a second write cannot protect against losing the update path on the first one.
+Successful compilation alone is not evidence for Windows HID fan-out,
+functioning UPS or recovery.

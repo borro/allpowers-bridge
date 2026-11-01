@@ -1,10 +1,23 @@
 #include <array>
 #include <cassert>
 #include <initializer_list>
+#include <vector>
+#include <algorithm>
 #include "BootGestures.h"
+#include "HidPumpBudget.h"
+#include "DisplayFrame.h"
+#include "DisplayTiles.h"
+#include "PanelWindow.h"
+#include "display_tiles_test.h"
 #include "StationPicker.h"
 #include "HistoryRing.h"
 #include "GraphHistory.h"
+#include "GraphSnapshot.h"
+#include "ProfilePage.h"
+#include "graph_snapshot_test.h"
+#include "GraphRenderer.h"
+#include "FrameRaster.h"
+#include "graph_renderer_test.h"
 #include "HistoryWire.h"
 #include "TelemetryLabels.h"
 #include "HistoryExport.h"
@@ -114,7 +127,88 @@ static void deviceContracts() {
   }
 }
 
+template <unsigned W, unsigned H, bool Little> static void displayFrames() {
+  DisplayFrame<W,H,Little> frame;
+  std::vector<uint16_t> pixels(W*H),shadow(W*H,0xdead),panel(W*H,0xbeef),expected(W*H);
+  unsigned windows=0;
+  for(unsigned i=0;i<W*H;++i)pixels[i]=uint16_t(i*37+11);
+  auto present=[&](bool rotated,bool buffered=true){
+    windows=0;
+    // Independent forward coordinate transform of the logical image.
+    const unsigned width=rotated?H:W,height=rotated?W:H;
+    for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x){
+      uint16_t c=pixels[y*width+x];if(!Little)c=uint16_t(c<<8|c>>8);
+      expected[rotated?x*W+(W-1-y):y*W+x]=c;
+    }
+    unsigned written=0,end=0;
+    const unsigned count=frame.present(pixels.data(),width,buffered?shadow.data():nullptr,
+      [&](unsigned first,unsigned rows,const uint16_t *data){
+        ++windows;
+        assert(rows>0&&rows<=8&&first>=end&&first+rows<=H);end=first+rows;
+        for(unsigned i=0;i<rows*W;++i){assert(data[i]==expected[first*W+i]);panel[first*W+i]=data[i];}
+        written+=rows;
+      });
+    assert(count==written&&panel==expected);
+    if(buffered)assert(shadow==expected);
+    return written;
+  };
+  assert(present(false)==H);assert(windows==(H+7)/8);assert(present(false)==0);
+  pixels[0]^=0x07e0;assert(present(false)==1);
+  pixels[(H-1)*W+W-1]=0;assert(present(false)==1);
+  for(unsigned y=0;y<9;++y)pixels[y*W]^=0xffff;
+  assert(present(false)==9);assert(present(false)==0);
+  for(unsigned y=0;y<H;y+=2)pixels[y*W]^=0xf800;
+  assert(present(false)==(H+1)/2);
+  present(true);assert(present(true)==0);
+  pixels[0]^=0xffff;assert(present(true)==1);
+  pixels[W*H-1]^=0x1234;assert(present(true)==1);
+  present(false);assert(present(false)==0);
+  assert(present(false,false)==H);assert(present(false,false)==H);
+  assert(present(false)==H);assert(present(false)==0);
+  // Sparse changes, clearing and page/rotation transitions must reconstruct the
+  // entire correct panel, including stripes that end at the last partial row.
+  uint32_t random=12345;
+  for(unsigned run=0;run<40;++run){
+    for(unsigned i=0;i<run%17;++i){random=random*1664525u+1013904223u;pixels[random%(W*H)]=uint16_t(random>>16);}
+    present(run%3==0);assert(present(run%3==0)==0);
+  }
+}
+
 int main() {
+  GraphSnapshotTests::run();
+  {
+    std::array<uint8_t,63> command{};memcpy(command.data(),"PAGE-R2500!!",12);
+    assert(ProfilePage::decode(1,command.data(),command.size(),3)==0);
+    command[12]=2;assert(ProfilePage::decode(1,command.data(),13,3)==2);
+    command[12]=3;assert(ProfilePage::decode(1,command.data(),13,3)==ProfilePage::None);
+    assert(ProfilePage::decode(1,command.data(),12,6)==ProfilePage::None);
+    assert(ProfilePage::decode(2,command.data(),13,6)==ProfilePage::None);
+    assert(ProfilePage::decode(1,nullptr,13,6)==ProfilePage::None);
+    assert(ProfilePage::decode(1,command.data(),13,0)==ProfilePage::None);
+    memcpy(command.data(),"BOOT-R2500!!",12);assert(ProfilePage::decode(1,command.data(),63,6)==ProfilePage::None);
+  }
+  DisplayTilesTests::run<172,320,true>();
+  DisplayTilesTests::run<80,160,false>();
+  DisplayTilesTests::run<5,19,true>();
+  DisplayTilesTests::run<5,19,false>();
+  DisplayTilesTests::highAddresses();
+  GraphRendererTests::run();
+  displayFrames<172,320,true>();
+  displayFrames<80,160,false>();
+  displayFrames<5,19,true>();
+  displayFrames<5,19,false>();
+  for(uint32_t start:{0u,UINT32_MAX-500u}){
+    HidPumpBudget time(start);
+    assert(time.canContinue(start));
+    assert(time.canContinue(start+HidPumpBudget::WorkMicros-1));
+    assert(!time.canContinue(start+HidPumpBudget::WorkMicros));
+    HidPumpBudget reports(start);
+    for(unsigned i=0;i<HidPumpBudget::MaxReports;++i){assert(reports.canContinue(start));reports.attempted(true);}
+    assert(!reports.canContinue(start));
+    HidPumpBudget stalled(start);stalled.attempted(false);
+    assert(!stalled.canContinue(start+1));
+  }
+  static_assert(HidPumpBudget::delayMs(true)==1&&HidPumpBudget::delayMs(false)==5);
   deviceContracts();
   assert(BootGestures::selfTest());
   assert(StationPicker::selfTest());

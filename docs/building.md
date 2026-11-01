@@ -94,6 +94,11 @@ ctest --preset native
 ```
 
 `native` configures core/tests without a desktop; firmware targets exist only on Linux.
+
+For offline telemetry/history/HID workloads with profiler symbols, use the optional
+`logic-profile` preset; see [PC logic profiling](profiling.md) for scenarios,
+measurement limits and Callgrind commands.
+
 `windows` also configures the static Qt superbuild. `all-windows` / `all-linux`
 build all products supported by that host. `native-tests` builds the C++ tests;
 `core` builds the actual shared C ABI library. There is no Linux desktop yet.

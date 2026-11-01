@@ -5,6 +5,9 @@
 #include <BLEDevice.h>
 #include <BLEScan.h>
 #include "Telemetry.h"
+#include "RuntimeProfile.h"
+#include "HidPumpBudget.h"
+#include "ProfilePage.h"
 #include "UpsDescriptor.h"
 #include "Display.h"
 #include "esp32-hal-rgb-led.h"
@@ -98,6 +101,9 @@ public:
 static HidTelemetry::Server hidServer(hidProvider);
 static BootGestures button;
 static uint8_t displayPage=0;
+#if AP_FIRMWARE_PROFILING
+static std::atomic<uint8_t> requestedProfilePage{ProfilePage::None};
+#endif
 static bool displayDirty=false;
 static uint32_t buttonPresses=0;
 static bool buttonPassed=false;
@@ -125,6 +131,7 @@ static StationPicker::Snapshot menuSnapshot(){
   auto page=deviceCatalog.snapshot((selected/3)*3);portEXIT_CRITICAL(&dataLock);return page;
 }
 static void drawScreen(){
+  RuntimeProfile::Scope profile(RuntimeProfile::Metric::Draw);
   auto state=connectionSnapshot();
   if(pickerOpen)screen.renderPicker(menuSnapshot(),state.pickerBack,state.scanning,state.phase,state.connected?state.identity:StationIdentity{});
   else if(displayPage==1)screen.renderHistory(history,state.telemetry);
@@ -272,10 +279,16 @@ public:
   MaintenanceHID(){USBHID::addDevice(this,sizeof(vendorDescriptor));}
   uint16_t _onGetDescriptor(uint8_t *b)override{memcpy(b,vendorDescriptor,sizeof(vendorDescriptor));return sizeof(vendorDescriptor);}
   uint16_t _onGetFeature(uint8_t id,uint8_t *b,uint16_t n)override{
+    RuntimeProfile::StackSample stack(RuntimeProfile::StackTask::UsbCallback);
     if(id!=1)return 0;auto p=probeSnapshot();n=min(n,uint16_t(sizeof(p)));memcpy(b,&p,n);return n;
   }
   void _onOutput(uint8_t id,const uint8_t *b,uint16_t n)override{
+    RuntimeProfile::StackSample stack(RuntimeProfile::StackTask::UsbCallback);
     if(id==1 && n>=12 && !memcmp(b,"BOOT-R2500!!",12))requestBoot=true;
+#if AP_FIRMWARE_PROFILING
+    const uint8_t page=ProfilePage::decode(id,b,n,Board::screenCount);
+    if(page!=ProfilePage::None)requestedProfilePage.store(page,std::memory_order_relaxed);
+#endif
   }
   void _onSetFeature(uint8_t id,const uint8_t *b,uint16_t n)override{_onOutput(id,b,n);}
 } maintenance;
@@ -284,6 +297,7 @@ public:
   bool enable(){return USBHID::addDevice(this,sizeof(kUpsDescriptor));}
   uint16_t _onGetDescriptor(uint8_t *b)override{memcpy(b,kUpsDescriptor,sizeof(kUpsDescriptor));return sizeof(kUpsDescriptor);}
   uint16_t _onGetFeature(uint8_t id,uint8_t *b,uint16_t n)override{
+    RuntimeProfile::StackSample stack(RuntimeProfile::StackTask::UsbCallback);
     if(id==2){upsGets++;auto p=upsSnapshot();n=min(n,uint16_t(sizeof(p)));memcpy(b,&p,n);return n;}
     if(id==3){staticGets++;n=min(n,uint16_t(sizeof(kUpsStatic)));memcpy(b,&kUpsStatic,n);return n;}
     return 0;
@@ -296,6 +310,7 @@ public:
     memcpy(b,HidTelemetry::Descriptor,sizeof(HidTelemetry::Descriptor));return sizeof(HidTelemetry::Descriptor);
   }
   uint16_t _onGetFeature(uint8_t id,uint8_t *b,uint16_t n)override{
+    RuntimeProfile::StackSample stack(RuntimeProfile::StackTask::UsbCallback);
     if(n<HidTelemetry::Payload)return 0;
     if(id==HidTelemetry::CapsReport)HidTelemetry::capabilities(b,hidBoot,true);
     else if(id==HidTelemetry::LiveReport){
@@ -304,6 +319,7 @@ public:
     return HidTelemetry::Payload;
   }
   void _onOutput(uint8_t id,const uint8_t *b,uint16_t n)override{
+    RuntimeProfile::StackSample stack(RuntimeProfile::StackTask::UsbCallback);
     HidTelemetry::Request r;
     if(id==HidTelemetry::RequestReport&&hidRequests&&HidTelemetry::decode(b,n,r)&&r.boot==hidBoot)
       xQueueSend(hidRequests,&r,0);
@@ -329,9 +345,11 @@ static void refreshHidLive(){
   portENTER_CRITICAL(&hidLock);memcpy(hidLive,bytes,sizeof(bytes));portEXIT_CRITICAL(&hidLock);
 }
 static void notifyStation(BLERemoteCharacteristic *sender,uint8_t *bytes,size_t length,bool,uint32_t revision,uint32_t token) {
+  RuntimeProfile::StackSample stack(RuntimeProfile::StackTask::BleCallback);
   portENTER_CRITICAL(&dataLock);
   if(revision!=activeRevision||revision!=targetRevision||token!=activeConnectionToken||sender!=activeRx){portEXIT_CRITICAL(&dataLock);return;}
-  bool valid=decodeStationTelemetry(telemetry,bytes,length,millis(),activeModel);
+  bool valid;
+  {RuntimeProfile::Scope profile(RuntimeProfile::Metric::BleDecode);valid=decodeStationTelemetry(telemetry,bytes,length,millis(),activeModel);}
   portEXIT_CRITICAL(&dataLock);
   if(usbStarted && length<=256){
     char hex[513];for(size_t i=0;i<length;++i)snprintf(hex+i*2,3,"%02x",bytes[i]);hex[length*2]=0;
@@ -431,6 +449,7 @@ static void bleTask(void*) {
   if(!scan||!client){bleStartupFailed=true;vTaskDelete(nullptr);return;}
   scan->setActiveScan(true);scan->setInterval(160);scan->setWindow(80);client->setClientCallbacks(&clientEvents);
   for(;;){
+    RuntimeProfile::sampleStack(RuntimeProfile::StackTask::BleWorker);
     if(requestBoot||requestRestart){vTaskDelay(pdMS_TO_TICKS(100));continue;}
     scanNearby(scan,3);uint32_t revision;auto target=targetSnapshot(revision);StationPicker::Entry candidate;bool found=false;
     portENTER_CRITICAL(&dataLock);
@@ -467,6 +486,7 @@ static void bleTask(void*) {
         uint32_t since=millis(),keepalive=since,lastScan=since;
         AllpowersCore::TelemetryRecovery recovery;recovery.begin(since);
         while(client->isConnected()){
+          RuntimeProfile::sampleStack(RuntimeProfile::StackTask::BleWorker);
           vTaskDelay(pdMS_TO_TICKS(100));uint32_t now=millis(),current;
           portENTER_CRITICAL(&dataLock);current=targetRevision;
           bool complete=telemetryFresh(telemetry,now);
@@ -508,7 +528,7 @@ static DiagnosticData diagnosticsSnapshot(){
   d.heapFree=ESP.getFreeHeap();d.heapMin=ESP.getMinFreeHeap();d.psramFree=ESP.getFreePsram();return d;
 }
 static size_t diagnosticText(uint8_t *out,size_t capacity){
-  auto d=diagnosticsSnapshot();auto view=diagnosticView(d);static char body[6144];
+  auto d=diagnosticsSnapshot();auto view=diagnosticView(d);static char body[AP_FIRMWARE_PROFILING?HidTelemetry::MessageLimit:6144];
   size_t used=snprintf(body,sizeof(body),"{\"diagnostic\":true,\"version\":\"%c\",\"page\":%u,\"heading\":\"%s\",\"footer\":\"%s\",\"rows\":[",ADAPTER_VERSION,displayPage,view.heading,view.footer);
   for(unsigned i=0;i<DiagnosticView::Count&&used<sizeof(body)-3;++i){auto &r=view.rows[i];
     used+=snprintf(body+used,sizeof(body)-used,"%s{\"label\":\"%s\",\"value\":\"%s\",\"tone\":%u}",i?",":"",r.label,r.value,unsigned(r.tone));
@@ -516,7 +536,16 @@ static size_t diagnosticText(uint8_t *out,size_t capacity){
   if(used>=sizeof(body)-3)return 0;
   const int extra=BleDisconnects::appendDiagnosticRows(body+used,sizeof(body)-used-3,d.bleDisconnects);
   if(extra<0)return 0;
-  used+=size_t(extra);memcpy(body+used,"]}\n",3);if(used+3>capacity)return 0;memcpy(out,body,used+3);return used+3;
+  used+=size_t(extra);
+#if AP_FIRMWARE_PROFILING
+  body[used++]=']';
+  const size_t profiling=RuntimeProfile::append(body+used,sizeof(body)-used-3);
+  if(!profiling)return 0;
+  used+=profiling;memcpy(body+used,"}\n",2);used+=2;
+  if(used>capacity)return 0;memcpy(out,body,used);return used;
+#else
+  memcpy(body+used,"]}\n",3);if(used+3>capacity)return 0;memcpy(out,body,used+3);return used+3;
+#endif
 }
 static bool captureStatus(HistoryFormat::StatusSnapshot &frame,uint32_t now){
   frame={};frame.nowMs=now;frame.state=connectionSnapshot();auto report=upsSnapshot();
@@ -562,37 +591,52 @@ static void historyTask(void*){
       history.recordLive(s,liveGap||(liveStarted&&now-lastLive>1));lastLive=now;liveStarted=true;liveGap=false;
     }
     if((!attempted&&fresh)||now-lastSample>=60){
+      RuntimeProfile::Scope profile(RuntimeProfile::Metric::HistoryRecord);
       attempted=true;if(history.record(s,minuteGap))minuteGap=false;lastSample=now;
     }
+    RuntimeProfile::sampleStack(RuntimeProfile::StackTask::History);
     vTaskDelay(pdMS_TO_TICKS(200));
   }
 }
-static void pumpHid(){
+static bool pumpHid(){
+  RuntimeProfile::pump();
   using namespace HidTelemetry;
   static Request current;static uint8_t message[MessageLimit];
   static size_t size=0,offset=0;static Result result=Result::Ok;static uint32_t started=0,digest=0;
-  const uint32_t now=millis();hidServer.expire(now);
-  if(size&&uint32_t(now-started)>5000){size=offset=0;}
-  if(!size){
-    if(hidRequests&&xQueueReceive(hidRequests,&current,0)==pdTRUE){
-      result=hidServer.respond(current,now,message,size);offset=0;started=now;
-    }else{
-      portENTER_CRITICAL(&hidLock);
-      if(pendingNotificationBytes){
-        memcpy(message,pendingNotification,pendingNotificationBytes);size=pendingNotificationBytes;
-        pendingNotificationBytes=0;current={};current.op=Op::Packet;current.boot=hidBoot;
-        offset=0;started=now;result=Result::Ok;
+  HidPumpBudget budget(micros());bool sentAny=false;
+  hidServer.expire(millis());
+  while(budget.canContinue(micros())&&!requestBoot&&!requestRestart){
+    const uint32_t now=millis();
+    if(size&&uint32_t(now-started)>5000){size=offset=0;}
+    if(!size){
+      if(hidRequests&&xQueueReceive(hidRequests,&current,0)==pdTRUE){
+        {RuntimeProfile::Scope profile(RuntimeProfile::Metric::HidRespond);result=hidServer.respond(current,now,message,size);}
+        offset=0;started=now;
+      }else{
+        portENTER_CRITICAL(&hidLock);
+        if(pendingNotificationBytes){
+          memcpy(message,pendingNotification,pendingNotificationBytes);size=pendingNotificationBytes;
+          pendingNotificationBytes=0;current={};current.op=Op::Packet;current.boot=hidBoot;
+          offset=0;started=now;result=Result::Ok;
+        }
+        portEXIT_CRITICAL(&hidLock);
       }
-      portEXIT_CRITICAL(&hidLock);
+      if(size){RuntimeProfile::Scope profile(RuntimeProfile::Metric::HidCrc);digest=crc32(message,size);}
     }
-    if(size)digest=crc32(message,size);
-  }
-  if(size&&hid.ready()){
-    uint8_t report[Payload];size_t count=fragment(current,result,message,size,digest,offset,report);
-    if(count&&hid.SendReport(ResponseReport,report,sizeof(report),5)){
-      offset+=count;if(offset==size)size=offset=0;
+    if(!size||!hid.ready())break;
+    uint8_t report[Payload];size_t count;
+    {RuntimeProfile::Scope profile(RuntimeProfile::Metric::HidFragment);count=fragment(current,result,message,size,digest,offset,report);}
+    bool sent=false;
+    if(count){RuntimeProfile::Scope profile(RuntimeProfile::Metric::HidSend);sent=hid.SendReport(ResponseReport,report,sizeof(report),5);}
+    RuntimeProfile::hidSent(sent);
+    budget.attempted(sent);
+    if(sent){
+      sentAny=true;offset+=count;if(offset==size)size=offset=0;
     }
   }
+  // Keep one short yield after the final fragment so the host can enqueue the
+  // next page. An idle/disconnected board keeps the previous 5 ms sleep.
+  return bool(USB)&&(size||sentAny||(hidRequests&&uxQueueMessagesWaiting(hidRequests)));
 }
 static void startUsb(bool withUps) {
   // Prime the retained report before USB can request it. If BLE disappeared
@@ -614,7 +658,7 @@ void setup() {
   buttonPassed=BootGestures::selfTest();pickerPassed=StationPicker::selfTest()&&AllpowersModels::selfTest();
   loadLastTarget();pinMode(Board::boot,INPUT_PULLUP);button.begin(digitalRead(Board::boot)==LOW,millis());
   led(0,0,12); // Optional board-specific RGB; absent on Pocket.
-  parserPassed=telemetrySelfTest()&&pickerPassed;displayReady=screen.begin();
+  parserPassed=telemetrySelfTest()&&pickerPassed&&AllpowersCrc32::compute("123456789",9)==0xcbf43926u;displayReady=screen.begin();
   if(parserPassed)bleTaskStarted=xTaskCreatePinnedToCore(bleTask,"station_ble",10240,nullptr,1,nullptr,0)==pdPASS;
   uint32_t start=millis();
   // Never enumerate a battery with fabricated zero SOC before station data arrives.
@@ -626,8 +670,19 @@ void setup() {
   if(history.begin())historyTaskStarted=xTaskCreatePinnedToCore(historyTask,"history_log",6144,nullptr,1,nullptr,1)==pdPASS;
 }
 void loop() {
+  uint32_t sleepMs=HidPumpBudget::delayMs(false);
+  {
+  RuntimeProfile::Scope profile(RuntimeProfile::Metric::LoopWork);
   static uint32_t lastReport=0,bootDeadline=0;
   if(buttonPassed)menuGesture(button.update(digitalRead(Board::boot)==LOW,millis()));
+#if AP_FIRMWARE_PROFILING
+  const uint8_t requestedPage=requestedProfilePage.exchange(ProfilePage::None,std::memory_order_relaxed);
+  if(requestedPage<Board::screenCount&&!requestBoot&&!requestRestart){
+    portENTER_CRITICAL(&dataLock);
+    if(!pickerOpen){displayPage=requestedPage;displayDirty=true;}
+    portEXIT_CRITICAL(&dataLock);
+  }
+#endif
   if(requestBoot||requestRestart){
     hidServer.stop();history.requestPause();
     if(!bootDeadline){updateLed(snapshot());bootDeadline=millis()+150;}
@@ -650,6 +705,9 @@ void loop() {
     updateLed(snapshot());
   }
   if(displayDirty){drawScreen();displayDirty=false;}
-  if(!requestBoot&&!requestRestart)pumpHid();
-  delay(5);
+  if(!requestBoot&&!requestRestart)sleepMs=HidPumpBudget::delayMs(pumpHid());
+  }
+  if(!requestBoot&&!requestRestart)RuntimeProfile::step();
+  RuntimeProfile::sampleStack(RuntimeProfile::StackTask::Loop);
+  delay(sleepMs);
 }

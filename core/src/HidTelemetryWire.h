@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "Crc32.h"
 
 // Payloads exclude the report ID. Integers are explicitly little endian.
 namespace HidTelemetry {
@@ -28,14 +29,7 @@ inline void put16(uint8_t *p, uint16_t n) { p[0] = uint8_t(n); p[1] = uint8_t(n 
 inline void put32(uint8_t *p, uint32_t n) { put16(p, uint16_t(n)); put16(p + 2, uint16_t(n >> 16)); }
 inline void put64(uint8_t *p, uint64_t n) { put32(p, uint32_t(n)); put32(p + 4, uint32_t(n >> 32)); }
 inline uint32_t crc32(const void *data, size_t size) {
-  const auto *p = static_cast<const uint8_t *>(data);
-  uint32_t crc = 0xffffffffu;
-  for (size_t i = 0; i < size; ++i) {
-    crc ^= p[i];
-    for (int bit = 0; bit < 8; ++bit)
-      crc = (crc >> 1) ^ (0xedb88320u & uint32_t(-int32_t(crc & 1)));
-  }
-  return ~crc;
+  return AllpowersCrc32::compute(data, size);
 }
 inline void seal(uint8_t *p) { put32(p + 59, crc32(p, 59)); }
 inline bool sealed(const uint8_t *p, size_t n) {

@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <initializer_list>
+#include "Crc32.h"
 
 namespace HistoryFormat {
 // AHP3 only: session is the durable boot ordinal, uptime is local to that boot.
@@ -23,9 +24,7 @@ struct Record {
 #pragma pack(pop)
 static_assert(sizeof(Record)==32 && offsetof(Record,crc)==28,"History record format");
 inline uint32_t crc32(const void *data,size_t length) {
-  auto *p=static_cast<const uint8_t*>(data);uint32_t crc=0xffffffff;
-  for(size_t i=0;i<length;++i){crc^=p[i];for(int bit=0;bit<8;++bit)crc=(crc>>1)^(0xedb88320u&uint32_t(-int32_t(crc&1)));}
-  return ~crc;
+  return AllpowersCrc32::compute(data,length);
 }
 inline bool newer(uint32_t a,uint32_t b){return int32_t(a-b)>0;}
 inline uint32_t next(uint32_t n){return ++n?n:1;}

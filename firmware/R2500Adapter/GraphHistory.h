@@ -6,11 +6,65 @@
 namespace GraphHistory {
 constexpr uint32_t kLiveKeep=3600,kCapacity=HistoryFormat::kKeep+kLiveKeep,kHorizon=HistoryFormat::kGraphHorizon;
 struct Point {HistoryFormat::Record sample{};uint32_t age=0;bool joinPrevious=false,unknownBefore=false;};
+struct RingView {
+  const HistoryFormat::Record *data=nullptr;
+  uint32_t head=0,count=0,capacity=0;
+  bool valid()const{return !count||(data&&capacity&&head<capacity&&count<=capacity);}
+  const HistoryFormat::Record &at(uint32_t i)const{return data[(head+i)%capacity];}
+};
 // log(1 + age) gives a defined position for "now" and expands recent seconds.
 inline int x(uint32_t age){
   if(age>=kHorizon)return 32;
   return 280-int(lroundf(248.0f*log1pf(float(age))/log1pf(float(kHorizon))));
 }
+// Invert the existing monotone integer-age projection once on this platform.
+// No approximation or host-generated floating-point table changes the pixels.
+// Each entry is the first age reaching the corresponding rounded column.
+class Projection {
+  uint32_t firstAge[248]{};
+  bool ready=false;
+public:
+  void begin(){
+    for(unsigned column=1;column<=248;++column){
+      uint32_t low=0,high=kHorizon;
+      while(low<high){uint32_t mid=low+(high-low)/2;
+        if(280-GraphHistory::x(mid)>=int(column))high=mid;else low=mid+1;
+      }
+      firstAge[column-1]=low;
+    }
+    ready=true;
+  }
+  int x(uint32_t age)const{
+    if(!ready)return GraphHistory::x(age);
+    if(age>=kHorizon)return 32;
+    unsigned low=0,high=248;
+    while(low<high){unsigned mid=low+(high-low)/2;
+      if(age>=firstAge[mid])low=mid+1;else high=mid;
+    }
+    return 280-int(low);
+  }
+  // Per-draw cursor: consecutive ages usually remain in the same exact column.
+  // Cache its half-open integer-age interval, without assuming age ordering.
+  class Cursor {
+    const Projection &projection;
+    uint32_t first=0,end=0;
+    int column=0;
+  public:
+    explicit Cursor(const Projection &p):projection(p){}
+    int x(uint32_t age){
+      if(!projection.ready)return GraphHistory::x(age);
+      if(age>=kHorizon)return 32;
+      if(age>=first&&age<end)return column;
+      unsigned low=0,high=248;
+      while(low<high){unsigned mid=low+(high-low)/2;
+        if(age>=projection.firstAge[mid])low=mid+1;else high=mid;
+      }
+      first=low?projection.firstAge[low-1]:0;
+      end=low<248?projection.firstAge[low]:kHorizon;
+      column=280-int(low);return column;
+    }
+  };
+};
 inline bool join(const HistoryFormat::Record &a,const HistoryFormat::Record &b){
   uint32_t limit=!a.sequence&&!b.sequence?2:90;
   return (a.flags&HistoryFormat::Fresh)&&(b.flags&HistoryFormat::Fresh)&&!(b.flags&HistoryFormat::Gap)&&
@@ -50,6 +104,7 @@ class LiveRing {
 public:
   explicit LiveRing(HistoryFormat::Record *p):records(p){}
   uint32_t size()const{return count;}
+  RingView view()const{return {records,head,count,kLiveKeep};}
   const HistoryFormat::Record &at(uint32_t i)const{return records[(head+i)%kLiveKeep];}
   void push(const HistoryFormat::Record &r){
     if(count<kLiveKeep)records[(head+count++)%kLiveKeep]=r;

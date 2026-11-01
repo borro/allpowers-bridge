@@ -118,6 +118,18 @@ CI also requires Windows application formatting and per-area host coverage minim
 
 Windows applications depend on `core/`, never on firmware headers. Firmware images and device-specific tests build only on Linux; the Windows `verify` workflow delegates these to WSL when available.
 
+[PC logic profiling](docs/profiling.md) runs synthetic telemetry, RAM history and HID archive workloads on Windows or Linux/WSL, without accessing hardware. Build the optional `logic-profile` preset for optimized code with profiler symbols.
+
+ESP32 firmware uses the ROM CRC32 routine. Optional [on-board profiling](docs/profiling.md#on-board-rom-crc-and-runtime-measurements--2026-11-01) adds timing counters to the existing HID diagnostics; ordinary firmware builds disable the instrumentation.
+
+The display sends small changed rectangles using an optional PSRAM shadow at the existing SPI clock; [same-frame on-board comparisons](docs/profiling.md#dirty-rectangles-and-spi-windows--2026-11-01) record timing, byte counts and limits.
+
+Diagnostic builds can also report [minimum free task stack](docs/profiling.md#stack-watermarks-and-repeat-profile--2026-11-01), with measured load and repeat profiling results.
+
+Graph rendering uses an exact cached age projection, reuses repeated coordinates and skips redundant pixels; [paired on-board comparisons](docs/profiling.md#reusing-exact-graph-coordinates--2026-11-01) verify the image and separate raster timing from full refresh timing.
+
+History snapshots combine copying, age assignment and gap flags in one reverse pass; [same-input board measurements](docs/profiling.md#history-snapshot-and-diagnostic-page-control--2026-11-01) also describe USB page selection available only in profiling builds.
+
 [Local Git hooks](docs/ci.md#local-git-hooks) use CMake/CTest to run commit checks on the staged snapshot and push checks in parallel, without a PowerShell runner. Windows uses WSL; Linux leaves Windows-specific checks to CI. Install with `cmake -P cmake/scripts/hooks/InstallGitHooks.cmake` after preparing the toolchains.
 
 CI submits the pinned C/C++ dependencies from `cmake/Dependencies.cmake` to the [GitHub Dependency Graph](https://github.com/borro/allpowers-bridge/network/dependencies). Pull requests validate the snapshot; submission runs only from the default branch. CI summaries and artifacts include an inventory with repository, source and notice links. [Scope and local validation](docs/ci.md#cc-dependency-graph).

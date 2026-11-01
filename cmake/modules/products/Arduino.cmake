@@ -10,6 +10,7 @@ function(ap_add_firmware_targets)
   endif()
   set(PROJECT_SOURCE_DIR "${AP_ROOT}")
   set(PROJECT_BINARY_DIR "${AP_BUILD_ROOT}")
+  option(ALLPOWERS_FIRMWARE_PROFILING "Collect on-board elapsed-time and CRC comparison diagnostics" OFF)
   ap_configure_arduino(ROOT "${AP_ROOT}" BUILD_ROOT "${AP_BUILD_ROOT}")
   # Reconfigure for added/removed inputs; build dependencies follow the actual inventory.
   file(GLOB_RECURSE firmware_candidates CONFIGURE_DEPENDS
@@ -45,6 +46,7 @@ function(ap_add_firmware_targets)
         "-DBOARD_NUMBER=${board_number}" "-DCLI=${ARDUINO_CLI}" "-DDATA=${ARDUINO_DATA_DIR}"
         "-DCONFIG=${arduino_config}" "-DWORK=${PROJECT_BINARY_DIR}/firmware/${board}"
         "-DJOBS=${ALLPOWERS_ARDUINO_JOBS}"
+        "-DPROFILING=${ALLPOWERS_FIRMWARE_PROFILING}"
         "-DPython3_EXECUTABLE=${Python3_EXECUTABLE}"
         "-DLEGAL_CACHE=${ALLPOWERS_DEPS_DIR}/firmware-legal"
         "-DOUTPUT=${output}" "-DIDENTITY_FILE=${ALLPOWERS_IDENTITY_FILE}"

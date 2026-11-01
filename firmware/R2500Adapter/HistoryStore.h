@@ -14,6 +14,8 @@
 #include "BootEpoch.h"
 #include "HistoryExport.h"
 #include "GraphHistory.h"
+#include "GraphSnapshot.h"
+#include "RuntimeProfile.h"
 
 #include "HistoryStatus.h"
 class HistoryPartition:public HistoryFormat::Flash {
@@ -134,20 +136,28 @@ public:
     if(live){live->push(r);stats.liveCount=live->size();stats.liveSamples++;stats.liveLatest=r.uptimeSeconds;}
     xSemaphoreGive(dataMutex);
   }
-  size_t copyGraph(GraphHistory::Point *dest,size_t capacity,bool &unknown){
-    unknown=false;
-    if(capacity<GraphHistory::kCapacity||!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return 0;
-    if(!records){xSemaphoreGive(dataMutex);return 0;}
-    size_t n=0;uint32_t liveCount=live?live->size():0,session=stats.session;
-    for(uint32_t i=0;i<stats.count;++i){const auto &r=records[(head+i)%HistoryFormat::kKeep];
-      if(liveCount&&r.session==live->at(0).session&&r.uptimeSeconds>=live->at(0).uptimeSeconds)continue;
-      dest[n++]={r,0,false,false};
+  GraphSnapshot::View copyGraph(GraphHistory::Point *dest,size_t capacity){
+    if(capacity<GraphHistory::kCapacity||!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return {};
+    if(!records){xSemaphoreGive(dataMutex);return {};}
+    GraphSnapshot::View result;
+    {RuntimeProfile::Scope profile(RuntimeProfile::Metric::GraphCopyLocked);
+      const GraphSnapshot::Input input{{records,head,stats.count,HistoryFormat::kKeep},live?live->view():GraphHistory::RingView{},
+        uint32_t(uint64_t(esp_timer_get_time())/1000000),stats.session};
+      result=GraphSnapshot::build(dest,capacity,input);
     }
-    for(uint32_t i=0;i<liveCount;++i)dest[n++]={live->at(i),0,false,false};
-    xSemaphoreGive(dataMutex);
-    unknown=GraphHistory::assignAges(dest,n,uint32_t(uint64_t(esp_timer_get_time())/1000000),session);
-    return n;
+    xSemaphoreGive(dataMutex);return result;
   }
+#if AP_FIRMWARE_PROFILING
+  bool freezeGraphInput(HistoryFormat::Record *archive,HistoryFormat::Record *recent,GraphSnapshot::Input &input){
+    if(!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return false;
+    if(!records){xSemaphoreGive(dataMutex);return false;}
+    const GraphHistory::RingView a{records,head,stats.count,HistoryFormat::kKeep},l=live?live->view():GraphHistory::RingView{};
+    const bool ok=GraphSnapshot::freeze(a,archive,HistoryFormat::kKeep)&&GraphSnapshot::freeze(l,recent,GraphHistory::kLiveKeep);
+    if(ok)input={{archive,a.head,a.count,a.capacity},{recent,l.head,l.count,l.capacity},
+      uint32_t(uint64_t(esp_timer_get_time())/1000000),stats.session};
+    xSemaphoreGive(dataMutex);return ok;
+  }
+#endif
   size_t copyRecent(HistoryFormat::Record *dest,size_t capacity){
     if(!dataMutex||xSemaphoreTake(dataMutex,pdMS_TO_TICKS(20))!=pdTRUE)return 0;
     if(!records){xSemaphoreGive(dataMutex);return 0;}

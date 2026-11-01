@@ -1,4 +1,5 @@
 #include "HidTelemetryServer.h"
+#include "crc32_test.h"
 #include <array>
 #include <cassert>
 #include <vector>
@@ -188,6 +189,7 @@ static void fragmentContractTests() {
   assert(get32(report + 31) == wrong && bad.accept(report, Payload) == -1);
 }
 int main() {
+  Crc32Tests::run();
   fragmentContractTests();
   boundaryTests();
   Request a; a.boot = 42; a.operation.bytes[0] = 1; a.archive = a.operation; a.op = Op::Open;

@@ -40,10 +40,14 @@ file(CONFIGURE OUTPUT "${sketch}/ProductIdentity.h" CONTENT
   "#pragma once\n#define AP_PRODUCT_VERSION \"${VERSION}\"\n#define AP_PRODUCT_COMMIT \"${ALLPOWERS_BUILD_COMMIT}\"\n#define AP_PRODUCT_DIRTY ${ALLPOWERS_BUILD_DIRTY}\n")
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" LIBRARY_VERSION "${VERSION}")
 configure_file("${ROOT}/core/library.properties.in" "${library}/library.properties" @ONLY)
+set(profile_define 0)
+if(PROFILING)
+  set(profile_define 1)
+endif()
 execute_process(COMMAND "${CLI}" --config-file "${CONFIG}" compile --fqbn "${ALLPOWERS_FQBN}"
   --jobs "${JOBS}"
   --library "${library}" --build-path "${WORK}/compile" --output-dir "${OUTPUT}"
-  --build-property "compiler.cpp.extra_flags=-std=gnu++${ALLPOWERS_CXX_STANDARD} -DADAPTER_BOARD=${BOARD_NUMBER}" "${sketch}"
+  --build-property "compiler.cpp.extra_flags=-std=gnu++${ALLPOWERS_CXX_STANDARD} -DADAPTER_BOARD=${BOARD_NUMBER} -DAP_FIRMWARE_PROFILING=${profile_define}" "${sketch}"
   COMMAND_ERROR_IS_FATAL ANY)
 file(READ "${ROOT}/tests/fixtures/usb-contract.json" contract)
 ap_partitions(OUTPUT partitions BINARY "${OUTPUT}/R2500Adapter.ino.partitions.bin" CONTRACT "${contract}")

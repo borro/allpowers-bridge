@@ -41,55 +41,79 @@
       ]
     },
     "firmware/R2500Adapter/GraphHistory.h": {
-      "sha256": "40e504c09f4ecba2aacac8757476a5ad437b863e5bfd8b304460f43991722cd2",
+      "sha256": "23d57ca0eb4ac1556558913755d711ae2887ef6d4784a7108423803948bf481b",
       "mutants": [
         {
-          "id": "cxx_add_to_sub:firmware/R2500Adapter/GraphHistory.h:67:83:67:84",
+          "id": "cxx_add_to_sub:firmware/R2500Adapter/GraphHistory.h:122:83:122:84",
           "replacement": "-",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:11:9:11:11",
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:17:9:17:11",
           "replacement": ">",
           "category": "equivalent",
           "reason": "При age == kHorizon логарифмическая формула также возвращает x=32."
         },
         {
-          "id": "cxx_gt_to_ge:firmware/R2500Adapter/GraphHistory.h:62:82:62:83",
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/GraphHistory.h:117:82:117:83",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_gt:firmware/R2500Adapter/GraphHistory.h:62:25:62:27",
+          "id": "cxx_le_to_gt:firmware/R2500Adapter/GraphHistory.h:117:25:117:27",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:61:38:61:40",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:116:38:116:40",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:61:52:61:54",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:116:52:116:54",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:62:25:62:27",
+          "id": "cxx_le_to_lt:firmware/R2500Adapter/GraphHistory.h:117:25:117:27",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphHistory.h:67:16:67:17",
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphHistory.h:122:16:122:17",
           "replacement": "<=",
           "category": "sanitizer-confirmed",
           "reason": "Цикл selfTest записывает p[3] при массиве p[3]: выход за границу, не эквивалентность. Подтверждено отдельным Clang ASan/UBSan replay; для HistoryExport нужен ASan field-padding=2. Исходная программа прошла тот же контроль."
+        },
+        {
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:57:13:57:15",
+          "replacement": ">",
+          "category": "equivalent",
+          "reason": "Кэш реже используется на левой границе интервала; бинарный поиск вычисляет ту же точную колонку. Меняется только число поисков."
+        },
+        {
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:56:13:56:15",
+          "replacement": ">",
+          "category": "equivalent",
+          "reason": "При age==kHorizon бинарный поиск по тем же порогам также возвращает колонку 32. Остальные возраста обрабатываются одинаково."
+        },
+        {
+          "id": "cxx_ge_to_gt:firmware/R2500Adapter/GraphHistory.h:39:11:39:13",
+          "replacement": ">",
+          "category": "equivalent",
+          "reason": "При age==kHorizon бинарный поиск по тем же порогам также возвращает колонку 32. Остальные возраста обрабатываются одинаково."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphHistory.h:63:14:63:15",
+          "replacement": "<=",
+          "category": "sanitizer-confirmed",
+          "reason": "При low==248 читается firstAge[248], за пределами массива из 248 элементов. Отдельная копия этого мутанта дала UBSan index 248 out of bounds; исходный полный firmware-host контроль прошёл ASan/UBSan. Это неопределённое поведение, не эквивалентность."
         }
       ]
     },
@@ -159,16 +183,16 @@
       ]
     },
     "core/src/HidTelemetryWire.h": {
-      "sha256": "8f9e0e9e3708996715f3c12fc5f0621c5b2b96ce108e1b270d03400b0bac57ef",
+      "sha256": "2697f8bede65bf0d08d553804abeab370372182515e10a461480ff0eb133d9bf",
       "mutants": [
         {
-          "id": "cxx_lt_to_le:core/src/HidTelemetryWire.h:114:40:114:41",
+          "id": "cxx_lt_to_le:core/src/HidTelemetryWire.h:108:40:108:41",
           "replacement": "<=",
           "category": "equivalent",
           "reason": "При равенстве остатка лимиту обе ветви выбора минимума возвращают одно и то же значение: 28 байт для фрагмента или 8 записей для страницы. Замена < на <= не меняет результат ни для одного входа; проверки полных и неполных фрагментов/страниц сохранены."
         },
         {
-          "id": "cxx_lt_to_le:core/src/HidTelemetryWire.h:133:42:133:43",
+          "id": "cxx_lt_to_le:core/src/HidTelemetryWire.h:127:42:127:43",
           "replacement": "<=",
           "category": "equivalent",
           "reason": "При равенстве остатка лимиту обе ветви выбора минимума возвращают одно и то же значение: 28 байт для фрагмента или 8 записей для страницы. Замена < на <= не меняет результат ни для одного входа; проверки полных и неполных фрагментов/страниц сохранены."
@@ -198,70 +222,70 @@
       ]
     },
     "core/src/HistoryRing.h": {
-      "sha256": "d9ec74f54e7f9871a647c88d356d143e9bee5877d427af75bc437cffa86289e9",
+      "sha256": "87ca6462db226958c3ba3d7eb20207a930e84ac05fbd5055def478c4b35448a4",
       "mutants": [
         {
-          "id": "cxx_gt_to_ge:core/src/HistoryRing.h:92:83:92:84",
+          "id": "cxx_gt_to_ge:core/src/HistoryRing.h:91:83:91:84",
           "replacement": ">=",
           "category": "equivalent",
           "reason": "При count == n присваивание count=n ничего не меняет."
         },
         {
-          "id": "cxx_gt_to_le:core/src/HistoryRing.h:92:83:92:84",
+          "id": "cxx_gt_to_le:core/src/HistoryRing.h:91:83:91:84",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_gt:core/src/HistoryRing.h:106:22:106:24",
+          "id": "cxx_le_to_gt:core/src/HistoryRing.h:105:22:105:24",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_gt:core/src/HistoryRing.h:115:22:115:24",
+          "id": "cxx_le_to_gt:core/src/HistoryRing.h:114:22:114:24",
           "replacement": ">",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:core/src/HistoryRing.h:106:22:106:24",
+          "id": "cxx_le_to_lt:core/src/HistoryRing.h:105:22:105:24",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_le_to_lt:core/src/HistoryRing.h:115:22:115:24",
+          "id": "cxx_le_to_lt:core/src/HistoryRing.h:114:22:114:24",
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_ge:core/src/HistoryRing.h:92:54:92:55",
+          "id": "cxx_lt_to_ge:core/src/HistoryRing.h:91:54:91:55",
           "replacement": ">=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:core/src/HistoryRing.h:92:54:92:55",
+          "id": "cxx_lt_to_le:core/src/HistoryRing.h:91:54:91:55",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_lt_to_le:core/src/HistoryRing.h:95:20:95:21",
+          "id": "cxx_lt_to_le:core/src/HistoryRing.h:94:20:94:21",
           "replacement": "<=",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_mul_to_div:core/src/HistoryRing.h:133:72:133:73",
+          "id": "cxx_mul_to_div:core/src/HistoryRing.h:132:72:132:73",
           "replacement": "/",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
         },
         {
-          "id": "cxx_mul_to_div:core/src/HistoryRing.h:138:31:138:32",
+          "id": "cxx_mul_to_div:core/src/HistoryRing.h:137:31:137:32",
           "replacement": "/",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
@@ -282,6 +306,194 @@
           "replacement": "<",
           "category": "diagnostic",
           "reason": "Меняется сам selfTest, его сценарии, проверки или RAM-имитатор сбоев. Успех на исправной реализации не доказывает равенство программ. Для оценки нужен отдельный набор внедрённых дефектов, а не проверка числа итераций."
+        }
+      ]
+    },
+    "firmware/R2500Adapter/DisplayTiles.h": {
+      "sha256": "234ee8c5b0e2a77cd262a47ec111fe8939d836dae9f2d4de54e18a34662ddc27",
+      "mutants": [
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:76:21:76:22",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_sub_to_add:firmware/R2500Adapter/DisplayTiles.h:68:63:68:64",
+          "replacement": "+",
+          "category": "sanitizer-confirmed",
+          "reason": "Длина memcmp становится right+left вместо right-left и читает за пределами полосы. Отдельная копия именно этого мутанта дала AddressSanitizer stack-buffer-overflow в memcmp; исходный полный firmware-host контроль прошёл ASan/UBSan."
+        },
+        {
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/DisplayTiles.h:78:21:78:22",
+          "replacement": ">=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:131:20:131:21",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Добавляется проверка бита count. dirtyRows/writtenRows содержат только биты [0,count); этот бит нулевой, поэтому дополнительная итерация не читает пиксели и не меняет передачу/счётчики."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:103:30:103:31",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Добавляется проверка бита count. dirtyRows/writtenRows содержат только биты [0,count); этот бит нулевой, поэтому дополнительная итерация не читает пиксели и не меняет передачу/счётчики."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:72:21:72:22",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/DisplayTiles.h:90:72:90:73",
+          "replacement": ">=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:123:19:123:20",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Меняется выбор только при равной стоимости двух корректных кодировок. Обе дают тот же экран/тень и одинаковое число SPI-байтов; разбиение на прямоугольники не фиксировано контрактом."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:62:36:62:37",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При Width, кратной 16, добавляется пустая плитка left==right==Width: memcmp имеет нулевую длину, цикл пикселей пуст и b.x0==Width пропускает плитку. Для остальных Width дополнительной итерации нет."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:109:18:109:19",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Добавляется проверка бита count. dirtyRows/writtenRows содержат только биты [0,count); этот бит нулевой, поэтому дополнительная итерация не читает пиксели и не меняет передачу/счётчики."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:90:39:90:40",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/DisplayTiles.h:74:21:74:22",
+          "replacement": ">=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:63:51:63:52",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:138:30:138:31",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Добавляется проверка бита count. dirtyRows/writtenRows содержат только биты [0,count); этот бит нулевой, поэтому дополнительная итерация не читает пиксели и не меняет передачу/счётчики."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:30:45:30:46",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/DisplayTiles.h:125:32:125:33",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Добавляется проверка бита count. dirtyRows/writtenRows содержат только биты [0,count); этот бит нулевой, поэтому дополнительная итерация не читает пиксели и не меняет передачу/счётчики."
+        }
+      ]
+    },
+    "firmware/R2500Adapter/FrameRaster.h": {
+      "sha256": "61c7500ad12c31a7b1363bb8a7e4c16d284611ed9a4233c98a16e693d1e132a7",
+      "mutants": [
+        {
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/FrameRaster.h:25:46:25:47",
+          "replacement": ">=",
+          "category": "equivalent",
+          "reason": "На границе min/max выбирают равные координаты либо обрезка записывает уже имеющийся ноль; результирующий диапазон пикселей не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/FrameRaster.h:26:13:26:14",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "На границе min/max выбирают равные координаты либо обрезка записывает уже имеющийся ноль; результирующий диапазон пикселей не меняется."
+        },
+        {
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/FrameRaster.h:13:46:13:47",
+          "replacement": ">=",
+          "category": "equivalent",
+          "reason": "На границе min/max выбирают равные координаты либо обрезка записывает уже имеющийся ноль; результирующий диапазон пикселей не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/FrameRaster.h:34:34:34:35",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "В общем Bresenham-пути x0!=x1 и y0!=y1: горизонталь/вертикаль уже обработаны с return. Поэтому добавление равенства к выбору знака ничего не меняет."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/FrameRaster.h:13:19:13:20",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "На границе min/max выбирают равные координаты либо обрезка записывает уже имеющийся ноль; результирующий диапазон пикселей не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/FrameRaster.h:25:18:25:19",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "На границе min/max выбирают равные координаты либо обрезка записывает уже имеющийся ноль; результирующий диапазон пикселей не меняется."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/FrameRaster.h:34:77:34:78",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "В общем Bresenham-пути x0!=x1 и y0!=y1: горизонталь/вертикаль уже обработаны с return. Поэтому добавление равенства к выбору знака ничего не меняет."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/FrameRaster.h:14:14:14:15",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "На границе min/max выбирают равные координаты либо обрезка записывает уже имеющийся ноль; результирующий диапазон пикселей не меняется."
+        }
+      ]
+    },
+    "firmware/R2500Adapter/GraphRenderer.h": {
+      "sha256": "c183b4427954e4dacc121a5b7677c354e472c768cf65c6e786d529fa9cdb0618",
+      "mutants": [
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphRenderer.h:47:28:47:29",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Итерации пунктирного маркера не достигают верхней границы: 41+5k не равно 144, а 23+4k не равно 61. Добавленное равенство недостижимо."
+        },
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphRenderer.h:73:29:73:30",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "Итерации пунктирного маркера не достигают верхней границы: 41+5k не равно 144, а 23+4k не равно 61. Добавленное равенство недостижимо."
+        }
+      ]
+    },
+    "firmware/R2500Adapter/GraphSnapshot.h": {
+      "sha256": "02f8831c11abd12c5bc27c26618bf876629d9515429609cec1d92d846437b1c0",
+      "mutants": [
+        {
+          "id": "cxx_lt_to_le:firmware/R2500Adapter/GraphSnapshot.h:119:20:119:21",
+          "replacement": "<=",
+          "category": "equivalent",
+          "reason": "При равенстве сравниваемых координат обе ветви выбирают/записывают одно и то же значение; при неравенстве условие не меняется."
+        },
+        {
+          "id": "cxx_gt_to_ge:firmware/R2500Adapter/GraphSnapshot.h:121:20:121:21",
+          "replacement": ">=",
+          "category": "equivalent",
+          "reason": "При count==first добавляется memcpy нулевой длины с ненулевыми валидными указателями. Занятые записи и результат не меняются."
         }
       ]
     }

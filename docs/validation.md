@@ -27,6 +27,265 @@ not all project code or Windows/device behavior. Unrelated working-tree changes
 are not part of this measurement. HTML, JSON, merge logs and replay evidence:
 `build/fuzz-refresh-20261101/`; original campaign: `build/fuzz-soak-20261101/`.
 
+## Graph coordinate reuse hardware check — 2026-11-01
+
+The registered Waveshare received one diagnostic update reusing exact graph
+heights and age-column intervals within each draw. Five alternating pairs used
+the preceding renderer and the new path on identical snapshots of 2,278–2,282
+points: 8.3132 / 7.5258 ms (9.47% less elapsed time), with matching canvas CRCs.
+Host checks compare against the independent original renderer and exhaust the
+cursor's age domain in ascending, descending and shuffled order. The
+[profiling record](profiling.md#reusing-exact-graph-coordinates--2026-11-01)
+separates paired results from ordinary windows with different live-ring sizes.
+
+The exact preceding package was preserved externally and installed ROM MD5
+matched. Before writing, candidate source/image/partition/history contracts,
+compiled maintenance descriptor, handlers/registration and compatible rollback
+were checked. Independent physical BOOT/RESET recovery was previously verified
+on this unit. All four written segments verified; NVS/history were retained and
+no eFuse written. Pocket was not flashed.
+
+All 2,257 initial records survived byte-identically in four new snapshots.
+Two simultaneous readers validated 2,263 records each in 7.082 / 7.180 s;
+50 maintenance probes passed (maximum 0.434 ms). Fresh Central/GATT, UPS and
+maintenance remained available with zero send/history errors. Minimum free
+stack was 1,620 bytes in the main loop, 7,352 in the BLE worker, 4,316 in history,
+1,928 in NimBLE and 3,008 in USB. The main page was restored by USB without
+button events or station changes. Exact images and raw reports remain external;
+this bounded run does not cover extended or failure-path scenarios.
+
+Release regression work added exact-capacity/equal-time snapshot cases,
+inclusive horizon and excluded-record graph checks, single-trace changes,
+high-byte panel addresses, stripe batching and SPI wire-cost boundaries. These
+checks killed 24 additional mutations in the same 1,096-mutant set. The remaining
+32 new survivors were individually reviewed: 30 preserve output/wire-cost
+semantics, and two introduce undefined reads confirmed by isolated Clang
+ASan/UBSan replays (`memcmp` beyond the stripe and `firstAge[248]`). The original
+full firmware-host control passed the same sanitizer build. Those two are
+classified as sanitizer-confirmed defects, not equivalences. The measured score
+was 93.52%, with 1,001 killed, 24 timeouts, 71 reviewed survivors and no uncovered
+mutations. Acceptance preserves statuses and does not change the score.
+
+## History snapshot and remote page hardware check — 2026-11-01
+
+The registered Waveshare received one update combining snapshot copying, ages
+and gap flags in one reverse pass, plus profiling-only USB page selection. The
+exact preceding image was preserved externally and its installed ROM MD5
+matched. Candidate image/source/partition/history contracts, compiled maintenance
+descriptor, handlers/registration and compatible rollback were checked before
+writing. Independent physical BOOT/RESET recovery was previously verified on
+this unit. All four written segments verified; NVS/history were retained and no
+eFuse written. The ordinary images omit the page command; USB contracts remain
+unchanged.
+
+Five pairs on one frozen 2,314-point input averaged 8.7946 ms reference /
+6.7790 ms fused (1.30×); record/age/flag digests and counts agreed. Ordinary
+snapshot time averaged 12.372 / 7.113 ms and full draws 37.944 / 29.050 ms, with
+different live-ring sizes after reboot. The new mutex region averaged 7.099 ms;
+the old lock duration was not measured. See [method and tradeoffs](profiling.md#history-snapshot-and-diagnostic-page-control--2026-11-01).
+
+USB selected pages 0 → 1 → 2 → 0 and 2 → 0, without button events, station
+changes or restart. The main page was restored. All 2,238 initial records survived
+byte-identically in four snapshots. Two readers validated 2,252 records each;
+50 concurrent maintenance probes passed (maximum 0.423 ms). Fresh Central/GATT,
+UPS and maintenance remained available, with zero send/history errors. Minimum
+free stack was 1,556 bytes in the main loop and 1,928 in NimBLE.
+
+Independent host tests cover wrapped/full rings, overlap filtering, age/clock
+boundaries, gaps and invalid inputs. Coverage was 100% (core 636/636, firmware
+738/738). Both targets built on Linux with profiling enabled/disabled; Linux
+runtime/contracts, Windows Qt 23/23, core/contracts 8/8 and CPack/UPX passed.
+Pocket was not flashed. Raw reports and exact images are external; Waveshare
+remains on the diagnostic image. Physical recovery, LCD readback and extended
+failure-path tests were not repeated in this iteration.
+
+## Dirty rectangle/SPI-window hardware check — 2026-11-01
+
+The registered Waveshare received one update using small dirty rectangles and
+one selected SPI transaction per window/payload, at the previous 20 MHz. Exact
+previous images were preserved externally and installed ROM MD5 matched. Before
+writing, candidate source/image/partition/history contracts, compiled maintenance
+descriptor, handlers/registration and compatible rollback were checked. The
+independent physical BOOT/RESET path was verified previously on this unit. All
+four written segments verified; NVS/history were preserved and no eFuse written.
+
+Five paired real SPI updates from identical old shadows/new framebuffers averaged
+18.652 ms old / 7.659 ms new (2.44×), with equal encoded-shadow CRCs. Pixel payload
+fell 95.92%, or 95.10% including address bytes. The user confirmed normal physical
+image, colors and line updates. Full ordinary graph draws averaged 48.265 /
+31.152 ms, but live history differed after reboot. The [profiling record](profiling.md#dirty-rectangles-and-spi-windows--2026-11-01)
+separates paired measurements, ordinary windows and verification limits.
+
+All 2,211 initial records remained byte-identical in four checked new snapshots.
+Two simultaneous readers obtained valid 2,224-record archives; 50 maintenance
+probes passed (maximum 0.798 ms). Fresh Central/GATT, UPS and maintenance remained
+available; response/UPS/vendor/history errors and observed restarts were zero.
+Main-loop free-stack watermark was 1,556 bytes in the diagnostic image.
+
+Independent host checks reconstruct patches, command addresses, colors and
+rotation for both boards, including allocation fallback and dense-row encoding.
+Host coverage was 100% (core 636/636, firmware 648/648). Both targets built and
+relinked on Linux with profiling enabled/disabled; Linux runtime/contracts,
+Windows Qt/core and CPack/UPX passed. Pocket was not flashed. The Waveshare stays
+on the diagnostic image; raw reports and exact packages remain external. No LCD
+RAM readback, long soak, USB suspend/unplug or battery/BLE failure test was done.
+
+## Graph projection/raster hardware check — 2026-11-01
+
+The registered Waveshare received one update adding an exact cached age
+projection, direct line spans and conservative coalescing of repeated curve
+pixels. The exact preceding package was preserved externally and its ROM MD5
+matched. Candidate source/image/partition/history contracts, compiled maintenance
+descriptor, handlers/registration and compatible rollback were checked before
+writing. Independent BOOT/RESET recovery was previously verified on this unit.
+All four written segments verified; NVS/history were preserved, with no eFuse
+operation. Pocket was built, not flashed.
+
+Five paired curve raster tests on identical board point snapshots averaged
+13.534 ms old / 8.502 ms optimized (1.59×), with matching canvas CRCs. Ordinary
+graph refresh averaged 59.036 ms before / 45.783 ms after, but the live history
+differed after reboot. The user confirmed normal image, colors and labels. The
+[profiling record](profiling.md#exact-graph-projection-and-raster-work--2026-11-01)
+separates these comparisons and their limitations.
+
+All initial 2,191 records remained byte-identical in four checked new snapshots.
+Two simultaneous readers obtained full valid 2,201-record archives and 50/50
+maintenance probes passed during load (maximum 0.425 ms). Fresh Central/GATT,
+UPS and maintenance survived; response/UPS/vendor and history errors were zero.
+Main-loop minimum free stack remained 1,723 bytes in the diagnostic image.
+
+Independent host tests checked the full integer-age domain, line clipping and
+both plot layouts, including overlaps, gaps and source overlays. Host coverage
+was 100% (core 636/636, firmware 542/542). Both targets built/relinked on Linux
+with profiling enabled/disabled; Linux runtime/contracts, Windows Qt 23/23,
+core/contracts 8/8 and CPack/UPX passed. Raw data and exact packages remain
+external. Waveshare stays on the diagnostic image; no long soak, suspend/unplug
+or battery/reconnect failure test was performed.
+
+## Stack watermark and repeat profiling check — 2026-11-01
+
+The registered Waveshare received one diagnostic update that samples current-task
+stack watermarks. The exact preceding package was preserved externally and its
+ROM MD5 matched. Candidate source hashes, compiled maintenance descriptor and
+handlers/registration, partition/history/image contracts and compatible rollback
+were checked; the previously verified independent physical BOOT/RESET recovery
+record applies. All four written segments verified; no eFuse or NVS/history erase
+was performed. The first host probe ran before USB enumeration completed; the
+collector then used a bounded enumeration wait and normal interface checks passed.
+
+Under three minutes of two-client archive traffic, diagnostic/maintenance reads,
+normal BLE and history writes, all three display pages were exercised. Fifty
+archives validated 108,774 records, and 2,887/2,887 maintenance probes succeeded.
+Observed minimum free stack in bytes: loop 1,723/8,192, BLE worker 7,312/10,240,
+history 4,312/6,144, NimBLE host 1,920/5,120, USB 3,032/4,096. No restart or
+send/history failure was observed. These watermarks include instrumentation and
+do not prove the worst case for unexercised paths or interrupt stacks.
+
+Repeat profiling found HID send/wait/pacing dominant during archives. Page-zero
+drawing remained about 12 ms; graph drawing averaged about 44 ms in eight draws.
+CRC remained small; occasional history-write latency reached 12.124 ms. The
+[measurement record](profiling.md#stack-watermarks-and-repeat-profile--2026-11-01)
+contains exact timings, sample counts and comparison limits, including the
+overlapping pre/post archive ranges rather than a claim of no regression.
+
+All initial 2,170 records remained byte-identical in 54 checked snapshots. Saved
+station, fresh Central/GATT telemetry, USB maintenance and UPS reporting survived;
+Windows battery was OK at 100%. Both targets built/relinked on Linux with the
+sampler enabled/disabled; Linux runtime/contracts 10/10, Windows Qt 23/23 and
+core/contracts 8/8, and CPack/UPX checks passed. Pocket was not flashed. The board
+remains on the diagnostic image; private identities, raw reports and images are
+external. No long soak, USB suspend/unplug, battery-transition or BLE reconnect
+test was performed.
+
+## Changed display row hardware check — 2026-11-01
+
+The registered Waveshare was updated once from the bounded-HID diagnostic image
+to the image that skips unchanged physical display rows. The exact old package
+was preserved externally and its installed ROM MD5 matched. Candidate source
+hashes, image/partition/history contracts, compiled update descriptor and
+maintenance handlers/registration were checked before writing. The independent
+physical BOOT/RESET path was previously verified on this unit. All four written
+segments verified; NVS/history were preserved and no eFuse was written.
+
+Dashboard page zero mean draw elapsed time improved from 55.164 to 11.816 ms
+in two 20-second windows (20 draws each); 94.5% of rows were skipped in the new
+window. The user confirmed normal image/colors and changed pages. Full redraws
+remain synchronous. The [profiling record](profiling.md#changed-display-rows--2026-11-01)
+also records the archive timings without claiming an archive speed improvement.
+
+All initial 2,148 records survived byte-for-byte in the checked snapshots. Two
+simultaneous readers each obtained a valid 2,157-record archive; 50 maintenance
+probes passed during that load (maximum 0.390 ms). Saved station, fresh BLE/GATT,
+USB maintenance and UPS reporting were retained; Windows battery remained OK at
+100%. Response/UPS/vendor send failures and history errors were zero.
+
+Both targets built and relinked on Linux with profiling enabled and disabled.
+Linux runtime/contracts, Windows Qt/core tests and CPack/UPX passed. Measured
+host line coverage was 100% (core 636/636, firmware 437/437). Pocket was not
+flashed. Raw reports, exact images and identities remain external; the Waveshare
+remains on the diagnostic working-tree image. Long soak, battery transitions,
+USB suspend/unplug and physical Pocket display behavior were not checked.
+
+## Bounded HID batch hardware check — 2026-11-01
+
+The same Waveshare was updated once from the ROM-profiling image to a diagnostic
+working-tree image with bounded HID batches. The exact preceding package was
+preserved externally and matched the installed application's ROM MD5. Candidate
+source/image/partition/history contracts, the compiled maintenance descriptor,
+handler and registration were checked before writing; the previously verified
+physical recovery record still applies. All four written segments were verified,
+with no eFuse operation or second write. Pocket images were built, not written.
+
+| Check | Observed result |
+| --- | --- |
+| Single-reader archive | Before: 2,125 records in 19.380 s. After: three 2,136-record reads in 3.880/4.313/4.322 s; median improvement 4.49× |
+| Concurrent independent readers | Two complete 2,138-record snapshots in 6.079/6.158 s, all record CRCs and archive digests valid |
+| Maintenance under concurrent load | 50/50 valid Feature probes; median 0.288 ms, maximum 0.422 ms; no reboot requested |
+| Preservation | Every initial 2,125 record retained byte-for-byte; saved station unchanged |
+| Runtime | Fresh BLE/GATT, UPS and vendor HID active; Windows battery `OK`, 100%; zero response/UPS/vendor send failures and history errors |
+
+The [profiling record](profiling.md#bounded-hid-batches--2026-11-01) explains
+the soft budget and measurements. Both profiles built with instrumentation on
+and off. Linux runtime/contracts passed and measured host coverage stayed 100%
+(core 636/636, firmware 409/409). Windows Qt/core checks and CPack/UPX passed.
+The board remains on the working diagnostic image. Raw data, exact packages and
+private identities stay outside Git. This does not verify battery transitions,
+USB suspend/unplug behavior or a long soak.
+
+## Working-tree ROM CRC and Waveshare profiling — 2026-11-01
+
+The registered Waveshare 1.47 was updated once from release `0.7.0` to the
+`0.7.2-dirty` diagnostic working-tree image. The candidate's compiled maintenance
+descriptor, handler/registration, ROM CRC symbol, source hashes, partition/image
+and AHP3 contracts were checked before writing. Independent physical BOOT/RESET
+recovery had been verified previously on this unit; it was not repeated here.
+The installed application's ROM MD5 matched the downloaded `0.7.0` package, whose
+complete checked copy was preserved externally alongside the registered
+compatible rollback. Writing verified all four segment digests and preserved
+NVS/history; no second write or eFuse operation was performed.
+
+After boot, maintenance Feature access, telemetry HID and UPS HID were available.
+The board reconnected by BLE/GATT with fresh 100% telemetry, and Windows reported
+the UPS `OK`, 100%, on mains. All 2,095 pre-update archive records remained
+byte-for-byte identical, the selected station was unchanged, and no history
+errors appeared. New normal records were appended. Display initialization and
+draw calls were observed through diagnostics, not a new visual inspection.
+
+At 240 MHz, ROM CRC agreed with the table/independent bitwise implementation in
+all 12 length/backend cases. Three checked archive reads of 2,103–2,104 records
+took 18.221–19.516 s with Windows viewers active. The
+[on-board profiling record](profiling.md#on-board-rom-crc-and-runtime-measurements--2026-11-01)
+describes timing scope, CRC results and transport limits. The board was left
+working on the diagnostic image; its bounded CRC comparison had completed.
+Raw reports, device identities, exact images and recovery material remain outside Git.
+
+Both board profiles built with profiling enabled and disabled. Linux passed 11
+selected runtime/build-contract tests; portable host line coverage remained
+100% (core 636/636, measured firmware 402/402). Windows passed 23 Qt tests and
+eight selected core/contract tests; CPack/UPX and packed application checks passed.
+Pocket was built but not written. Battery transitions, shutdown policy and a
+long soak were not verified by this run.
+
 ## Released v0.7.0 on both adapters — 2026-10-31
 
 Hardware checks used the published [v0.7.0 release](https://github.com/borro/allpowers-bridge/releases/tag/v0.7.0),

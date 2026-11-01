@@ -75,6 +75,42 @@ Local evidence is in `build/fuzz-refresh-20261101/`: `coverage/index.html`,
 `coverage/coverage.json`, `retained.json`, `verification.json` and merge/replay
 logs. The original run is in `build/fuzz-soak-20261101/campaign/`.
 
+### v0.7.3 refresh — 2026-11-01
+
+The second eight-hour campaign ran on
+`e1b0979fe2c6ec11cced3defe4ec7c3c4900a0d5` (`v0.7.3`), starting with the
+946 retained inputs above plus generated cases. All 40 runs passed under
+ASan/UBSan: 30,282,636,187 inputs, no crashes, sanitizer errors or timeouts.
+The original 2,062 corpus files remain unchanged outside Git.
+
+Merging against the existing repository seeds retained just two additional
+inputs from the 939 new files: one 524-byte HID server sequence and one 256-byte
+archive sequence. They preserve new libFuzzer execution features (HID server
+`ft` 867 to 869; archive 1251 to 1255). Most new files were smaller equivalents
+of already retained inputs. Existing seeds were preserved.
+
+| Target | New inputs | New decoded bytes | Total retained inputs | Total decoded bytes |
+| --- | ---: | ---: | ---: | ---: |
+| BLE | 0 | 0 | 22 | 981 |
+| HID wire | 0 | 0 | 128 | 4480 |
+| HID server | 1 | 524 | 193 | 30192 |
+| Archive | 1 | 256 | 241 | 20913 |
+| Telemetry | 0 | 0 | 364 | 74052 |
+| **Total** | **2** | **780** | **948** | **130618** |
+
+Replay using identical LLVM coverage binaries from the campaign's exact source
+snapshot reached 454/576 mapped lines (78.82%) and 526/550 branch outcomes for
+all three sets: previous repository seeds, full campaign and final retained
+inputs. This run added execution features, but no new mapped lines or branch
+outcomes. Percentages from different source revisions have different maps and
+must not be compared as if their denominator were unchanged. The denominator
+still covers only portable code mapped into the harnesses, not the whole project.
+
+Fresh staging from repository text passed ASan/UBSan replay for every target;
+merging the full campaign again added zero features and edges. Original data:
+`build/fuzz-soak-20261101-e1b0979/`. Selection, replay/merge logs, counts and
+HTML/JSON coverage: `build/fuzz-refresh-20261101-e1b0979/`.
+
 ## Refreshing
 
 1. Build the fuzzers for the source revision being evaluated. Keep new inputs

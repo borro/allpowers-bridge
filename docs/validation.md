@@ -2,6 +2,29 @@
 
 [Documentation](README.md)
 
+## v0.7.3 eight-hour fuzz campaign and corpus refresh — 2026-11-01
+
+Commit `e1b0979fe2c6ec11cced3defe4ec7c3c4900a0d5` completed eight one-hour
+rounds of five parallel fuzzers under ASan/UBSan, using 946 retained inputs plus
+generated seeds. All 40 checks passed: 30,282,636,187 inputs, no sanitizer errors,
+crashes or timeouts. Exact binaries, source snapshot, raw logs and all original
+corpus files remain in `build/fuzz-soak-20261101-e1b0979/`.
+
+Of 939 new corpus files, coverage-preserving selection kept two additional
+synthetic sequences (780 decoded bytes): HID server and archive. These preserve
+new libFuzzer execution features, bringing the retained set to 948 inputs.
+See [provenance and counts](../tests/fuzz/corpus/README.md#v073-refresh--2026-11-01).
+
+LLVM replay on identical binaries of this exact source revision reached
+454/576 mapped lines (78.82%) and 526/550 branch outcomes with the previous
+seeds, full campaign and final retained set alike. No mapped line or branch
+outcome growth was observed in this run, and minimization lost none. These
+are mapped portable-header counts, not whole-product coverage; they must not
+be compared directly with percentages using another source revision's maps.
+Fresh repository staging passed sanitizer replay and a second merge added zero
+libFuzzer features or edges. The HTML/JSON report and selection evidence are in
+`build/fuzz-refresh-20261101-e1b0979/`.
+
 ## Eight-hour fuzz campaign and corpus refresh — 2026-11-01
 
 Commit `80458d29a3c8c27285b794d2a31b1b611fde4231` (`v0.7.1`) completed eight

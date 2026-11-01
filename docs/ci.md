@@ -25,7 +25,7 @@ CTest scheduler under `cmake/projects/HookChecks`. See [CMake structure](cmake.m
   Clang-Tidy/Cppcheck, Linux coverage (100% for core and host-tested firmware),
   ASan/UBSan, and Valgrind including its failing control.
 - **Pre-push**, in parallel: mutation tests including their control and survivor
-  review, all three fuzzers with **30 seconds each** and their fatal-UB control, and
+  review, all five fuzzers with **30 seconds each** and their fatal-UB control, and
   Windows coverage with its existing per-area thresholds.
 
 Commit builds use a snapshot of the index, so partially staged changes are

@@ -2,6 +2,31 @@
 
 [Documentation](README.md)
 
+## Eight-hour fuzz campaign and corpus refresh — 2026-11-01
+
+Commit `80458d29a3c8c27285b794d2a31b1b611fde4231` (`v0.7.1`) completed eight
+one-hour rounds of all five fuzzers under ASan/UBSan: 40/40 checks passed,
+29,427,724,473 inputs, no sanitizer errors, crashes or timeouts. No hardware
+access was involved. The finished campaign and original corpora are preserved.
+
+Coverage-preserving minimization retained 702 additional synthetic inputs
+(113,825 decoded bytes), including the first retained Archive and Telemetry
+corpora. All 946 retained files are hash-named text inputs, staged by CMake and
+included in the reviewed source inventory. See [provenance and target counts](../tests/fuzz/corpus/README.md).
+
+An isolated snapshot of the campaign commit was replayed with Clang 18 LLVM
+coverage instrumentation. Old seeds reached 443/565 mapped lines and 503/556
+branch outcomes; the full campaign and final repository seeds both reached
+449/565 lines (79.47%) and 532/556 outcomes. Eight archive inputs were added
+after source-coverage comparison to retain outcomes missed by the initial
+libFuzzer merge. Fresh repository staging passed sanitizer replay and a second
+merge added no libFuzzer features or edges for any target.
+
+This denominator covers only portable headers mapped into the five harnesses,
+not all project code or Windows/device behavior. Unrelated working-tree changes
+are not part of this measurement. HTML, JSON, merge logs and replay evidence:
+`build/fuzz-refresh-20261101/`; original campaign: `build/fuzz-soak-20261101/`.
+
 ## Released v0.7.0 on both adapters — 2026-10-31
 
 Hardware checks used the published [v0.7.0 release](https://github.com/borro/allpowers-bridge/releases/tag/v0.7.0),

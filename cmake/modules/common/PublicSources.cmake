@@ -19,7 +19,7 @@ function(ap_check_public_path)
     return()
   endif()
   # Reviewed synthetic fuzz inputs, stored as text with SHA-256 filenames.
-  if(AP_NAME MATCHES "^tests/fuzz/corpus/(ble|hid_wire|hid_server)/[0-9a-f]+\\.hex$")
+  if(AP_NAME MATCHES "^tests/fuzz/corpus/(ble|hid_wire|hid_server|archive|telemetry)/[0-9a-f]+\\.hex$")
     get_filename_component(digest "${AP_NAME}" NAME_WE)
     string(LENGTH "${digest}" digest_length)
     if(digest_length EQUAL 64)

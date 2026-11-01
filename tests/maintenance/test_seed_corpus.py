@@ -20,7 +20,8 @@ class SeedCorpusTests(unittest.TestCase):
             for subject in ("archive", "telemetry"):
                 self.assertTrue(list((root / subject / "corpus").glob("seed-*")))
                 self.assertTrue((root / subject / "crashes").is_dir())
-            for subject, limit in (("ble", 1024), ("hid_wire", 2048), ("hid_server", 2048)):
+            for subject, limit in (("ble", 1024), ("hid_wire", 2048), ("hid_server", 2048),
+                                   ("archive", 2048), ("telemetry", 2048)):
                 stored = list((corpus.CORPUS_ROOT / subject).glob("*.hex"))
                 self.assertTrue(stored, subject)
                 destination = root / subject / "corpus"

@@ -27,6 +27,8 @@ CMakeUserPresets.json
 !/tests/fuzz/corpus/ble/*.hex
 !/tests/fuzz/corpus/hid_wire/*.hex
 !/tests/fuzz/corpus/hid_server/*.hex
+!/tests/fuzz/corpus/archive/*.hex
+!/tests/fuzz/corpus/telemetry/*.hex
 *.uf2
 *.dfu
 *.rom

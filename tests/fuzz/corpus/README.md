@@ -35,6 +35,46 @@ build; the table includes it. Line and branch-outcome coverage must both be
 checked when refreshing, because libFuzzer's feedback alone is not equivalent
 to source coverage.
 
+### Eight-hour refresh — 2026-11-01
+
+The next selection comes from commit
+`80458d29a3c8c27285b794d2a31b1b611fde4231` (`v0.7.1`): eight one-hour rounds,
+five concurrent targets, Clang 18 libFuzzer with ASan/UBSan and seed `20261027`.
+All 40 runs passed, with 29,427,724,473 inputs and no crashes, sanitizer errors
+or timeouts. The 7,010 candidate files remain unchanged outside Git.
+
+The following counts include the initial selection above. Generated examples
+remain in `seed_corpus.py` and are additional to these retained files.
+
+| Target | New inputs | New decoded bytes | Total retained inputs | Total decoded bytes |
+| --- | ---: | ---: | ---: | ---: |
+| BLE | 1 | 67 | 22 | 981 |
+| HID wire | 8 | 759 | 128 | 4480 |
+| HID server | 89 | 18290 | 192 | 29668 |
+| Archive | 240 | 20657 | 240 | 20657 |
+| Telemetry | 364 | 74052 | 364 | 74052 |
+| **Total** | **702** | **113825** | **946** | **129838** |
+
+Selection starts with generated and previously retained seeds, then merges the
+completed campaign using its original frozen binaries. Coverage-instrumented
+replay identified eight additional archive inputs needed to preserve source
+branch outcomes; these are included above. Fresh staging from the repository
+passed ASan/UBSan replay, and a second merge added zero features or coverage
+edges for every target.
+
+Identical LLVM coverage binaries built from an isolated `80458d2` snapshot
+compared the old seeds, full campaign and final retained inputs. The union grew
+from 443 to 449 covered lines and from 503 to 532 covered branch outcomes. The
+retained set preserves every line and outcome reached by the full campaign.
+The maps contain 565 lines and 556 branch outcomes in portable headers reached
+by these harnesses: **79.47% line coverage is not whole-project coverage**.
+Windows UI/transport code, device SDK behavior and uncalled code are outside
+that denominator. Other working-tree changes are excluded from this report.
+
+Local evidence is in `build/fuzz-refresh-20261101/`: `coverage/index.html`,
+`coverage/coverage.json`, `retained.json`, `verification.json` and merge/replay
+logs. The original run is in `build/fuzz-soak-20261101/campaign/`.
+
 ## Refreshing
 
 1. Build the fuzzers for the source revision being evaluated. Keep new inputs

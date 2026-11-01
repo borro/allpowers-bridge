@@ -60,15 +60,17 @@ list(LENGTH files count)
 if(NOT count EQUAL 2)
   message(FATAL_ERROR "Ignored files entered the public source inventory")
 endif()
-# Only reviewed, hash-named text corpora in the three known targets are public.
+# Only reviewed, hash-named text corpora in the five known targets are public.
 string(SHA256 corpus_hash "synthetic")
-set(corpus_name "tests/fuzz/corpus/ble/${corpus_hash}.hex")
-file(WRITE "${repo}/${corpus_name}" "73796e746865746963\n")
-audit(worktree pass)
-ap_public_sources(OUTPUT files ROOT "${repo}")
-if(NOT corpus_name IN_LIST files)
-  message(FATAL_ERROR "Retained fuzz corpus missing from source inventory")
-endif()
+foreach(subject ble hid_wire hid_server archive telemetry)
+  set(corpus_name "tests/fuzz/corpus/${subject}/${corpus_hash}.hex")
+  file(WRITE "${repo}/${corpus_name}" "73796e746865746963\n")
+  audit(worktree pass)
+  ap_public_sources(OUTPUT files ROOT "${repo}")
+  if(NOT corpus_name IN_LIST files)
+    message(FATAL_ERROR "Retained fuzz corpus missing from source inventory: ${subject}")
+  endif()
+endforeach()
 foreach(unreviewed
     "tests/fuzz/corpus/ble/short.hex"
     "tests/fuzz/corpus/unknown/${corpus_hash}.hex"
@@ -77,7 +79,9 @@ foreach(unreviewed
   audit(worktree fail)
   file(REMOVE "${repo}/${unreviewed}")
 endforeach()
-file(REMOVE "${repo}/${corpus_name}")
+foreach(subject ble hid_wire hid_server archive telemetry)
+  file(REMOVE "${repo}/tests/fuzz/corpus/${subject}/${corpus_hash}.hex")
+endforeach()
 # A pending deletion belongs to the worktree inventory, while index auditing
 # still reads the staged blob. Source archives must never copy a missing file.
 file(REMOVE "${repo}/README.md")

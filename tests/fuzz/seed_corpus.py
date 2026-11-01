@@ -6,7 +6,7 @@ import sys
 import zlib
 
 CORPUS_ROOT = Path(__file__).resolve().parent / "corpus"
-RETAINED_SUBJECTS = ("ble", "hid_wire", "hid_server")
+RETAINED_SUBJECTS = ("ble", "hid_wire", "hid_server", "archive", "telemetry")
 
 
 def seed(root):

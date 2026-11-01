@@ -140,6 +140,19 @@ inline void run() {
     const unsigned index = (full.archive.head + i) % archive.size();
     assert(!memcmp(&archive[index], &frozen[index], sizeof(archive[index])));
   }
+  // A wrapped partial ring leaves the unoccupied slots and destination guards
+  // untouched. Padding also makes an erroneous copy length observable directly.
+  std::array<HistoryFormat::Record, 6> wrapped{}, guarded{};
+  for (unsigned i = 0; i < wrapped.size(); ++i) {
+    wrapped[i].magic = 100 + i;
+    guarded[i].magic = 900 + i;
+  }
+  const auto untouched = guarded;
+  assert(GraphSnapshot::freeze({wrapped.data(), 3, 3, 4}, guarded.data(), 4));
+  for (unsigned i = 0; i < guarded.size(); ++i) {
+    const auto &expected = i == 0 || i == 1 || i == 3 ? wrapped[i] : untouched[i];
+    assert(!memcmp(&guarded[i], &expected, sizeof(expected)));
+  }
   GraphHistory::LiveRing ring(live.data());
   assert(ring.view().count == 0);
   ring.push(HistoryFormat::example());

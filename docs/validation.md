@@ -2,6 +2,29 @@
 
 [Documentation](README.md)
 
+## Firmware host test split — 2026-11-02
+
+The former `firmware_test` is split into eight Linux-only executables: controls,
+history, graph snapshots, graph projection, frame rasterization, graph rendering,
+display frames and display tiles. All original assertions, template instances and
+exhaustive loops remain. CTest, Mull and static analysis include the new targets;
+Windows still builds only portable native tests. The firmware include allowlist
+is explicit and its contract rejects unregistered native test sources.
+
+The measured product-line set is unchanged: 1,399/1,399 lines (637 core and 762
+host-tested firmware). The mutant identity set is also unchanged at 1,096:
+1,004 killed, 21 timed out, 71 accepted survivors and zero uncovered or unreviewed
+mutants. The accepted baseline was not changed. Three formerly timed-out catalog
+mutants now fail assertions. Direct buffer guards and wrapped-ring checks retain
+detection of five bounds mutations previously caught through later heap use in
+the combined executable.
+
+On this local WSL host, summed Mull execution time for the firmware tests fell
+from 135.8 s to 91.9 s (32%); all Mull runs fell from 147.0 s to 102.9 s (30%).
+These timings exclude compilation and are not a GitHub runner benchmark.
+Comparison data and raw reports remain in the ignored
+`build/firmware-test-split-20261102/` directory.
+
 ## v0.7.3 eight-hour fuzz campaign and corpus refresh — 2026-11-01
 
 Commit `e1b0979fe2c6ec11cced3defe4ec7c3c4900a0d5` completed eight one-hour

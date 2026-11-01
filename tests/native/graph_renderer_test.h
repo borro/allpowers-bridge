@@ -112,7 +112,7 @@ void compare(const GraphHistory::Projection &projection,
       [&](int x, int y, int w, int h, uint16_t color) { fresh.rect(x, y, w, h, color); });
   assert(fresh.pixels == old.pixels);
 }
-inline void run() {
+inline void projection() {
   GraphHistory::Projection projection;
   assert(projection.x(60) == GraphHistory::x(60));
   GraphHistory::Projection::Cursor cold(projection);
@@ -131,6 +131,33 @@ inline void run() {
   }
   assert(ascending.x(UINT32_MAX) == 32);
   assert(projection.x(UINT32_MAX) == 32);
+}
+inline void raster() {
+  // Clipping must preserve storage outside the frame, even if a later test or
+  // allocator would otherwise be needed to notice an out-of-bounds write.
+  auto guarded = [](int x0, int y0, int x1, int y1) {
+    constexpr unsigned width = 7, height = 9, guard = 64;
+    constexpr uint16_t sentinel = 0xa55a;
+    std::array<uint16_t, width * height + 2 * guard> storage;
+    storage.fill(sentinel);
+    auto *pixels = storage.data() + guard;
+    std::fill_n(pixels, width * height, 0);
+    Canvas expected(width, height);
+    expected.oldLine(x0, y0, x1, y1, 0x1234);
+    FrameRaster::line(pixels, width, height, x0, y0, x1, y1, 0x1234);
+    assert(std::equal(expected.pixels.begin(), expected.pixels.end(), pixels));
+    assert(std::all_of(storage.begin(), storage.begin() + guard,
+                       [](uint16_t value) { return value == sentinel; }));
+    assert(std::all_of(storage.end() - guard, storage.end(),
+                       [](uint16_t value) { return value == sentinel; }));
+  };
+  guarded(-3, 9, 10, 9);   // Horizontal line immediately below the frame.
+  guarded(0, -3, 0, 12);   // Vertical clipping at both ends.
+  guarded(0, 0, 0, 9);     // Exact vertical bottom boundary.
+  guarded(0, 8, 2, 10);    // Diagonal crossing the bottom edge.
+  guarded(-3, 0, 10, 0);
+  guarded(7, -3, 7, 12);
+  guarded(-2, -2, 2, 2);
   for (int x0 = -3; x0 <= 10; ++x0)
     for (int y0 = -3; y0 <= 12; ++y0)
       for (int x1 = -3; x1 <= 10; ++x1)
@@ -141,6 +168,10 @@ inline void run() {
           assert(old.pixels == fresh.pixels);
         }
   FrameRaster::line(nullptr, 1, 1, 0, 0, 1, 1, 0);
+}
+inline void run() {
+  GraphHistory::Projection projection;
+  projection.begin();
   std::vector<GraphHistory::Point> points;
   compare<false>(projection, points, 100);
   compare<true>(projection, points, 100);

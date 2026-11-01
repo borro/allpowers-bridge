@@ -13,7 +13,9 @@ import xml.etree.ElementTree as ET
 
 
 PORTABLE_SOURCES = ("core/native/api.cpp", *(f"tests/native/{name}.cpp" for name in
-                    ("models_test", "abi_test", "ups_test", "archive_core_test", "firmware_test", "history_rollback_test", "hid_telemetry_test")))
+                    ("models_test", "abi_test", "ups_test", "archive_core_test", "history_rollback_test", "hid_telemetry_test")),
+                    *(path.relative_to(Path(__file__).resolve().parents[2]).as_posix() for path in
+                      sorted((Path(__file__).resolve().parents[2] / "tests/native").glob("firmware_*_test.cpp"))))
 
 
 def run(command, cwd=None, env=None):

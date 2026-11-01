@@ -27,6 +27,7 @@
 #include <QScrollBar>
 #include <QSet>
 #include <QShortcut>
+#include <QShowEvent>
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QTabWidget>
@@ -47,9 +48,13 @@ static QLabel *text(const QString &s, int size = 14, const QString &color = "#b0
   l->setStyleSheet(labelStyle(color, size, bold));
   return l;
 }
-static void setText(QLabel *label, const QString &value) {
+template <typename Label> static void setText(Label *label, const QString &value) {
   if (label->text() != value)
     label->setText(value);
+}
+static void setLabelStyle(QLabel *label, const QString &value) {
+  if (label->styleSheet() != value)
+    label->setStyleSheet(value);
 }
 
 class Check : public QCheckBox {
@@ -80,7 +85,8 @@ QString monitorDataDirectory() {
     base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
   return QDir(base).filePath("AllpowersMonitor");
 }
-MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport *transport)
+MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport *transport,
+                             HistoryWorker *historyWorker)
     : QMainWindow(parent), offline(testMode) {
   qRegisterMetaType<ap_snapshot>();
   qRegisterMetaType<HistoryPoints>();
@@ -228,6 +234,7 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
                                         transportMode->currentData().toString());
   ble->setParent(this);
   transportMode->setEnabled(bool(qobject_cast<TransportRouter *>(ble)));
+  connect(pages, &QStackedWidget::currentChanged, this, [this] { refreshVisiblePage(); });
   if (ble->usb())
     transportMode->setCurrentIndex(1);
   if (ble->remote())
@@ -235,14 +242,13 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
         "Allpowers", "Read only  ·  Windows service  ·  Shared computer history"));
   connect(transportMode, &QComboBox::currentIndexChanged, this, &MonitorWindow::changeTransport);
   connect(group, &QButtonGroup::idClicked, this, [this, group](int id) {
+    const bool changed = pages->currentIndex() != id;
     pages->setCurrentIndex(id);
+    if (!changed)
+      refreshVisiblePage();
     group->button(id)->setChecked(true);
     settings["page"] = QStringList{"overview", "history", "diagnostics"}.value(id);
     saveSettings();
-    if (id == 1)
-      chart->update();
-    if (id == 2)
-      refreshDiagnostics();
   });
   const QString savedPageId = settings["page"].toString();
   int savedPage = QStringList{"overview", "history", "diagnostics"}.indexOf(savedPageId);
@@ -271,8 +277,12 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(devices, &QComboBox::currentIndexChanged, this, [this] {
     updateControls();
     if (!ble->active()) {
-      if (!ble->usb())
+      if (!ble->usb() && selectedAddress != devices->currentData().toString()) {
         selectedAddress = devices->currentData().toString();
+        localPoints.clear();
+        servicePoints.clear();
+        refreshHistory();
+      }
       emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
     }
   });
@@ -296,8 +306,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
     ble->resume(address, discovered[address]["name"].toString(), profile->currentIndex());
   });
   connect(ble, &TelemetryTransport::stateChanged, this, [this] {
+    const auto info = ble->diagnostics();
     if (ble->usb()) {
-      const auto info = ble->diagnostics();
       const auto id = ble->endpoint();
       if (id != usbEndpoint) {
         usbEndpoint = id;
@@ -329,7 +339,6 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       emit historyLoad(selectedAddress, QDateTime::currentSecsSinceEpoch());
     }
     if (ble->remote() && !ble->address().isEmpty()) {
-      const auto info = ble->diagnostics();
       if (selectedAddress != ble->address()) {
         localPoints.clear();
         servicePoints.clear();
@@ -340,10 +349,12 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       auto known = discovered.value(selectedAddress);
       known["name"] = info["name"];
       known["model"] = int(ap_model_hint(info["name"].toString().toUtf8().constData()));
+      const bool changed = discovered.value(selectedAddress) != known;
       discovered[selectedAddress] = known;
       const QSignalBlocker blocker(profile);
       profile->setCurrentIndex(qBound(0, info["profile"].toInt(), 3));
-      rebuildDevices();
+      if (changed)
+        rebuildDevices();
     }
     bool scanning = ble->scanning();
     if (scanning && !wasScanning) {
@@ -354,11 +365,20 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
       rebuildDevices();
     }
     wasScanning = scanning;
-    updateControls();
-    refreshDiagnostics();
-    const auto info = ble->diagnostics();
-    appendLog(ble->phase() +
-              (info["error"].toString().isEmpty() ? QString() : " · " + info["error"].toString()));
+    updateControls(&info);
+    requestUiRefresh();
+    const QString message =
+        ble->phase() +
+        (info["error"].toString().isEmpty() ? QString() : " · " + info["error"].toString());
+    const auto session = info["history_session"].toInteger();
+    if (message != lastStateLog || ble->address() != lastStateLogAddress ||
+        ble->endpoint() != lastStateLogEndpoint || session != lastStateLogSession) {
+      lastStateLog = message;
+      lastStateLogAddress = ble->address();
+      lastStateLogEndpoint = ble->endpoint();
+      lastStateLogSession = session;
+      appendLog(message);
+    }
   });
   connect(ble, &TelemetryTransport::found, this,
           [this](QString address, QString name, int rssi, int model) {
@@ -368,15 +388,19 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
   connect(ble, &TelemetryTransport::packet, this, [this](QString hex, bool valid) {
     lastPacket = (valid ? "RX " : "INVALID ") + hex;
     appendLog(lastPacket);
+    requestUiRefresh();
   });
   connect(ble, &TelemetryTransport::snapshot, this, [this](ap_snapshot s) {
     if (!offline)
       updateSnapshot(s);
   });
-  history = new HistoryWorker;
+  history = historyWorker ? historyWorker : new HistoryWorker;
   history->moveToThread(&historyThread);
   connect(&historyThread, &QThread::finished, history, &QObject::deleteLater);
-  connect(this, &MonitorWindow::openHistory, history, &HistoryWorker::open);
+  connect(this, &MonitorWindow::openHistory, history, [worker = history](const QString &path) {
+    worker->setBuffered(true);
+    worker->open(path);
+  });
   connect(this, &MonitorWindow::historySession, history, &HistoryWorker::newSession);
   connect(this, &MonitorWindow::historySample, history, &HistoryWorker::sample);
   connect(this, &MonitorWindow::historyUsbSample, history, &HistoryWorker::sampleUsb);
@@ -425,6 +449,8 @@ MonitorWindow::MonitorWindow(bool testMode, QWidget *parent, TelemetryTransport 
     appendLog(QCoreApplication::translate("Allpowers", "History error · ") + message);
     refreshDiagnostics();
   });
+  connect(history, &HistoryWorker::bufferStateChanged, this,
+          &MonitorWindow::receiveHistoryBufferState);
   connect(history, &HistoryWorker::exported, this, [this](QString path, bool ok) {
     status->setText(ok ? QCoreApplication::translate("Allpowers", "History saved: ") + path
                        : QCoreApplication::translate("Allpowers", "Could not save CSV"));
@@ -472,51 +498,103 @@ QString MonitorWindow::historyKey() const {
                                                           : selectedAddress;
 }
 void MonitorWindow::refreshHistory() {
-  const bool archiveOnly = ble->usb() && historySource->currentIndex() != 0;
-  const bool byEpoch = archiveOnly && historySource->currentIndex() == 2;
-  points = ble->remote() ? mergeHistory(localPoints, servicePoints) : localPoints;
-  if (ble->usb()) {
-    const auto boot = ble->diagnostics()["history_session"].toInteger();
-    const auto combined = sharedUsbHistory(
-        points, usbPoints, usbUndated, ble->connected() ? QString("usb-%1").arg(boot) : QString{});
-    points = historySource->currentIndex() == 1 ? usbPoints
-             : byEpoch                          ? historyByEpoch(combined, {})
-                                                : combined;
+  historyDirty = true;
+  requestUiRefresh();
+}
+void MonitorWindow::requestUiRefresh() {
+  if (uiRefreshPending)
+    return;
+  uiRefreshPending = true;
+  QTimer::singleShot(0, this, [this] {
+    uiRefreshPending = false;
+    updateOverview();
+    updateHistoryView();
+    refreshDiagnostics();
+  });
+}
+void MonitorWindow::refreshVisiblePage() {
+  // The chart model remains current even while its QWidget is hidden.
+  updateHistoryView();
+  if (pages->currentIndex() == 0)
+    updateOverview(true);
+  else if (pages->currentIndex() == 2 && technical->isVisibleTo(pages))
+    refreshDiagnostics(true);
+}
+bool MonitorWindow::ensureHistory() {
+  const bool demo = !demoPoints.isEmpty();
+  const bool usb = !demo && ble->usb(), remote = !demo && ble->remote();
+  const int sourceIndex = demo ? 0 : historySource->currentIndex();
+  QString session;
+  if (usb && ble->connected())
+    session = QString("usb-%1").arg(ble->diagnostics()["history_session"].toInteger());
+  const auto endpoint = ble->endpoint();
+  if (!historyDirty && usb == plottedUsb && remote == plottedRemote &&
+      sourceIndex == plottedSource && selectedAddress == plottedAddress &&
+      endpoint == plottedEndpoint && session == plottedSession)
+    return false;
+  points = demo ? demoPoints : remote ? mergeHistory(localPoints, servicePoints) : localPoints;
+  if (usb) {
+    if (sourceIndex == 1)
+      points = usbPoints;
+    else {
+      points = sharedUsbHistory(points, usbPoints, usbUndated, session);
+    }
   }
-  chart->setEpochMode(byEpoch);
-  horizon->setVisible(!byEpoch);
-  logScale->setVisible(!byEpoch);
-  chart->setLogarithmic(!byEpoch && logScale->isChecked());
-  chart->setPoints(points, archiveOnly && !byEpoch && !points.isEmpty()
-                               ? points.last().wall
-                               : QDateTime::currentSecsSinceEpoch());
-  liveButton->setText(byEpoch       ? QCoreApplication::translate("Allpowers", "All epochs")
-                      : archiveOnly ? QCoreApplication::translate("Allpowers", "Last record")
-                                    : QCoreApplication::translate("Allpowers", "Back to live"));
-  exportButton->setEnabled(!points.isEmpty());
-  usbHistoryNote->setVisible(ble->usb());
-  QString note =
-      byEpoch ? QCoreApplication::translate("Allpowers",
-                                            "Records: %1 · groups: %2 · live readings and archive")
-                    .arg(points.size())
-                    .arg([&] {
-                      QSet<QString> epochs;
-                      for (const auto &p : points)
-                        epochs.insert(historyBoard(p) + ":" + QString::number(historyEpoch(p)));
-                      return epochs.size();
-                    }())
-      : archiveOnly
-          ? QCoreApplication::translate("Allpowers", "USB archive: %1 points · station unspecified")
-                .arg(usbPoints.size())
-          : QCoreApplication::translate("Allpowers", "Records: %1 · live readings and archive")
-                .arg(points.size());
-  if (archiveOnly && !byEpoch && !points.isEmpty())
-    note +=
-        "\n" +
-        QCoreApplication::translate("Allpowers",
-                                    "Last record: %1 · Read from board refreshes the archive")
-            .arg(QDateTime::fromSecsSinceEpoch(points.last().wall).toString("dd.MM.yyyy HH:mm:ss"));
-  usbHistoryNote->setText(note);
+  historyDirty = false;
+  plottedUsb = usb;
+  plottedRemote = remote;
+  plottedSource = sourceIndex;
+  plottedAddress = selectedAddress;
+  plottedEndpoint = endpoint;
+  plottedSession = std::move(session);
+  chartHistoryDirty = true;
+  return true;
+}
+void MonitorWindow::updateHistoryView() {
+  const bool changed = ensureHistory() || chartHistoryDirty;
+  const bool archiveOnly = plottedUsb && plottedSource != 0;
+  const bool byEpoch = archiveOnly && plottedSource == 2;
+  const auto now = archiveOnly && !byEpoch && !points.isEmpty()
+                       ? points.last().wall
+                       : QDateTime::currentSecsSinceEpoch();
+  if (!changed && now == plottedAt)
+    return;
+  plottedAt = now;
+  if (changed) {
+    chart->setEpochMode(byEpoch);
+    horizon->setVisible(!byEpoch);
+    logScale->setVisible(!byEpoch);
+    chart->setLogarithmic(!byEpoch && logScale->isChecked());
+    setText(liveButton, byEpoch       ? QCoreApplication::translate("Allpowers", "All epochs")
+                        : archiveOnly ? QCoreApplication::translate("Allpowers", "Last record")
+                                      : QCoreApplication::translate("Allpowers", "Back to live"));
+    exportButton->setEnabled(!points.isEmpty());
+    usbHistoryNote->setVisible(plottedUsb);
+    QString note =
+        byEpoch ? QCoreApplication::translate(
+                      "Allpowers", "Records: %1 · groups: %2 · live readings and archive")
+                      .arg(points.size())
+                      .arg([&] {
+                        QSet<QString> epochs;
+                        for (const auto &p : points)
+                          epochs.insert(historyBoard(p) + ":" + QString::number(historyEpoch(p)));
+                        return epochs.size();
+                      }())
+        : archiveOnly
+            ? QCoreApplication::translate("Allpowers",
+                                          "USB archive: %1 points · station unspecified")
+                  .arg(usbPoints.size())
+            : QCoreApplication::translate("Allpowers", "Records: %1 · live readings and archive")
+                  .arg(points.size());
+    if (archiveOnly && !byEpoch && !points.isEmpty())
+      note += "\n" + QCoreApplication::translate(
+                         "Allpowers", "Last record: %1 · Read from board refreshes the archive")
+                         .arg(QDateTime::fromSecsSinceEpoch(points.last().wall)
+                                  .toString("dd.MM.yyyy HH:mm:ss"));
+    setText(usbHistoryNote, note);
+  }
+  chart->setPoints(points, now);
+  chartHistoryDirty = false;
 }
 void MonitorWindow::changeTransport() {
   auto *router = qobject_cast<TransportRouter *>(ble);
@@ -532,10 +610,12 @@ void MonitorWindow::changeTransport() {
   usbUndated.clear();
   usbEndpoint.clear();
   points.clear();
+  demoPoints.clear();
   lastSample = -1;
   historySource->setCurrentIndex(0);
   settings["transport"] = mode;
   router->setMode(mode);
+  refreshHistory();
   if (!router->usb())
     selectedAddress = settings["address"].toString();
   chart->setPoints({}, QDateTime::currentSecsSinceEpoch());
@@ -561,6 +641,15 @@ void MonitorWindow::changeTransport() {
       router->resume(endpoint, name, profile->currentIndex());
   }
 }
+void MonitorWindow::receiveHistoryBufferState(int pending, QString error) {
+  bufferedSamples = pending;
+  historyStats["pending"] = pending;
+  if (!historyFlushError.isEmpty() && historyError == historyFlushError)
+    historyError = error;
+  historyFlushError = std::move(error);
+  if (pages->currentIndex() == 2)
+    refreshDiagnostics();
+}
 MonitorWindow::~MonitorWindow() {
   // QObject deletes the central widget before later child objects. Stop signals
   // here, while controls still exist, rather than from the transport destructor.
@@ -569,8 +658,13 @@ MonitorWindow::~MonitorWindow() {
     ble->stop();
   delete ble;
   ble = nullptr;
-  // Finish queued history/settings writes before terminating their event loop.
-  QMetaObject::invokeMethod(history, [] {}, Qt::BlockingQueuedConnection);
+  // Drain queued samples/settings, then commit the RAM tail on its owning thread.
+  bool flushed = false;
+  QMetaObject::invokeMethod(
+      history, [worker = history, &flushed] { flushed = worker->flush(); },
+      Qt::BlockingQueuedConnection);
+  if (!flushed)
+    RuntimeLog::record("history.flush_failed");
   historyThread.quit();
   historyThread.wait();
 }
@@ -678,6 +772,7 @@ QWidget *MonitorWindow::historyPage() {
     saveSettings();
     chart->setHorizon(horizon->currentData().toInt());
     refreshHistory();
+    updateHistoryView();
     emit historyLoad(historyKey(), QDateTime::currentSecsSinceEpoch());
   });
   connect(readBoard, &QPushButton::clicked, this, [this] { ble->requestHistory(); });
@@ -722,7 +817,9 @@ QWidget *MonitorWindow::historyPage() {
         this, QCoreApplication::translate("Allpowers", "Export history"),
         QDir::homePath() + "/allpowers-history.csv", "CSV (*.csv)");
     if (!path.isEmpty()) {
-      emit historyExportPoints(points, path);
+      ensureHistory();
+      emit historyExportPoints(
+          plottedUsb && plottedSource == 2 ? historyByEpoch(points, {}) : points, path);
     }
   });
   return page;
@@ -844,6 +941,7 @@ QWidget *MonitorWindow::diagnosticPage() {
       auto *value = new QTableWidgetItem("—");
       value->setData(Qt::UserRole, field.first);
       technical->setItem(row, 1, value);
+      diagnosticKeys.insert(field.first);
     }
     technical->setRowHeight(row, 36);
   }
@@ -869,7 +967,8 @@ QWidget *MonitorWindow::diagnosticPage() {
     copy->setText(index == 0 ? QCoreApplication::translate("Allpowers", "Copy")
                              : QCoreApplication::translate("Allpowers", "Copy JSON"));
     copy->setMinimumWidth(index == 0 ? 135 : 190);
-    refreshDiagnostics();
+    if (index == 1)
+      refreshDiagnostics(true);
   });
   connect(copy, &QPushButton::clicked, this, [this, tabs] {
     QApplication::clipboard()->setText(
@@ -914,25 +1013,45 @@ void MonitorWindow::rebuildDevices() {
   devices->setCurrentIndex(selected >= 0 ? selected : devices->count() ? 0 : -1);
   updateControls();
 }
-void MonitorWindow::updateControls() {
+void MonitorWindow::updateControls(const QJsonObject *transportInfo) {
   const bool usb = ble->usb();
+  const bool active = ble->active(), scanning = ble->scanning();
+  const auto archiveInfo = transportInfo ? *transportInfo : ble->diagnostics();
+  const bool reading = archiveInfo["usb_history_busy"].toBool();
+  const QVariantList key{usb,
+                         ble->remote(),
+                         active,
+                         scanning,
+                         ble->connected(),
+                         ble->available(),
+                         offline,
+                         devices->count(),
+                         devices->currentIndex(),
+                         reading,
+                         archiveInfo["history_ready"].toBool(),
+                         archiveInfo["usb_history_received"].toInt(),
+                         archiveInfo["usb_history_expected"].toInt(),
+                         archiveInfo["error"].toString(),
+                         ble->phase()};
+  if (key == controlsKey)
+    return;
+  controlsKey = key;
   profile->setVisible(!usb);
   stationsOnly->setVisible(!usb);
   usbHistoryControls->setVisible(usb);
-  const auto archiveInfo = ble->diagnostics();
-  const bool reading = archiveInfo["usb_history_busy"].toBool();
   readBoard->setEnabled(usb && ble->connected() && archiveInfo["history_ready"].toBool() &&
                         !reading);
-  readBoard->setText(reading ? QCoreApplication::translate("Allpowers", "Reading… %1 / %2")
+  setText(readBoard, reading ? QCoreApplication::translate("Allpowers", "Reading… %1 / %2")
                                    .arg(archiveInfo["usb_history_received"].toInt())
                                    .arg(archiveInfo["usb_history_expected"].toInt())
                              : QCoreApplication::translate("Allpowers", "Read from board"));
-  transportNote->setText(
-      usb ? QCoreApplication::translate("Allpowers", "Board receives BLE · computer reads USB")
-      : ble->remote()
-          ? QCoreApplication::translate("Allpowers", "Windows service handles Bluetooth")
-          : QCoreApplication::translate("Allpowers", "Telemetry via computer Bluetooth"));
-  footer->setText(
+  setText(transportNote,
+          usb ? QCoreApplication::translate("Allpowers", "Board receives BLE · computer reads USB")
+          : ble->remote()
+              ? QCoreApplication::translate("Allpowers", "Windows service handles Bluetooth")
+              : QCoreApplication::translate("Allpowers", "Telemetry via computer Bluetooth"));
+  setText(
+      footer,
       usb ? QCoreApplication::translate("Allpowers", "USB read only · board manages BLE connection")
       : ble->remote()
           ? QCoreApplication::translate("Allpowers", "Read only · Windows service · Shared history")
@@ -941,7 +1060,6 @@ void MonitorWindow::updateControls() {
   devices->setPlaceholderText(
       usb ? QCoreApplication::translate("Allpowers", "Find and select a USB board")
           : QCoreApplication::translate("Allpowers", "Find and select a station"));
-  bool active = ble->active(), scanning = ble->scanning();
   scanButton->setEnabled(!active && !scanning && !offline && ble->available());
   scanButton->setToolTip(
       !ble->available()
@@ -950,13 +1068,13 @@ void MonitorWindow::updateControls() {
           ? QCoreApplication::translate("Allpowers", "Disconnect the station before scanning again")
       : usb ? QCoreApplication::translate("Allpowers", "Find connected Waveshare and Pocket boards")
             : QCoreApplication::translate("Allpowers", "Find available Bluetooth stations"));
-  scanButton->setText(scanning ? QCoreApplication::translate("Allpowers", "Scanning…")
+  setText(scanButton, scanning ? QCoreApplication::translate("Allpowers", "Scanning…")
                       : usb    ? QCoreApplication::translate("Allpowers", "Find boards")
                                : QCoreApplication::translate("Allpowers", "Find stations"));
   bool canConnect =
       ble->available() && (active || (!scanning && devices->currentIndex() >= 0 && !offline));
   connectButton->setEnabled(canConnect);
-  connectButton->setText(active ? QCoreApplication::translate("Allpowers", "Disconnect")
+  setText(connectButton, active ? QCoreApplication::translate("Allpowers", "Disconnect")
                                 : QCoreApplication::translate("Allpowers", "Connect"));
   connectButton->setToolTip(
       !ble->available()
@@ -982,41 +1100,16 @@ void MonitorWindow::updateControls() {
   stationsOnly->setToolTip(
       active ? QCoreApplication::translate("Allpowers", "Disconnect before changing the filter")
              : QCoreApplication::translate("Allpowers", "Hide unknown devices from the list"));
-  auto info = ble->diagnostics();
   QString phase = ble->phase();
   if (scanning)
     phase += QCoreApplication::translate("Allpowers", " · scanning for devices…");
-  if (!info["error"].toString().isEmpty() && !active)
-    phase += " · " + info["error"].toString();
+  if (!archiveInfo["error"].toString().isEmpty() && !active)
+    phase += " · " + archiveInfo["error"].toString();
   setText(status, phase);
-  status->setStyleSheet(labelStyle(ble->connected() ? "#54e0aa" : "#9eb6d7", 14));
+  setLabelStyle(status, labelStyle(ble->connected() ? "#54e0aa" : "#9eb6d7", 14));
 }
 void MonitorWindow::updateSnapshot(ap_snapshot s) {
   last = s;
-  auto value = [&](quint32 mask, quint32 n, const QString &unit) {
-    return s.known & mask ? QString::number(n) + unit : QString("—");
-  };
-  setText(soc, value(1, s.soc, "%"));
-  setText(input, value(2, s.input_w, QCoreApplication::translate("Allpowers", " W")));
-  setText(output, value(4, s.output_w, QCoreApplication::translate("Allpowers", " W")));
-  setText(source, s.source == 2   ? QCoreApplication::translate("Allpowers", "Mains")
-                  : s.source == 1 ? QCoreApplication::translate("Allpowers", "Battery")
-                                  : QCoreApplication::translate("Allpowers", "Unknown"));
-  setText(runtime, value(8, s.runtime_s, "") == "—" ? "—" : formatDuration(s.runtime_s));
-  auto state = [](QLabel *label, const QString &name, quint32 known, bool enabled) {
-    setText(label, name + (!known    ? "  —"
-                           : enabled ? QCoreApplication::translate("Allpowers", "  ON")
-                                     : QCoreApplication::translate("Allpowers", "  OFF")));
-    label->setStyleSheet(labelStyle(known && enabled ? "#54e0aa" : "#91a6c3", 19, true));
-  };
-  state(outputAC, "AC", s.known & AllpowersModels::AcOutput, s.ac_output);
-  state(outputUSB, "USB", s.known & AllpowersModels::UsbOutput, s.usb_output);
-  state(outputDC, "DC", s.known & AllpowersModels::DcOutput, s.dc_output);
-  setText(freshness,
-          s.fresh ? QCoreApplication::translate("Allpowers", "Data fresh · updated %1 s ago")
-                        .arg(s.main_age_ms / 1000., 0, 'f', 1)
-                  : QCoreApplication::translate("Allpowers",
-                                                "No fresh telemetry · last value may be stale"));
   auto now = QDateTime::currentSecsSinceEpoch();
   if (!offline && !ble->remote() && ble->active() && s.main_seen && now != lastSample &&
       !historyBusy) {
@@ -1033,8 +1126,43 @@ void MonitorWindow::updateSnapshot(ap_snapshot s) {
     else
       emit historySample(selectedAddress, s, now, uptime.elapsed() / 1000);
   }
-  if (pages->currentIndex() == 2)
-    refreshDiagnostics();
+  requestUiRefresh();
+}
+void MonitorWindow::updateOverview(bool force) {
+  if (!force && (!isVisible() || pages->currentIndex() != 0))
+    return;
+  const auto &s = last;
+  const std::array<quint32, 12> key{
+      s.known,     s.soc,        s.input_w,   s.output_w, s.source,    s.runtime_s,
+      s.ac_output, s.usb_output, s.dc_output, s.fresh,    s.main_seen, s.fresh ? s.main_age_ms : 0};
+  if (overviewShown && key == overviewKey)
+    return;
+  overviewShown = true;
+  overviewKey = key;
+  auto value = [&](quint32 mask, quint32 n, const QString &unit) {
+    return s.known & mask ? QString::number(n) + unit : QString("—");
+  };
+  setText(soc, value(1, s.soc, "%"));
+  setText(input, value(2, s.input_w, QCoreApplication::translate("Allpowers", " W")));
+  setText(output, value(4, s.output_w, QCoreApplication::translate("Allpowers", " W")));
+  setText(source, s.source == 2   ? QCoreApplication::translate("Allpowers", "Mains")
+                  : s.source == 1 ? QCoreApplication::translate("Allpowers", "Battery")
+                                  : QCoreApplication::translate("Allpowers", "Unknown"));
+  setText(runtime, value(8, s.runtime_s, "") == "—" ? "—" : formatDuration(s.runtime_s));
+  auto state = [](QLabel *label, const QString &name, quint32 known, bool enabled) {
+    setText(label, name + (!known    ? "  —"
+                           : enabled ? QCoreApplication::translate("Allpowers", "  ON")
+                                     : QCoreApplication::translate("Allpowers", "  OFF")));
+    setLabelStyle(label, labelStyle(known && enabled ? "#54e0aa" : "#91a6c3", 19, true));
+  };
+  state(outputAC, "AC", s.known & AllpowersModels::AcOutput, s.ac_output);
+  state(outputUSB, "USB", s.known & AllpowersModels::UsbOutput, s.usb_output);
+  state(outputDC, "DC", s.known & AllpowersModels::DcOutput, s.dc_output);
+  setText(freshness,
+          s.fresh ? QCoreApplication::translate("Allpowers", "Data fresh · updated %1 s ago")
+                        .arg(s.main_age_ms / 1000., 0, 'f', 1)
+                  : QCoreApplication::translate("Allpowers",
+                                                "No fresh telemetry · last value may be stale"));
 }
 QJsonObject MonitorWindow::diagnostics() const {
   auto info = ble->diagnostics();
@@ -1055,6 +1183,8 @@ QJsonObject MonitorWindow::diagnostics() const {
   if (!ble->remote()) {
     info["history"] = historyStats;
     info["history_error"] = historyError;
+    info["history_flush_error"] = historyFlushError;
+    info["history_buffered_samples"] = bufferedSamples;
     info["history_path"] = QDir(dataPath).filePath("history.sqlite3");
   } else
     info["legacy_history_path"] = QDir(dataPath).filePath("history.sqlite3");
@@ -1067,20 +1197,14 @@ QJsonObject MonitorWindow::diagnostics() const {
   info["uptime_seconds"] = uptime.elapsed() / 1000.;
   return info;
 }
-void MonitorWindow::refreshDiagnostics() {
+void MonitorWindow::refreshDiagnostics(bool force) {
+  if (!force && (!isVisible() || pages->currentIndex() != 2 || !technical->isVisibleTo(pages)))
+    return;
   const auto info = diagnostics();
   const auto usbDetails = info["usb_diagnostics"].toObject();
   for (auto it = usbDetails.begin(); it != usbDetails.end(); ++it) {
     const QString key = "usb_detail:" + it.key();
-    bool found = false;
-    for (int i = 0; i < technical->rowCount(); ++i) {
-      auto *v = technical->item(i, 1);
-      if (v && v->data(Qt::UserRole) == key) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
+    if (!diagnosticKeys.contains(key)) {
       int row = technical->rowCount();
       technical->insertRow(row);
       technical->setItem(
@@ -1089,6 +1213,7 @@ void MonitorWindow::refreshDiagnostics() {
       auto *v = new QTableWidgetItem;
       v->setData(Qt::UserRole, key);
       technical->setItem(row, 1, v);
+      diagnosticKeys.insert(key);
     }
   }
   for (int row = 0; row < technical->rowCount(); ++row) {
@@ -1102,6 +1227,18 @@ void MonitorWindow::refreshDiagnostics() {
     else
       for (const auto &part : key.split('.'))
         value = value.toObject().value(part);
+    QJsonValue cacheValue = value;
+    if (key == "main_age_ms" || key == "settings_age_ms") {
+      const bool seen = key == "main_age_ms" ? last.main_seen : last.settings_seen;
+      if (!seen)
+        cacheValue = QJsonValue{};
+    } else if (key == "uptime_seconds")
+      cacheValue = qint64(value.toDouble());
+    else if (key == "source_raw" && !(last.known & AllpowersModels::SourceRaw))
+      cacheValue = QJsonValue{};
+    if (diagnosticValues.contains(item) && diagnosticValues.value(item) == cacheValue)
+      continue;
+    diagnosticValues.insert(item, cacheValue);
     QString display = "—";
     if (value.isBool())
       display = value.toBool() ? QCoreApplication::translate("Allpowers", "Yes")
@@ -1154,6 +1291,10 @@ void MonitorWindow::closeEvent(QCloseEvent *event) {
     ble->stop();
   saveSettings();
   event->accept();
+}
+void MonitorWindow::showEvent(QShowEvent *event) {
+  QMainWindow::showEvent(event);
+  refreshVisiblePage();
 }
 void MonitorWindow::showIntegration() {
   auto *dialog = new QDialog(this);
@@ -1245,18 +1386,20 @@ void MonitorWindow::loadDemo() {
     p.data.ac_output = 1;
     demo.append(p);
   }
-  points = demo;
+  demoPoints = demo;
+  refreshHistory();
   auto s = demo.last().data;
   s.main_seen = 1;
   s.runtime_s = 22440;
   s.main_age_ms = 100;
   updateSnapshot(s);
-  chart->setPoints(demo, now);
+  updateOverview(true);
+  updateHistoryView();
   horizon->setCurrentIndex(horizon->findData(3600));
   chart->setHorizon(3600);
   if (auto *tabs = findChild<QButtonGroup *>())
     tabs->button(1)->click();
   status->setText(
       QCoreApplication::translate("Allpowers", "Interface demo · Bluetooth is not used"));
-  refreshDiagnostics();
+  refreshDiagnostics(true);
 }

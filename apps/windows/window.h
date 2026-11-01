@@ -5,13 +5,17 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QHash>
 #include <QJsonObject>
 #include <QLabel>
 #include <QMainWindow>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QVariant>
+#include <array>
 
 QString monitorDataDirectory();
 class MonitorWindow : public QMainWindow {
@@ -31,38 +35,62 @@ class MonitorWindow : public QMainWindow {
   LiveLog *eventLog;
   QJsonObject settings, historyStats;
   QMap<QString, QJsonObject> discovered;
-  QString selectedAddress, lastPacket, historyError, usbEndpoint;
+  QString selectedAddress, lastPacket, historyError, historyFlushError, usbEndpoint;
   QString dataPath;
   ap_snapshot last{};
   HistoryPoints points;
   HistoryPoints localPoints, servicePoints, usbPoints, usbUndated;
   QElapsedTimer uptime;
   bool historyBusy = false, offline = false;
+  int bufferedSamples = 0;
   bool wasScanning = false;
   bool historyStarted = false;
   bool deviceListPending = false;
   qint64 lastSample = -1;
   void rebuildDevices();
-  void updateControls();
+  void updateControls(const QJsonObject *transportInfo = nullptr);
   void updateSnapshot(ap_snapshot);
-  void refreshDiagnostics();
+  void refreshDiagnostics(bool force = false);
   void appendLog(const QString &message);
   void showIntegration();
   void saveSettings();
   void changeTransport();
   QString historyKey() const;
   void refreshHistory();
+  void receiveHistoryBufferState(int pending, QString error);
   QWidget *overviewPage();
   QWidget *historyPage();
   QWidget *diagnosticPage();
 
+  bool uiRefreshPending = false, historyDirty = true, chartHistoryDirty = true,
+       overviewShown = false;
+  bool plottedUsb = false, plottedRemote = false;
+  int plottedSource = -1;
+  qint64 plottedAt = -1;
+  QString plottedAddress, plottedEndpoint, plottedSession, lastStateLog;
+  QString lastStateLogAddress, lastStateLogEndpoint;
+  qint64 lastStateLogSession = -1;
+  HistoryPoints demoPoints;
+  std::array<quint32, 12> overviewKey{};
+  QVariantList controlsKey;
+  QSet<QString> diagnosticKeys;
+  QHash<QTableWidgetItem *, QJsonValue> diagnosticValues;
+  void requestUiRefresh();
+  void refreshVisiblePage();
+  void updateOverview(bool force = false);
+  bool ensureHistory();
+  void updateHistoryView();
+
 protected:
   void closeEvent(QCloseEvent *) override;
+  void showEvent(QShowEvent *) override;
 
 public:
-  // An injected transport becomes a child of the window (used by offline tests).
+  // An injected transport becomes a child of the window. An injected history
+  // worker must have no parent; ownership transfers to the window's worker thread.
   explicit MonitorWindow(bool offline = false, QWidget *parent = nullptr,
-                         TelemetryTransport *transport = nullptr);
+                         TelemetryTransport *transport = nullptr,
+                         HistoryWorker *historyWorker = nullptr);
   ~MonitorWindow() override;
   void loadDemo();
   HistoryChart *historyChart() const {

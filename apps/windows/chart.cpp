@@ -10,6 +10,7 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 static const QColor colors[] = {QColor("#54e0aa"), QColor("#65baff"), QColor("#eff5ff")};
 static const QTimeZone &displayTimeZone() {
@@ -17,6 +18,7 @@ static const QTimeZone &displayTimeZone() {
   return zone;
 }
 HistoryChart::HistoryChart(QWidget *p) : QWidget(p) {
+  logSpan_ = std::log1p(span_);
   setMinimumHeight(300);
   setMouseTracking(true);
   setFocusPolicy(Qt::StrongFocus);
@@ -30,22 +32,24 @@ bool HistoryChart::visible(const HistoryPoint &p) const {
 double HistoryChart::xAt(qint64 time) const {
   auto r = plot();
   double age = double(end_ - time);
-  return r.left() + r.width() * (logarithmic_ ? logPosition(age, span_) : 1 - age / span_);
+  return r.left() + r.width() * (logarithmic_ ? 1 - std::log1p(qBound(0., age, span_)) / logSpan_
+                                              : 1 - age / span_);
 }
 qint64 HistoryChart::timeAt(double x) const {
   auto r = plot();
   double fraction = qBound(0., (x - r.left()) / r.width(), 1.);
-  return end_ - qint64(logarithmic_ ? std::expm1((1 - fraction) * std::log1p(span_))
-                                    : (1 - fraction) * span_);
+  return end_ -
+         qint64(logarithmic_ ? std::expm1((1 - fraction) * logSpan_) : (1 - fraction) * span_);
 }
 void HistoryChart::clamp() {
   span_ = qBound(30., span_, epochMode_ ? qMax(60., double(now_)) : 172800.);
+  logSpan_ = std::log1p(span_);
   if (epochMode_) {
     end_ = qBound(qMin(now_, qint64(span_)), end_, now_);
     return;
   }
   const qint64 earliest =
-      points_.isEmpty() ? now_ - 172800 : qMin(now_ - 172800, points_.first().wall);
+      points_.isEmpty() ? now_ - 172800 : qMin(now_ - 172800, points_.constFirst().wall);
   end_ = qBound(qMin(now_, earliest + qint64(span_)), end_, now_);
 }
 void HistoryChart::setEpochMode(bool enabled) {
@@ -56,53 +60,83 @@ void HistoryChart::setEpochMode(bool enabled) {
   end_ = 0;
 }
 void HistoryChart::setPoints(const HistoryPoints &p, qint64 now) {
-  source_ = epochMode_ ? historyByEpoch(p, {}) : p;
-  if (!epochMode_)
-    std::stable_sort(source_.begin(), source_.end(),
-                     [](const auto &a, const auto &b) { return a.wall < b.wall; });
-  points_ = source_;
-  epochs_.clear();
+  // Retaining the input's shared storage makes identity stable across updates;
+  // a caller modifying its QList detaches it before the next call.
+  const bool changed = preparedEpochMode_ != epochMode_ || p.size() != input_.size() ||
+                       p.constData() != input_.constData();
+  const auto previousEnd = end_;
+  const auto previousSpan = span_;
+  if (changed) {
+    input_ = p;
+    preparedEpochMode_ = epochMode_;
+    source_ = epochMode_ ? historyByEpoch(p, {}) : p;
+    const auto byWall = [](const auto &a, const auto &b) { return a.wall < b.wall; };
+    if (!epochMode_ && !std::is_sorted(source_.cbegin(), source_.cend(), byWall))
+      std::stable_sort(source_.begin(), source_.end(), byWall);
+    points_ = source_;
+    epochs_.clear();
+    if (epochMode_) {
+      constexpr qint64 width = 60000;
+      for (qsizetype first = 0; first < points_.size();) {
+        qsizetype last = first + 1;
+        const auto epoch = historyEpoch(source_.at(first));
+        const auto board = historyBoard(source_.at(first));
+        while (last < points_.size() && historyEpoch(source_.at(last)) == epoch &&
+               historyBoard(source_.at(last)) == board)
+          ++last;
+        const qint64 from = epochs_.size() * width;
+        epochs_.append({epoch, board, from, from + width});
+        for (auto i = first; i < last; ++i)
+          points_[i].wall =
+              from + (last - first == 1
+                          ? width / 2
+                          : width / 10 + (i - first) * (width * 8 / 10) / (last - first - 1));
+        first = last;
+      }
+    } else if (!source_.isEmpty() && source_.constFirst().wall <= 0) {
+      const auto first =
+          std::upper_bound(source_.cbegin(), source_.cend(), qint64(0),
+                           [](qint64 wall, const auto &point) { return wall < point.wall; });
+      points_ = source_.mid(first - source_.cbegin());
+    }
+    links_.clear();
+    links_.reserve(points_.size());
+    const HistoryPoint *previous = nullptr;
+    for (const auto &point : std::as_const(points_)) {
+      links_.append(previous && linked(*previous, point));
+      previous = &point;
+    }
+  }
   if (epochMode_) {
     constexpr qint64 width = 60000;
-    for (qsizetype first = 0; first < points_.size();) {
-      qsizetype last = first + 1;
-      const auto epoch = historyEpoch(points_[first]);
-      const auto board = historyBoard(points_[first]);
-      while (last < points_.size() && historyEpoch(points_[last]) == epoch &&
-             historyBoard(points_[last]) == board)
-        ++last;
-      const qint64 from = epochs_.size() * width;
-      epochs_.append({epoch, board, from, from + width});
-      for (auto i = first; i < last; ++i)
-        points_[i].wall = from + (last - first == 1 ? width / 2
-                                                    : width / 10 + (i - first) * (width * 8 / 10) /
-                                                                       (last - first - 1));
-      first = last;
-    }
     now = qMax<qint64>(width, epochs_.size() * width);
     if (following_ || !end_)
       span_ = now;
   }
-  if (!epochMode_)
-    points_.removeIf([](const auto &point) { return point.wall <= 0; });
   now_ = now;
   if (following_ || !end_)
     end_ = now;
   clamp();
-  dirty_ = true;
-  update();
+  if (changed || previousEnd != end_ || previousSpan != span_) {
+    geometryDirty_ = dirty_ = true;
+    update();
+  }
 }
 void HistoryChart::setHorizon(int seconds) {
+  if (span_ == seconds && following_)
+    return;
   span_ = seconds;
   followLive();
 }
 void HistoryChart::setLogarithmic(bool value) {
+  if (logarithmic_ == value)
+    return;
   logarithmic_ = value;
-  dirty_ = true;
+  geometryDirty_ = dirty_ = true;
   update();
 }
 void HistoryChart::setSeries(int index, bool enabled) {
-  if (index >= 0 && index < 3) {
+  if (index >= 0 && index < 3 && series_[index] != enabled) {
     series_[index] = enabled;
     dirty_ = true;
     update();
@@ -114,7 +148,7 @@ void HistoryChart::followLive() {
   if (epochMode_)
     span_ = now_;
   clamp();
-  dirty_ = true;
+  geometryDirty_ = dirty_ = true;
   update();
   emit viewChanged();
 }
@@ -159,7 +193,48 @@ QList<QPair<qint64, QString>> HistoryChart::axisTicks() const {
 bool HistoryChart::linked(const HistoryPoint &a, const HistoryPoint &b) const {
   return epochMode_ ? joinEpochPoints(a, b) : joinPoints(a, b);
 }
+void HistoryChart::prepareGeometry() {
+  if (!geometryDirty_ && geometrySize_ == size())
+    return;
+  geometrySize_ = size();
+  geometryDirty_ = false;
+  plotPoints_.clear();
+  ceiling_ = 100;
+  if (points_.isEmpty())
+    return;
+  const auto first =
+      std::lower_bound(points_.cbegin(), points_.cend(), double(end_) - span_,
+                       [](const auto &point, double wall) { return point.wall < wall; });
+  const auto last =
+      std::upper_bound(first, points_.cend(), end_,
+                       [](qint64 wall, const auto &point) { return wall < point.wall; });
+  plotPoints_.reserve(last - first);
+  const auto r = plot();
+  double peak = 0;
+  for (auto point = first; point != last; ++point) {
+    const double age = double(end_ - point->wall);
+    const double x =
+        r.left() + r.width() * (logarithmic_ ? 1 - std::log1p(qBound(0., age, span_)) / logSpan_
+                                             : 1 - age / span_);
+    plotPoints_.append({point - points_.cbegin(), x, int(x - r.left())});
+    if (point->data.fresh) {
+      if (point->data.known & 2)
+        peak = qMax(peak, double(point->data.input_w));
+      if (point->data.known & 4)
+        peak = qMax(peak, double(point->data.output_w));
+    }
+  }
+  if (peak > 0) {
+    const double magnitude = std::pow(10, std::floor(std::log10(peak)));
+    for (double factor : {1., 2., 5., 10.})
+      if (factor * magnitude >= peak) {
+        ceiling_ = factor * magnitude;
+        break;
+      }
+  }
+}
 void HistoryChart::renderBase(QPainter &painter) {
+  prepareGeometry();
   vertices_ = 0;
   painter.setRenderHint(QPainter::Antialiasing);
   painter.fillRect(rect(), QColor("#172235"));
@@ -179,23 +254,7 @@ void HistoryChart::renderBase(QPainter &painter) {
     }
     painter.restore();
   }
-  double peak = 0;
-  for (const auto &p : points_)
-    if (visible(p) && p.data.fresh) {
-      if (p.data.known & 2)
-        peak = qMax(peak, double(p.data.input_w));
-      if (p.data.known & 4)
-        peak = qMax(peak, double(p.data.output_w));
-    }
-  double ceiling = 100;
-  if (peak > 0) {
-    double magnitude = std::pow(10, std::floor(std::log10(peak)));
-    for (double factor : {1., 2., 5., 10.})
-      if (factor * magnitude >= peak) {
-        ceiling = factor * magnitude;
-        break;
-      }
-  }
+  const double ceiling = ceiling_;
   painter.setFont(QFont("Segoe UI", 9));
   for (int step = 0; step <= 4; ++step) {
     double y = r.bottom() - r.height() * step / 4.;
@@ -214,19 +273,20 @@ void HistoryChart::renderBase(QPainter &painter) {
   }
   painter.save();
   painter.setClipRect(r.adjusted(-4, -4, 4, 4));
-  for (int i = 1; i < points_.size(); ++i) {
-    auto p = points_.at(i);
-    if (!visible(p))
+  for (const auto &sample : std::as_const(plotPoints_)) {
+    const auto i = sample.index;
+    if (!i)
       continue;
+    const auto &p = points_.at(i);
     const auto &previous = points_.at(i - 1);
-    int change = linked(previous, p) && (previous.data.source == 1 || previous.data.source == 2) &&
+    int change = links_.at(i) && (previous.data.source == 1 || previous.data.source == 2) &&
                          (p.data.source == 1 || p.data.source == 2) &&
                          previous.data.source != p.data.source
                      ? int(p.data.source)
                      : 0;
     if (change) {
       painter.setPen(QPen(change == 1 ? QColor("#ff6f7c") : QColor("#54e0aa"), 1, Qt::DashLine));
-      painter.drawLine(QPointF(xAt(p.wall), r.top()), QPointF(xAt(p.wall), r.bottom()));
+      painter.drawLine(QPointF(sample.x, r.top()), QPointF(sample.x, r.bottom()));
     }
   }
   // Per-column extrema preserve peaks while limiting painter work to screen width.
@@ -237,7 +297,7 @@ void HistoryChart::renderBase(QPainter &painter) {
     QPolygonF path;
     bool started = false;
     int column = -1, minAt = 0, maxAt = 0, order = 0;
-    double first = 0, last = 0, lo = 0, hi = 0, x = 0;
+    double first = 0, last = 0, lo = 0, hi = 0;
     auto finishPath = [&] {
       if (path.size() > 1)
         painter.drawPolyline(path);
@@ -264,26 +324,24 @@ void HistoryChart::renderBase(QPainter &painter) {
         }
       column = -1;
     };
-    const HistoryPoint *previous = nullptr;
-    for (const auto &p : points_) {
-      if (!visible(p))
-        continue;
+    bool previous = false;
+    for (const auto &sample : std::as_const(plotPoints_)) {
+      const auto &p = points_.at(sample.index);
       const auto &s = p.data;
       quint32 mask = series == 0 ? 1 : series == 1 ? 2 : 4;
       if (!s.fresh || !(s.known & mask)) {
         flush();
         started = false;
-        previous = nullptr;
+        previous = false;
         continue;
       }
-      if (previous && !linked(*previous, p)) {
+      if (previous && !links_.at(sample.index)) {
         flush();
         started = false;
       }
-      x = xAt(p.wall);
       double value = series == 0 ? s.soc : series == 1 ? s.input_w : s.output_w;
       double y = r.bottom() - qBound(0., value / (series == 0 ? 100 : ceiling), 1.) * r.height();
-      int next = int(x - r.left());
+      int next = sample.column;
       if (next != column) {
         flush();
         column = next;
@@ -301,7 +359,7 @@ void HistoryChart::renderBase(QPainter &painter) {
           maxAt = order;
         }
       }
-      previous = &p;
+      previous = true;
     }
     flush();
     finishPath();
@@ -323,7 +381,7 @@ void HistoryChart::paintEvent(QPaintEvent *) {
   auto r = plot();
   auto dpr = devicePixelRatioF();
   QSize physical(qRound(width() * dpr), qRound(height() * dpr));
-  if (dirty_ || cache_.size() != physical) {
+  if (dirty_ || cache_.size() != physical || cache_.devicePixelRatio() != dpr) {
     cache_ = QPixmap(physical);
     cache_.setDevicePixelRatio(dpr);
     QPainter layer(&cache_);
@@ -348,7 +406,7 @@ void HistoryChart::paintEvent(QPaintEvent *) {
         return s.known & mask ? QString::number(n) : QString("—");
       };
       const auto epoch = historyEpoch(*it);
-      const auto originalWall = epochMode_ ? source_[it - points_.cbegin()].wall : it->wall;
+      const auto originalWall = epochMode_ ? source_.at(it - points_.cbegin()).wall : it->wall;
       QString heading;
       if (epochMode_ || !originalWall) {
         if (!epoch) {
@@ -403,7 +461,7 @@ void HistoryChart::mouseMoveEvent(QMouseEvent *event) {
     end_ = dragEnd_ + qint64((event->position().x() - drag_.x()) * scale);
     clamp();
     following_ = false;
-    dirty_ = true;
+    geometryDirty_ = dirty_ = true;
     emit viewChanged();
   }
   update();
@@ -433,12 +491,32 @@ void HistoryChart::wheelEvent(QWheelEvent *event) {
   double fraction = qBound(0., (event->position().x() - plot().left()) / plot().width(), 1.);
   span_ = qBound(30., span_ * std::pow(.8, event->angleDelta().y() / 120.),
                  epochMode_ ? qMax(60., double(now_)) : 172800.);
-  end_ = anchor + qint64(logarithmic_ ? std::expm1((1 - fraction) * std::log1p(span_))
-                                      : (1 - fraction) * span_);
+  logSpan_ = std::log1p(span_);
+  end_ = anchor +
+         qint64(logarithmic_ ? std::expm1((1 - fraction) * logSpan_) : (1 - fraction) * span_);
   following_ = false;
-  dirty_ = true;
+  geometryDirty_ = dirty_ = true;
   clamp();
   update();
   emit viewChanged();
   event->accept();
+}
+bool HistoryChart::event(QEvent *event) {
+  const bool result = QWidget::event(event);
+  switch (event->type()) {
+  case QEvent::LanguageChange:
+  case QEvent::LocaleChange:
+  case QEvent::ApplicationFontChange:
+  case QEvent::FontChange:
+  case QEvent::StyleChange:
+  case QEvent::ApplicationPaletteChange:
+  case QEvent::PaletteChange:
+  case QEvent::DevicePixelRatioChange:
+    dirty_ = true;
+    update();
+    break;
+  default:
+    break;
+  }
+  return result;
 }

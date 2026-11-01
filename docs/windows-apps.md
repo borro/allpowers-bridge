@@ -115,12 +115,12 @@ Widget keeps its own settings and history. Monitor retains compatibility with
 the old JSON/SQLite data. Service integration retains/merges legacy per-user
 history; see [Windows UPS integration](windows-ups.md).
 
-Widget displays new local history samples immediately from memory and saves them
-in one transaction every 60 seconds. Retention cleanup runs with that batch rather
-than on every sample. Normal exit flushes the remaining samples before stopping
+Monitor and Widget display new local history samples immediately from memory
+and save them in one transaction every 60 seconds. Retention cleanup runs with
+that batch rather than on every sample. Normal exit flushes the remaining samples before stopping
 the history worker. An abrupt termination or power loss can lose the last minute
 of samples; a disk error can extend that window and is reported in diagnostics.
-Monitor and the optional service keep their existing persistence behavior.
+The optional service keeps its existing persistence behavior.
 
 History retains at most 3600 live and 2880 minute points across stations, plus a
 separate 2880-point USB archive within 48 hours. Archive records remain keyed by

@@ -196,6 +196,46 @@ public:
   qint64 readData(char *,qint64) override { return -1; }
   qint64 writeData(const char *,qint64) override { ++writes;return -1; }
 };
+class PresentationTransport : public TelemetryTransport {
+public:
+  bool usbMode = false, remoteMode = true, connectedState = true;
+  QString station = "02:00:00:00:00:01", board = "synthetic-board", status = "connected";
+  QJsonObject fields;
+  bool active() const override { return true; }
+  bool connected() const override { return connectedState; }
+  bool scanning() const override { return false; }
+  bool remote() const override { return remoteMode; }
+  bool usb() const override { return usbMode; }
+  QString address() const override { return station; }
+  QString endpoint() const override { return usbMode ? board : station; }
+  QString phase() const override { return status; }
+  QJsonObject diagnostics() const override {
+    auto result = fields;
+    result["name"] = "Synthetic presentation";
+    result["profile"] = 3;
+    result["phase"] = status;
+    result["active"] = true;
+    result["connected"] = connectedState;
+    return result;
+  }
+  void scan() override {}
+  void start(const QString &, int) override {}
+  void resume(const QString &, const QString &, int) override {}
+  void stop() override {}
+};
+class StyleChangeCounter : public QObject {
+public:
+  int changes = 0;
+  bool eventFilter(QObject *object, QEvent *event) override {
+    if (event->type() == QEvent::StyleChange)
+      ++changes;
+    return QObject::eventFilter(object, event);
+  }
+};
+class PresentationHistoryWorker : public HistoryWorker {
+public:
+  void open(const QString &) override { emit opened(); }
+};
 class MonitorTests : public QObject {
   Q_OBJECT
   QTemporaryDir temp;
@@ -893,6 +933,7 @@ private slots:
     io->feed(usbCycle());
     auto *pages = window.findChild<QStackedWidget *>(); QVERIFY(pages);
     pages->setCurrentIndex(2);
+    window.findChild<QTabWidget *>("diagnosticTabs")->setCurrentIndex(1);
     auto *table = window.findChild<QTableWidget *>("diagnosticState"); QVERIFY(table);
     auto send = [&](QString value) {
       io->feed(QJsonDocument(QJsonObject{{"diagnostic", true}, {"rows", QJsonArray{
@@ -979,6 +1020,119 @@ private slots:
     const auto hidden = chart.grab().toImage();
     for (int i = 0; i < 3; ++i) chart.setSeries(i, true);
     QVERIFY(chart.grab().toImage() != hidden);
+  }
+  void chartReusesSharedInputAndObservesCowChanges() {
+    constexpr qint64 now = 1800000000;
+    HistoryPoints points;
+    for (int i = 0; i < 120; ++i) {
+      HistoryPoint point;
+      point.address = "synthetic"; point.session = "live";
+      point.wall = point.tick = now - 120 + i;
+      point.data.fresh = 1; point.data.known = 7;
+      point.data.soc = 50; point.data.input_w = 100; point.data.output_w = 60;
+      points.append(point);
+    }
+    HistoryChart chart;
+    chart.resize(800, 360); chart.setHorizon(180); chart.setPoints(points, now);
+    auto image = [](HistoryChart &view) {
+      QImage result(view.size(), QImage::Format_ARGB32_Premultiplied);
+      result.fill(Qt::transparent); view.render(&result); return result;
+    };
+    const auto before = image(chart);
+    // Sorted, dated input must remain shared through preprocessing and paint;
+    // otherwise a no-op clock update silently repeats full history copies.
+    QCOMPARE(chart.sourcePoints().constData(), points.constData());
+    QCOMPARE(chart.points().constData(), points.constData());
+    chart.setPoints(points, now);
+    chart.setLogarithmic(false); chart.setSeries(2, true);
+    QCOMPARE(image(chart), before);
+    QCOMPARE(chart.points().constData(), points.constData());
+    points[118].data.output_w = 400; // A real caller update detaches the QList.
+    QCOMPARE(chart.points().at(118).data.output_w, 60u);
+    chart.setPoints(points, now);
+    QVERIFY(image(chart) != before);
+    HistoryChart reference;
+    reference.resize(chart.size()); reference.setHorizon(180); reference.setPoints(points, now);
+    QCOMPARE(image(chart), image(reference));
+    chart.setPoints(points, now + 1); reference.setPoints(points, now + 1);
+    QCOMPARE(image(chart), image(reference));
+    QMouseEvent press(QEvent::MouseButtonPress, {400, 120}, {400, 120},
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent move(QEvent::MouseMove, {300, 120}, {300, 120},
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, {300, 120}, {300, 120},
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&chart, &press); QApplication::sendEvent(&chart, &move);
+    QApplication::sendEvent(&chart, &release);
+    QEvent leave(QEvent::Leave); QApplication::sendEvent(&chart, &leave);
+    QVERIFY(!chart.following());
+    const auto panned = image(chart);
+    chart.setPoints(points, now + 10);
+    QCOMPARE(image(chart), panned); // Clock updates do not move a detached view.
+    chart.followLive();
+    reference.setPoints(points, now + 10);
+    QCOMPARE(image(chart), image(reference));
+    QCOMPARE(chart.points().constData(), points.constData());
+  }
+  void chartCachedEpochAndUndatedInputKeepTheirProvenance() {
+    constexpr qint64 now = 1800000000;
+    HistoryPoints input;
+    for (int i = 0; i < 5; ++i) {
+      HistoryPoint point;
+      point.address = i < 3 ? "usb-board:synthetic-a" : "usb-board:synthetic-b";
+      point.session = i < 3 ? "usb-7" : "usb-8";
+      point.wall = i == 0 ? 0 : i == 4 ? -1 : now - 20 + (i == 2 ? 1 : i);
+      point.tick = 60 + i * 60; point.sequence = i + 1; point.stride = 60;
+      point.data.fresh = 1; point.data.known = 7; point.data.output_w = 40 + i;
+      input.append(point);
+    }
+    HistoryChart chart;
+    chart.resize(800, 360); chart.setHorizon(180); chart.setPoints(input, now);
+    QCOMPARE(chart.sourcePoints().size(), 5);
+    QCOMPARE(chart.points().size(), 3);
+    QCOMPARE(chart.sourcePoints().first().wall, qint64(-1));
+    QCOMPARE(chart.points()[0].sequence, 2u);
+    QCOMPARE(chart.points()[1].sequence, 3u); // Stable order at equal wall timestamps.
+    chart.setEpochMode(true); chart.setPoints(input, now);
+    QCOMPARE(chart.sourcePoints().size(), 5); QCOMPARE(chart.points().size(), 5);
+    const auto source = chart.sourcePoints();
+    const auto plotted = chart.points();
+    const auto epochs = chart.axisTicks();
+    for (qsizetype i = 0; i < source.size(); ++i) {
+      QVERIFY(plotted[i].wall > 0);
+      QCOMPARE(plotted[i].session, source[i].session);
+      QCOMPARE(plotted[i].tick, source[i].tick);
+      QCOMPARE(plotted[i].sequence, source[i].sequence);
+    }
+    chart.setPoints(input, now + 100);
+    QCOMPARE(chart.sourcePoints().constData(), source.constData());
+    QCOMPARE(chart.points().constData(), plotted.constData());
+    QCOMPARE(chart.axisTicks(), epochs);
+    QMouseEvent hover(QEvent::MouseMove, {400, 100}, {400, 100},
+                      Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&chart, &hover);
+    chart.grab();
+    QCOMPARE(chart.sourcePoints().constData(), source.constData()); // Tooltip reads cannot detach.
+    chart.setEpochMode(false); chart.setHorizon(180); chart.setPoints(input, now);
+    QCOMPARE(chart.points().size(), 3);
+    QCOMPARE(input.first().wall, qint64(0)); QCOMPARE(input.last().wall, qint64(-1));
+    chart.setEpochMode(true); chart.setPoints({}, now);
+    QVERIFY(chart.points().isEmpty()); QVERIFY(chart.sourcePoints().isEmpty());
+    chart.setEpochMode(false); chart.setPoints({}, now + 1);
+    QVERIFY(chart.points().isEmpty());
+  }
+  void chartCachedRasterRespondsToLanguageChanges() {
+    UiLanguage english("en"); QVERIFY(english.valid());
+    HistoryChart chart;
+    chart.resize(800, 360); chart.setPoints({}, 1800000000);
+    const auto before = chart.grab().toImage();
+    UiLanguage russian("ru"); QVERIFY(russian.valid());
+    QEvent language(QEvent::LanguageChange); QApplication::sendEvent(&chart, &language);
+    HistoryChart reference;
+    reference.resize(chart.size()); reference.setPoints({}, 1800000000);
+    const auto changed = chart.grab().toImage();
+    QVERIFY(changed != before);
+    QCOMPARE(changed, reference.grab().toImage());
   }
   void bleDegradationRunsRealRecoveryLifecycle() {
     const auto main=QByteArray::fromHex("a565b1000108010264000000e696006f");
@@ -1944,6 +2098,122 @@ private slots:
     QTRY_VERIFY(!window.isFullScreen());
     QVERIFY(window.isMaximized());
   }
+  void monitorBuffersHistoryAndFlushesQueuedTailOnExit() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore = qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    const QString address = "02:00:00:00:00:01";
+    QFile settings(data.filePath("settings.json")); QVERIFY(settings.open(QIODevice::WriteOnly));
+    settings.write(QJsonDocument(QJsonObject{{"address", address}, {"page", "history"}}).toJson());
+    settings.close();
+    const auto path = data.filePath("history.sqlite3");
+    const auto now = QDateTime::currentSecsSinceEpoch();
+    {
+      auto *worker = new HistoryWorker;
+      MonitorWindow window(false, nullptr, new ReportTransport, worker);
+      window.show();
+      ap_snapshot sample{}; sample.fresh = sample.main_seen = 1; sample.soc = 42;
+      for (int i = 0; i < 3; ++i) emit window.historySample(address, sample, now - 6 + i, i);
+      emit window.historySession();
+      for (int i = 3; i < 5; ++i)
+        emit window.historyUsbSample(address, sample, now - 6 + i, i, "synthetic", 7);
+      QTRY_COMPARE(window.diagnostics()["history_buffered_samples"].toInt(), 5);
+      QTRY_COMPARE(window.historyChart()->sourcePoints().size(), 5);
+      QCOMPARE(historyEpoch(window.historyChart()->sourcePoints().last()), 7u);
+      HistoryStore disk(path);
+      QCOMPARE(disk.stats()["live"].toInt(), 0);
+      const auto csvPath = data.filePath("ram-history.csv");
+      emit window.historyExport(address, now, csvPath);
+      QTRY_VERIFY(QFileInfo::exists(csvPath));
+      QFile csv(csvPath); QVERIFY(csv.open(QIODevice::ReadOnly));
+      QCOMPARE(csv.readAll().count('\n'), 6); // Header plus all five unflushed points.
+      // Do not wait for sampleFinished/loaded on the UI thread. Destruction must
+      // drain this queued job before the final worker-thread flush and quit.
+      emit window.historySample(address, sample, now - 1, 5);
+    }
+    HistoryStore disk(path);
+    const auto saved = disk.points(address, now);
+    QCOMPARE(saved.size(), 6);
+    QCOMPARE(saved.last().tick, 5);
+    QVERIFY(saved.first().session != saved.last().session);
+    QCOMPARE(historyEpoch(saved[3]), 7u);
+    QCOMPARE(historyEpoch(saved[4]), 7u);
+  }
+  void monitorHistoryFlushDiagnosticsRecoverWithoutClearingOtherErrors() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore = qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto *worker = new HistoryWorker;
+    MonitorWindow window(false, nullptr, new ReportTransport, worker);
+    const auto path = data.filePath("history.sqlite3");
+    ap_snapshot sample{}; sample.soc = 42;
+    emit window.historySample("fixture", sample, 10000, 1);
+    QTRY_COMPARE(window.diagnostics()["history_buffered_samples"].toInt(), 1);
+    const auto connection = QUuid::createUuid().toString();
+    {
+      auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+      db.setDatabaseName(path); QVERIFY(db.open()); QSqlQuery query(db);
+      const auto flush = [&] {
+        bool ok = false;
+        QMetaObject::invokeMethod(worker, [worker, &ok] { ok = worker->flush(); },
+                                  Qt::BlockingQueuedConnection);
+        return ok;
+      };
+      for (int pass = 0; pass < 2; ++pass) {
+        QVERIFY(query.exec("CREATE TRIGGER reject_monitor_flush BEFORE INSERT ON minutes BEGIN "
+                           "SELECT RAISE(ABORT, 'synthetic monitor flush failure'); END"));
+        QVERIFY(!flush());
+        QTRY_VERIFY(!window.diagnostics()["history_flush_error"].toString().isEmpty());
+        QCOMPARE(window.diagnostics()["history_buffered_samples"].toInt(), 1);
+        QVERIFY(!window.diagnostics()["history_error"].toString().isEmpty());
+        if (pass) {
+          QMetaObject::invokeMethod(worker, [worker] { emit worker->problem("synthetic archive error"); },
+                                    Qt::QueuedConnection);
+          QTRY_COMPARE(window.diagnostics()["history_error"].toString(), QString("synthetic archive error"));
+        }
+        QVERIFY(query.exec("DROP TRIGGER reject_monitor_flush"));
+        QVERIFY(flush());
+        QTRY_COMPARE(window.diagnostics()["history_buffered_samples"].toInt(), 0);
+        QTRY_VERIFY(window.diagnostics()["history_flush_error"].toString().isEmpty());
+        QCOMPARE(window.diagnostics()["history"].toObject()["pending"].toInt(), 0);
+        QCOMPARE(window.diagnostics()["history_error"].toString(),
+                 pass ? QString("synthetic archive error") : QString{});
+        if (!pass) {
+          emit window.historySample("fixture", sample, 10001, 2);
+          QTRY_COMPARE(window.diagnostics()["history_buffered_samples"].toInt(), 1);
+        }
+      }
+      QVERIFY(query.exec("SELECT COUNT(*) FROM live")); QVERIFY(query.next());
+      QCOMPARE(query.value(0).toInt(), 2); query.finish(); db.close();
+    }
+    QSqlDatabase::removeDatabase(connection);
+  }
+  void monitorFinalFlushFailureReportsAndRollsBack() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore = qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    RuntimeLog runtime(data.path());
+    const auto path = data.filePath("history.sqlite3");
+    const auto connection = QUuid::createUuid().toString();
+    {
+      auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+      db.setDatabaseName(path);
+      {
+        MonitorWindow window(false, nullptr, new ReportTransport, new HistoryWorker);
+        ap_snapshot sample{}; sample.soc = 42;
+        emit window.historySample("fixture", sample, 10000, 1);
+        QTRY_COMPARE(window.diagnostics()["history_buffered_samples"].toInt(), 1);
+        QVERIFY(db.open()); QSqlQuery query(db);
+        QVERIFY(query.exec("CREATE TRIGGER reject_monitor_exit BEFORE INSERT ON minutes BEGIN "
+                           "SELECT RAISE(ABORT, 'synthetic monitor exit failure'); END"));
+      }
+      QSqlQuery query(db); QVERIFY(query.exec("SELECT COUNT(*) FROM live")); QVERIFY(query.next());
+      QCOMPARE(query.value(0).toInt(), 0); query.finish(); db.close();
+    }
+    QSqlDatabase::removeDatabase(connection);
+    QFile log(RuntimeLog::path()); QVERIFY(log.open(QIODevice::ReadOnly));
+    QVERIFY(log.readAll().contains("history.flush_failed"));
+  }
   void startupResumesSavedStationAndCanBeCancelled() {
     QTemporaryDir data;
     qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
@@ -2326,6 +2596,182 @@ private slots:
     window.findChild<QButtonGroup *>()->button(2)->click();
     table->verticalScrollBar()->setValue(0);
     window.grab().save("diagnostic-table.png");
+  }
+  void monitorPresentationCachesModelsAndUnchangedStyles() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore = qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto *transport = new PresentationTransport;
+    MonitorWindow window(false, nullptr, transport, new PresentationHistoryWorker);
+    window.show();
+    emit transport->stateChanged();
+    auto *pages = window.findChild<QStackedWidget *>();
+    pages->setCurrentIndex(0);
+    auto *charge = window.findChild<QLabel *>("chargeValue");
+    auto *chart = window.historyChart();
+    HistoryPoint first;
+    first.address = transport->station;
+    first.session = "presentation";
+    first.wall = QDateTime::currentSecsSinceEpoch() - 2;
+    first.tick = 1;
+    first.data.fresh = true;
+    first.data.known = 7;
+    first.data.soc = 40;
+    auto second = first;
+    ++second.wall; ++second.tick;
+    HistoryPoints rows{first, second};
+    emit transport->historyReady(rows);
+    ap_snapshot value{};
+    value.known = 383; value.fresh = true; value.main_seen = true;
+    value.soc = 40; value.main_age_ms = 100;
+    emit transport->snapshot(value);
+    QTRY_COMPARE(charge->text(), QString("40%"));
+    QTRY_COMPARE(chart->sourcePoints().size(), 2);
+    const auto *originalData = chart->sourcePoints().constData();
+    // A burst updates the merged/chart model once at the next event-loop turn.
+    for (int i = 41; i <= 80; ++i) {
+      rows[1].data.soc = i;
+      emit transport->historyReady(rows);
+      value.soc = i;
+      emit transport->snapshot(value);
+    }
+    QCOMPARE(chart->sourcePoints().constData(), originalData);
+    QTRY_COMPARE(chart->sourcePoints().last().data.soc, quint32(80));
+    QTRY_COMPARE(charge->text(), QString("80%"));
+    const auto *cachedData = chart->sourcePoints().constData();
+    QCoreApplication::processEvents();
+    StyleChangeCounter styles;
+    for (auto *label : window.findChildren<QLabel *>())
+      label->installEventFilter(&styles);
+    for (int i = 0; i < 100; ++i) {
+      value.valid_frames = i;
+      value.main_age_ms = 100 + i; // Refresh freshness text while visual styles stay unchanged.
+      emit transport->snapshot(value);
+      emit transport->stateChanged();
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(chart->sourcePoints().constData(), cachedData);
+    QCOMPARE(styles.changes, 0);
+    QCOMPARE(window.diagnostics()["valid_frames"].toInt(), 99);
+    // A hidden chart must expose the newest data without selecting History.
+    pages->setCurrentIndex(2);
+    rows.append(second);
+    rows.last().wall += 1; rows.last().tick += 1;
+    rows.last().data.soc = 91;
+    emit transport->historyReady(rows);
+    value.soc = 91;
+    emit transport->snapshot(value);
+    QTRY_COMPARE(chart->sourcePoints().size(), 3);
+    QCOMPARE(chart->sourcePoints().last().data.soc, quint32(91));
+    QCOMPARE(charge->text(), QString("80%"));
+    pages->setCurrentIndex(0);
+    QCOMPARE(charge->text(), QString("91%"));
+    // Showing the window likewise catches up its intentionally lazy labels.
+    window.hide(); value.soc = 92;
+    emit transport->snapshot(value);
+    QCoreApplication::processEvents();
+    QCOMPARE(charge->text(), QString("91%"));
+    window.show();
+    QCOMPARE(charge->text(), QString("92%"));
+    auto *log = window.findChild<LiveLog *>("eventLog");
+    QCOMPARE(log->toPlainText().count("connected"), 1);
+    transport->station = "02:00:00:00:00:02";
+    emit transport->stateChanged();
+    QCOMPARE(log->toPlainText().count("connected"), 2);
+    emit transport->packet("duplicate packet", true);
+    emit transport->packet("duplicate packet", true);
+    QCOMPARE(log->toPlainText().count("RX duplicate packet"), 2);
+  }
+  void monitorAgeFormattingBoundariesStayFresh() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore = qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto *transport = new PresentationTransport;
+    MonitorWindow window(false, nullptr, transport, new PresentationHistoryWorker);
+    window.show();
+    auto *pages = window.findChild<QStackedWidget *>();
+    auto *tabs = window.findChild<QTabWidget *>("diagnosticTabs");
+    auto *table = window.findChild<QTableWidget *>("diagnosticState");
+    auto cell = [&](const QString &key) -> QTableWidgetItem * {
+      for (int row = 0; row < table->rowCount(); ++row) {
+        auto *item = table->item(row, 1);
+        if (item && item->data(Qt::UserRole) == key)
+          return item;
+      }
+      return nullptr;
+    };
+    ap_snapshot value{};
+    value.fresh = value.main_seen = value.settings_seen = true;
+    for (quint32 age : {149u, 150u, 151u, 249u, 250u, 251u}) {
+      pages->setCurrentIndex(0);
+      value.main_age_ms = value.settings_age_ms = age;
+      emit transport->snapshot(value);
+      const auto expected = QCoreApplication::translate("Allpowers", "Data fresh · updated %1 s ago")
+                                .arg(age / 1000., 0, 'f', 1);
+      auto hasFreshness = [&] {
+        for (auto *label : window.findChildren<QLabel *>())
+          if (label->text() == expected)
+            return true;
+        return false;
+      };
+      QTRY_VERIFY(hasFreshness());
+      pages->setCurrentIndex(2);
+      tabs->setCurrentIndex(1);
+      const auto display = QString::number(age / 1000., 'f', 1) +
+                           QCoreApplication::translate("Allpowers", " s");
+      QVERIFY(cell("main_age_ms") && cell("settings_age_ms"));
+      QCOMPARE(cell("main_age_ms")->text(), display);
+      QCOMPARE(cell("settings_age_ms")->text(), display);
+      qInfo() << "Age formatting" << age << display;
+    }
+    for (double ms : {.1449, .145, .1451, .1499, .15, .1501, .1549, .155, .1551})
+      qInfo() << "Render formatting" << ms << QString::number(ms, 'f', 2);
+  }
+  void monitorDiagnosticsFollowVisibleTabAndCopyLiveJson() {
+    QTemporaryDir data;
+    qputenv("ALLPOWERS_DATA_DIR", data.path().toUtf8());
+    const auto restore = qScopeGuard([this] { qputenv("ALLPOWERS_DATA_DIR", temp.path().toUtf8()); });
+    auto *transport = new PresentationTransport;
+    transport->fields["usb_diagnostics"] = QJsonObject{{"synthetic counter", "first"}};
+    MonitorWindow window(false, nullptr, transport, new PresentationHistoryWorker);
+    window.show();
+    auto *pages = window.findChild<QStackedWidget *>();
+    auto *tabs = window.findChild<QTabWidget *>("diagnosticTabs");
+    auto *table = window.findChild<QTableWidget *>("diagnosticState");
+    auto cell = [&]() -> QTableWidgetItem * {
+      for (int row = 0; row < table->rowCount(); ++row) {
+        auto *item = table->item(row, 1);
+        if (item && item->data(Qt::UserRole) == "usb_detail:synthetic counter")
+          return item;
+      }
+      return nullptr;
+    };
+    pages->setCurrentIndex(0);
+    emit transport->stateChanged();
+    QCoreApplication::processEvents();
+    QVERIFY(!cell());
+    pages->setCurrentIndex(2);
+    tabs->setCurrentIndex(1);
+    QVERIFY(cell());
+    auto *counter = cell();
+    QCOMPARE(counter->text(), QString("first"));
+    table->selectRow(counter->row());
+    const auto *selected = table->selectedItems().first();
+    const auto rowCount = table->rowCount();
+    tabs->setCurrentIndex(0);
+    transport->fields["usb_diagnostics"] = QJsonObject{{"synthetic counter", "second"}};
+    emit transport->stateChanged();
+    QCoreApplication::processEvents();
+    QCOMPARE(counter->text(), QString("first"));
+    tabs->setCurrentIndex(1);
+    QCOMPARE(counter->text(), QString("second"));
+    QCOMPARE(cell(), counter);
+    QCOMPARE(table->rowCount(), rowCount);
+    QCOMPARE(table->selectedItems().first(), selected);
+    transport->fields["usb_diagnostics"] = QJsonObject{{"synthetic counter", "newest"}};
+    window.findChild<QPushButton *>("diagnosticCopy")->click();
+    const auto copied = QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object();
+    QCOMPARE(copied["usb_diagnostics"].toObject()["synthetic counter"].toString(), QString("newest"));
   }
   void nativeControlsAndChart() {
     MonitorWindow window(true);

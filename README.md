@@ -63,9 +63,10 @@ For a new board, follow [Updating and recovery](docs/recovery.md) before writing
 firmware. Boards remember their station; BOOT changes pages and double BOOT opens
 the picker. Try either Windows app with `--demo` to preview without hardware.
 
-Widget keeps new local history samples in memory and saves them to disk once a
-minute, with retention cleanup at the same time. Normal exit saves the remaining
-samples immediately; an abrupt termination or power loss can lose the last minute.
+Monitor and Widget keep new local history samples in memory and save them to
+disk once a minute, with retention cleanup at the same time. Normal exit saves
+the remaining samples immediately; an abrupt termination or power loss can lose
+the last minute.
 
 ## Compatibility
 

@@ -2,6 +2,45 @@
 
 [Documentation](README.md)
 
+## Ten-hour fuzz campaign and corpus refresh — 2026-11-03
+
+Commit `2b3061fe60841c0b1ed1381dc8c2f6f005432bf3` completed ten one-hour
+rounds of five parallel Clang 18 fuzzers with fatal ASan/UBSan: **50/50 checks
+passed, 36,934,478,934 inputs, no sanitizer errors, crashes or timeouts**.
+Saved SHA-256 checks passed for the frozen binaries, test plan and source
+archive; all 1,364 archived source files matched Git and the campaign source.
+No device access was involved. Raw evidence and all 2,103 original corpus files
+remain in `build/fuzz-soak-20261103-2b3061f/` outside Git.
+
+Incremental comparison found two additional synthetic archive inputs (480
+decoded bytes). Archive execution features increased from 1,255 to 1,257;
+no new coverage edges were found. These inputs extend test coverage, not
+reproduce a discovered defect. No product-code change was needed.
+
+The final corpus also incorporates `REDUCE`: merging shorter candidates from
+the union of old seeds and the full campaign replaced/removed 218 previous files,
+added 152 files and kept 730 unchanged. Generated examples are preserved. The
+retained corpus decreased from 948 files / 130,618 decoded bytes to **882 files /
+117,380 bytes (10.13% fewer bytes)**, including both new archive discoveries.
+See [target counts and provenance](../tests/fuzz/corpus/README.md#ten-hour-refresh--2026-11-03).
+
+Replay with identical LLVM coverage binaries from the campaign snapshot reached
+454/576 mapped lines (78.82%) and 526/550 branch outcomes for old seeds, full
+candidate union and final retained inputs. Source-coverage comparison restored
+one HID wire and seven archive inputs omitted by the initial reduction. Direct
+replay additionally restored one four-byte HID server input to retain its 869
+features (867 without it), although merge alone reported no missing features.
+No covered lines or branch outcomes were lost. Fresh staging from repository text
+passed ASan/UBSan replay for all five targets, and a second merge of the old/new
+union added zero features or edges. Audit, manifests and selection logs are in
+`build/fuzz-refresh-20261103-2b3061f/`; final HTML/JSON coverage is in its
+`reduction-coverage/` subdirectory. Raw reports and original inputs stay outside Git.
+
+**No vulnerabilities were detected by this campaign; their absence is not
+proven.** Coverage is limited to portable headers mapped into these harnesses,
+not the whole repository. Windows UI/transports, device SDK behavior,
+concurrency and uncalled code require separate verification.
+
 ## Firmware host test split — 2026-11-02
 
 The former `firmware_test` is split into eight Linux-only executables: controls,
@@ -723,7 +762,7 @@ test bypassed the active-export guard in that dispatcher.
 
 An offline MSVC probe of the exact baseline exporter, using 2880 mixed AHP1/AHP2
 records, a fully accepting sink and the production 5 ms pump cadence, sent only
-600 records by 6005 ms and finished at 28810 ms. The production dispatcher
+600 records by 6005 ms and finished at 28820 ms. The production dispatcher
 extraction retaining the original behavior emitted no STATUS during the dump
 and no begin for an early replacement request. The frozen `b989bd1` transport
 then reproduced a first watchdog close at 6500 ms and zero imported records.
@@ -815,7 +854,7 @@ Historical hardware observations below do not validate these new images.
 | R1 | `HistoryWire.h` legacy projection plus `OutputController.h`/`StatusWire.h` periodic real STATUS and separate versioned export | `usbLegacyProjectionAcceptedByFrozenOldParser`: AHP1-only, mixed and AHP2-only, unchanged flash; `releasedTransportReceivesFullMixedArchiveWithWatchdog`: actual released transport imports 2880 mixed records over >6 s with short writes/stall and no disconnect | Old wire format cannot carry known/model; unknown-output projections clear Fresh and old graphs may omit them |
 | R2 | `HistoryCompatibility.h`, build/package metadata, `history_contract`/`rollback_check` before ROM access | `history-rollback`: original Ring demonstrates old erase; compatible rollback preserves all records through upgrade/write/upgrade. Stdlib maintenance tests bind app/hash/manifest/marker and reject unsafe combinations before device access | Supported rollback keeps an AHP1/AHP2 reader/writer; AHP1-only downgrade is refused |
 | R3 | `HistoryExport.h` frozen snapshot/typed reads/ACK and `OutputController::command` latest-request replacement; one output owner, bounded ordinary writes/barriers; strict current-transaction footer and foreign-frame filtering | `earlyDesktopErrorCanReplaceActiveFirmwareRequest`, rapid replacement/reopen/stale-frame tests and native `OutputTests::selfTest`, plus retained export/parser fault tests: real dispatcher retry, partial STATUS/archive rows, Busy, timeout, count/cursor/digest, append/retention | Complete means all valid wire records received; unusable dates are counted separately. v2 completion stays partial; prolonged blocked writes require a new explicit STATUS/read after bounded pause |
-| R4 | `UsbTransport::nextLegacyPage`, bounded 5888-position search, frozen inventory/final recheck | `usbLegacyPaginationRecoversRetainedRecords`, bounds/inventory tests: `{1,3…2881}`, `{1,3}`, wrap, three pages including RAM span beyond physical slots, deduplication, changed inventory | Legacy mutation/unconfirmed count/deadline yields partial; max 2880 positions/request, 2880 retained records, 120 s total |
+| R4 | `UsbTransport::nextLegacyPage`, bounded 5888-position search, frozen inventory/final recheck | `usbLegacyPaginationRecoversRetainedRecords`, bounds/inventory tests: `{1,3…2882}`, `{1,3}`, wrap, three pages including RAM span beyond physical slots, deduplication, changed inventory | Legacy mutation/unconfirmed count/deadline yields partial; max 2880 positions/request, 2880 retained records, 120 s total |
 | R5 | Sorted relative generated firmware inventory is a real command dependency; staging mirror retained | `firmware-graph`: ordinary build of both targets with all byproducts present; unchanged/add/rename/deletion-only while identity stays dirty; source kit without .git and no-op | Only supported inventory/staging directories participate |
 | R6 | Isolated EXE tests read authoritative generated identity at execution | `windows-identity-graph`: actual root/standalone Monitor+Widget CLI and PE versions, clean → dirty → revert without configure; wrong expected identity fails; tag/INF and package guards retained | Windows MSVC/Qt integration test |
 | R7 | `ALLPOWERS_SANITIZERS` adds fatal UBSan and ASan | `sanitizer-policy`: signed-overflow control diagnoses UB and exits nonzero with production flags; normal native suites pass; recoverable contrast exits zero | GCC/Clang instrumentation; no suppressions or forced LSan disable |

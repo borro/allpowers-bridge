@@ -111,6 +111,60 @@ merging the full campaign again added zero features and edges. Original data:
 `build/fuzz-soak-20261101-e1b0979/`. Selection, replay/merge logs, counts and
 HTML/JSON coverage: `build/fuzz-refresh-20261101-e1b0979/`.
 
+### Ten-hour refresh — 2026-11-03
+
+Commit `2b3061fe60841c0b1ed1381dc8c2f6f005432bf3` completed ten one-hour
+rounds of all five targets with Clang 18 libFuzzer, fatal ASan/UBSan and seed
+`20261027`. All 50 checks passed: 36,934,478,934 executed inputs, no sanitizer
+errors, crashes or timeouts. The frozen binaries, test plan and source archive
+passed their saved SHA-256 checks; all 1,364 archived source files matched Git
+and the extracted campaign source. The 2,103 original corpus files are preserved.
+
+Incremental comparison with the previous 948 retained inputs found two new
+archive sequences (216 and 264 bytes): execution features grew from 1,255 to
+1,257 without new coverage edges. These are synthetic coverage seeds, not
+vulnerability reproducers; no product-code fix was indicated by this campaign.
+
+The final selection also incorporates the campaign's `REDUCE` results. Generated
+examples remain fixed; a merge selects shorter inputs from the union of previous
+retained seeds and the full campaign. This replaced/removed 218 previous files,
+added 152 files (including the two archive discoveries), and kept 730 unchanged.
+Retained data decreased from 948 files / 130,618 bytes to **882 files / 117,380
+bytes**, a 10.13% reduction in decoded bytes despite the two new features.
+Old inputs remain in Git history and local evidence. This preserves measured
+coverage/features; it is not a claim of a mathematically minimal corpus.
+
+| Target | Executed inputs | Previous files / bytes | Final files / bytes | Removed / added files |
+| --- | ---: | ---: | ---: | ---: |
+| BLE | 27,380,269,678 | 22 / 981 | 16 / 314 | 10 / 4 |
+| HID wire | 927,457,534 | 128 / 4480 | 120 / 3438 | 42 / 34 |
+| HID server | 1,739,654,986 | 193 / 30192 | 163 / 21854 | 107 / 77 |
+| Archive | 46,492,037 | 241 / 20913 | 231 / 20221 | 42 / 32 |
+| Telemetry | 6,840,604,699 | 364 / 74052 | 352 / 71553 | 17 / 5 |
+| **Total** | **36,934,478,934** | **948 / 130618** | **882 / 117380** | **218 / 152** |
+
+Identical LLVM coverage binaries built from the exact campaign snapshot reached
+454/576 mapped lines (78.82%) and 526/550 branch outcomes with the old seeds,
+full candidate union and final retained set alike. Source-coverage comparison
+restored one HID wire and seven archive inputs omitted by the first reduction.
+Direct replay also restored a four-byte HID server input: merge reported no
+missing features, but replay fell from 869 to 867 without it and returned to 869
+when restored. Merge alone is therefore insufficient as the preservation check.
+Fresh repository staging passed ASan/UBSan replay for all five targets, and
+merging the union of previous seeds and the full campaign again added zero
+features or edges. Selection lost no covered line or branch outcome, including
+old HID server features absent from the last round's reduced active corpus.
+
+This is a bounded negative result, not proof that the repository has no
+vulnerabilities. The denominator covers only portable headers mapped into these
+harnesses. Windows UI/transports, device SDK behavior, concurrency and uncalled
+paths are outside this campaign's verification.
+
+Original evidence: `build/fuzz-soak-20261103-2b3061f/`. Audit, selection,
+replay/merge logs and HTML/JSON coverage:
+`build/fuzz-refresh-20261103-2b3061f/` (`reduction-coverage/index.html`,
+`reduced-retained.json`, `reduced-verification.json`). Raw reports remain outside Git.
+
 ## Refreshing
 
 1. Build the fuzzers for the source revision being evaluated. Keep new inputs
@@ -120,13 +174,21 @@ HTML/JSON coverage: `build/fuzz-refresh-20261101-e1b0979/`.
 3. For each target, run the matching executable with
    `-merge=1 build/fuzz-selection/<target>/corpus <candidate-corpus>`.
    Keep the candidate corpus unchanged and save merge logs outside Git.
-4. Encode newly selected bytes as hex, with a SHA-256 filename, in the matching
-   directory here. Preserve existing useful seeds; update provenance and counts.
-5. Stage into another fresh directory and replay with `-runs=0` under ASan/UBSan.
+4. For a `REDUCE` refresh, keep generated examples as the first corpus and merge
+   the union of existing retained inputs and campaign discoveries as candidates.
+   Prefer shorter equivalents, but preserve all old and new measured features.
+   Compare source coverage too: this can require restoring inputs omitted by
+   libFuzzer's merge. Keep original inputs outside Git until verification passes.
+5. Encode selected bytes as hex, with a SHA-256 filename, in the matching
+   directory here. Remove superseded inputs only after verifying their coverage
+   is preserved; update provenance and counts.
+6. Stage into another fresh directory and replay with `-runs=0` under ASan/UBSan.
+   Compare direct replay counters with the old corpus using the same binary,
+   seed and `-shuffle=0`; investigate decreases even when merge adds nothing.
    Compare source coverage with the full candidate corpus using identical
    coverage binaries. Check that no covered lines or branch outcomes are lost.
-   A second merge of the full corpus should add no features.
-6. For a discovered bug, also add a focused regression test after fixing it.
+   A second merge of the old/new candidate union should add no features.
+7. For a discovered bug, also add a focused regression test after fixing it.
 
 The corpus cannot reach functions the harness never calls. Extending archive
 coverage requires additional harness scenarios, not only additional seeds.

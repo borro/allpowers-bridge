@@ -103,8 +103,12 @@ Fuzzing starts from generated examples and a retained synthetic
 [corpus](tests/fuzz/corpus/README.md), so fresh CI runs reuse paths found by longer runs.
 Five targets cover BLE/HID parsing, HID server state, archive recovery with
 injected storage failures, and telemetry/time/UPS state transitions in memory.
-Retained inputs now cover all five targets; the eight-hour campaign and
-coverage-preserving refresh are recorded in [validation](docs/validation.md#eight-hour-fuzz-campaign-and-corpus-refresh--2026-11-01).
+Retained inputs cover all five targets. The latest ten-hour campaign passed all
+50 checks (36.93 billion inputs) without detected sanitizer errors, crashes or
+timeouts; this does not prove the absence of vulnerabilities. Incorporating
+`REDUCE` shrank the retained corpus to 882 inputs without losing measured
+features, lines or branch outcomes. Its scope and
+coverage-preserving refresh are recorded in [validation](docs/validation.md#ten-hour-fuzz-campaign-and-corpus-refresh--2026-11-03).
 
 Builds and analyzers run in parallel; release packages are published only for valid `v` tags. Documentation-only changes use short checks. Windows applications use MSVC/WinRT, and both firmware boards build on Linux. See [CI jobs, images and cache ownership](docs/ci.md).
 

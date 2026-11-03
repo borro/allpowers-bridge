@@ -114,6 +114,8 @@ Builds and analyzers run in parallel; release packages are published only for va
 
 Isolated Windows EXE checks run serially, with a separate process-start allowance
 and the application's unchanged readiness deadline. See [timeout validation](docs/validation.md#windows-standalone-startup-bounds--2026-11-03).
+The identity regression builds only its required product EXEs; ordinary builds
+still include every desktop test program. See [build modes](docs/building.md).
 
 Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/analyze` for Windows products, and actionlint/ShellCheck for workflows and Bash. [Local commands and scope](docs/building.md#static-analysis).
 

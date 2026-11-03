@@ -55,7 +55,7 @@ git(add .)
 git(commit -qm fixture)
 git(tag v1.2.3)
 set(common -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release
-  "-DCMAKE_CXX_COMPILER=${CXX}" -DBUILD_TESTING=ON)
+  "-DCMAKE_CXX_COMPILER=${CXX}" -DBUILD_TESTING=ON -DALLPOWERS_DESKTOP_TESTS_IN_ALL=OFF)
 timed_step(root-configure COMMAND "${CMAKE_COMMAND}" -S "${source}" -B "${source}/build/root" ${common}
   -DALLPOWERS_BUILD_WINDOWS=ON "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}" "-DALLPOWERS_QT_ROOT=${QT_ROOT}"
   "-DALLPOWERS_QT_SOURCE_CACHE=${SOURCE_CACHE}" "-DALLPOWERS_DEPS_DIR=${DEPS_DIR}"
@@ -127,6 +127,12 @@ function(unchanged_objects mode)
   endforeach()
 endfunction()
 build(clean)
+foreach(binary "${source}/build/root/windows-monitor" "${source}/build/standalone")
+  file(GLOB unused_tests "${binary}/*_tests.exe" "${binary}/history_operation_id_probe.exe")
+  if(unused_tests)
+    message(FATAL_ERROR "Identity-only build compiled unused desktop test programs: ${unused_tests}")
+  endif()
+endforeach()
 check(1.2.3 clean)
 unchanged_objects(record)
 # An ordinary source-only edit must not require manual configure and must update

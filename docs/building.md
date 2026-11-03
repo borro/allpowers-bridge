@@ -115,6 +115,13 @@ For WSL firmware builds, keep the binary directory and Arduino SDK/cache on the
 Linux filesystem. Windows drive mounts can dominate SDK scanning and compiler
 startup even when the source checkout itself remains shared with Windows.
 `BUILD_TESTING=OFF` disables native/Qt test targets and the Qt Test dependency.
+For focused Windows product builds, `ALLPOWERS_DESKTOP_TESTS_IN_ALL=OFF` keeps
+the same CTest registrations and test targets but excludes desktop test programs
+from the default build. Build `desktop-test-binaries` in the standalone app build
+directory (or the root build's `windows-monitor` child) before running the full
+desktop suite. The default is `ON`, including normal CI and coverage builds.
+The identity regression uses `OFF` because it exercises only the two product
+EXEs; it checks that unused test programs were not compiled.
 The ordinary default build includes the Windows applications when
 `ALLPOWERS_BUILD_WINDOWS=ON`; firmware remains explicitly selected through the
 board targets or `products`. Release/source-kit validation is an explicit action.

@@ -1,5 +1,6 @@
 function(ap_add_desktop_tests)
   if(BUILD_TESTING)
+    get_property(existing_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
     qt_add_executable(hid_session_tests ../../tests/desktop/hid_session_test.cpp)
     target_link_libraries(hid_session_tests PRIVATE monitor_backend Qt6::Test)
     qt_import_plugins(hid_session_tests NO_DEFAULT)
@@ -233,5 +234,14 @@ function(ap_add_desktop_tests)
     set_tests_properties(widget widget-native desktop dropdown-native
       PROPERTIES TIMEOUT 120)
     set_tests_properties(single-exe widget-single-exe PROPERTIES RUN_SERIAL TRUE TIMEOUT 360)
+    # Keep test registration intact for focused product/identity builds. The
+    # ordinary build still includes all test programs; opt-out callers can build
+    # the same programs explicitly before running the full CTest suite.
+    get_property(test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    list(REMOVE_ITEM test_targets ${existing_targets})
+    add_custom_target(desktop-test-binaries DEPENDS ${test_targets})
+    if(NOT ALLPOWERS_DESKTOP_TESTS_IN_ALL)
+      set_target_properties(${test_targets} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    endif()
   endif()
 endfunction()

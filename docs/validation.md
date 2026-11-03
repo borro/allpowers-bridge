@@ -2,6 +2,22 @@
 
 [Documentation](README.md)
 
+## Focused Windows identity builds — 2026-11-03
+
+The identity regression previously built the desktop test executables as part of
+the root product's default target, although it ran only the Monitor and Widget
+checks. `ALLPOWERS_DESKTOP_TESTS_IN_ALL=OFF` now leaves all 23 desktop CTest
+registrations intact and omits those unused binaries from this regression's
+default builds. Normal builds retain the default `ON`; the explicit
+`desktop-test-binaries` target also remains available in the focused build.
+Clean, dirty, reverted, driver-payload and child-CMake scenarios are unchanged.
+
+The first local comparison was 300.81 s before and 286.76 s after (4.7% shorter)
+for the complete identity regression. This is a single-run measurement, not a
+guaranteed CI speedup. Evidence is outside Git in
+`build/windows-build-speed-20261103/`; CI timings are recorded by the existing
+per-phase diagnostics.
+
 ## Windows standalone startup bounds — 2026-11-03
 
 GitHub run `41704548256` on `96768ed` failed only the root `single-exe` and

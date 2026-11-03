@@ -230,7 +230,8 @@ function(ap_add_desktop_tests)
     # These offline suites normally finish in seconds. A deadlock or modal UI
     # must fail with diagnostics instead of hiding inside the parent CTest job.
     set_tests_properties(archive-transport PROPERTIES TIMEOUT 60)
-    set_tests_properties(widget widget-native desktop dropdown-native single-exe widget-single-exe
+    set_tests_properties(widget widget-native desktop dropdown-native
       PROPERTIES TIMEOUT 120)
+    set_tests_properties(single-exe widget-single-exe PROPERTIES RUN_SERIAL TRUE TIMEOUT 360)
   endif()
 endfunction()

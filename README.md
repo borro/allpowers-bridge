@@ -112,6 +112,9 @@ coverage-preserving refresh are recorded in [validation](docs/validation.md#ten-
 
 Builds and analyzers run in parallel; release packages are published only for valid `v` tags. Documentation-only changes use short checks. Windows applications use MSVC/WinRT, and both firmware boards build on Linux. See [CI jobs, images and cache ownership](docs/ci.md).
 
+Isolated Windows EXE checks run serially, with a separate process-start allowance
+and the application's unchanged readiness deadline. See [timeout validation](docs/validation.md#windows-standalone-startup-bounds--2026-11-03).
+
 Blocking static analysis uses clang-tidy and Cppcheck for portable C++, MSVC `/analyze` for Windows products, and actionlint/ShellCheck for workflows and Bash. [Local commands and scope](docs/building.md#static-analysis).
 
 After configuration, local checks and CI use CMake targets (`audit`, `format-check`, `workflow-lint`, `static-analysis`); [standalone bootstrap entries](docs/cmake.md) prepare tools before configuration.

@@ -268,7 +268,7 @@ int runMonitorApplication(QApplication &app, const QStringList &arguments,
   if (selfTest) {
     // SQLite opens on the history worker. A fixed delay can report failure on
     // a busy runner before its first result reaches the GUI thread.
-    // The failure bound is below CTest's standalone process timeout (20 s).
+    // The failure bound is separate from CTest's process/Qt startup allowance.
     selfTestDeadline.start();
     QObject::connect(&selfTestPoll, &QTimer::timeout, &app, [&] {
       const auto info = window.diagnostics();

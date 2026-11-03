@@ -39,6 +39,8 @@ endif()
 ap_add_build_contract(NAME release-tags SCRIPT tests/cmake/release_tag_test.cmake WORK release-tag-tests)
 
 if(WIN32 AND MSVC)
+  ap_add_build_contract(NAME standalone-smoke SCRIPT tests/cmake/standalone_smoke_test.cmake)
+  set_tests_properties(standalone-smoke PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
   if(ALLPOWERS_STATIC_ANALYSIS)
     ap_add_build_contract(NAME static-analysis-controls SCRIPT tests/cmake/static_analysis_test.cmake
       WORK static-analysis-controls ARGS "-DPython3_EXECUTABLE=${Python3_EXECUTABLE}")

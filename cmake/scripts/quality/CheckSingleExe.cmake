@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 4.4)
 include("${CMAKE_CURRENT_LIST_DIR}/../../modules/common/Arguments.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../modules/quality/StandaloneSmoke.cmake")
 get_filename_component(WORK "${WORK}" ABSOLUTE)
 file(MAKE_DIRECTORY "${WORK}")
 get_filename_component(exe_name "${EXE}" NAME)
@@ -40,32 +41,6 @@ foreach(name IN LISTS names)
   endif()
 endforeach()
 file(WRITE "${WORK}/imports.txt" "${imports}")
-function(ap_run_smoke)
-  cmake_parse_arguments(PARSE_ARGV 0 AP "" "LANGUAGE;REPORT_PATH;WORK;EXE_NAME" "")
-  ap_require_arguments(PREFIX AP REQUIRED LANGUAGE REPORT_PATH WORK EXE_NAME)
-  set(language_args)
-  if(NOT AP_LANGUAGE STREQUAL "system")
-    set(language_args --language "${AP_LANGUAGE}")
-  endif()
-  # Never mistake a report from an earlier run for this process's result.
-  file(REMOVE "${AP_REPORT_PATH}")
-  execute_process(COMMAND "${CMAKE_COMMAND}" -E env
-    --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH --unset=QT_QPA_PLATFORM
-    "PATH=$ENV{SystemRoot}/System32" -- "${AP_WORK}/${AP_EXE_NAME}"
-    --self-test ${language_args} --report "${AP_REPORT_PATH}" -platform offscreen
-    WORKING_DIRECTORY "${AP_WORK}" TIMEOUT 20 RESULT_VARIABLE result
-    OUTPUT_VARIABLE stdout ERROR_VARIABLE stderr)
-  file(WRITE "${AP_WORK}/self-test-${AP_LANGUAGE}-out.log" "${stdout}")
-  file(WRITE "${AP_WORK}/self-test-${AP_LANGUAGE}-err.log" "${stderr}")
-  if(NOT result STREQUAL "0")
-    set(diagnostics "No JSON report was produced.")
-    if(EXISTS "${AP_REPORT_PATH}")
-      file(READ "${AP_REPORT_PATH}" diagnostics LIMIT 12000)
-    endif()
-    message(FATAL_ERROR "${AP_EXE_NAME} standalone self-test failed: language=${AP_LANGUAGE}, result=${result}\n"
-      "${stdout}\n${stderr}\n${diagnostics}")
-  endif()
-endfunction()
 ap_run_smoke(WORK "${WORK}" EXE_NAME "${exe_name}" LANGUAGE system REPORT_PATH "${WORK}/report.json")
 file(READ "${WORK}/report.json" report)
 string(JSON status GET "${report}" status)

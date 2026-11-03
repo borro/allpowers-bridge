@@ -2,6 +2,34 @@
 
 [Documentation](README.md)
 
+## Windows standalone startup bounds — 2026-11-03
+
+GitHub run `41704548256` on `96768ed` failed only the root `single-exe` and
+`widget-single-exe` checks: both initial system-language processes exceeded the
+20-second process timeout without producing a JSON report. Concurrent build
+contracts were still compiling. The nested checks of the same product EXEs
+later passed (14.27 s and 5.35 s), as did all 23 nested Qt tests and the clean,
+dirty and reverted identity builds. The saved log does not identify a blocked
+application function or prove a deadlock. The external deadline included process
+and Qt initialization as well as the application's own readiness check, while
+the smoke processes were scheduled alongside build contracts.
+
+Root and standalone-app isolated EXE tests now use CTest `RUN_SERIAL` so their
+startup does not compete with other tests in the same scheduler. The bounded
+process allowance is 60 seconds; the application's ten-second readiness check
+and its failure conditions are unchanged. The outer test limit is 360 seconds
+for all five languages and the remaining license/service/payload checks.
+Failures are never retried or accepted. Each launch records elapsed time,
+deadline, exit result, stdout and forced Qt stderr in the existing CI artifacts.
+
+A synthetic process with a 21-second startup reproduces the old policy's false
+timeout and succeeds with the new production helper. Negative controls still
+reject a nonzero exit, an explicit FAIL report and a hung process; they verify
+that a previous PASS report is removed and fresh diagnostics survive failure.
+This is a controlled timing regression, not a reproduction of the original
+runner's unknown internal stall. Evidence is kept outside Git in
+`build/windows-smoke-20261103/`.
+
 ## Ten-hour fuzz campaign and corpus refresh — 2026-11-03
 
 Commit `2b3061fe60841c0b1ed1381dc8c2f6f005432bf3` completed ten one-hour

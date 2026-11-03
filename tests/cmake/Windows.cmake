@@ -24,5 +24,8 @@ if(BUILD_TESTING)
     "-DCXX=${CMAKE_CXX_COMPILER}" "-DALLPOWERS_BUILD_JOBS=${ALLPOWERS_BUILD_JOBS}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/windows_identity_graph_test.cmake")
   set_tests_properties(windows-identity-graph PROPERTIES TIMEOUT 900 LABELS "integration;build-contract" PROCESSORS 4)
-  set_tests_properties(single-exe widget-single-exe PROPERTIES LABELS integration)
+  # A cold isolated EXE launch must not compete with contract builds or another
+  # smoke process. PROCESSORS alone is insufficient when callers raise -j.
+  set_tests_properties(single-exe widget-single-exe PROPERTIES LABELS integration
+    RUN_SERIAL TRUE TIMEOUT 360)
 endif()
